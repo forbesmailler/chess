@@ -238,7 +238,6 @@ class ChessBot:
         mobility_score = (len(white_moves) - len(black_moves)) * 0.1
 
         # 4. Bishop Pair Bonus
-        # If either side has 2 or more bishops, that side gets a small bonus.
         BISHOP_PAIR_BONUS = 0.5
         bishop_pair_score = 0
         if bishop_count_white >= 2:
@@ -247,22 +246,15 @@ class ChessBot:
             bishop_pair_score -= BISHOP_PAIR_BONUS
 
         # 5. Advanced Pawns
-        # Simple approach: for each White pawn, add 0.1 * row advance; for each Black pawn, subtract 0.1 * row.
-        # White pawns are advanced if they're on row < 6, 5, etc. (Remember row 7 is the back rank, row 0 is top.)
         ADVANCED_PAWN_BONUS = 0.1
         advanced_pawn_score = 0
         for row_idx in range(8):
             for col_idx in range(8):
                 piece = self.board[row_idx][col_idx]
                 if piece == 'P':
-                    # The further up the board for White: row_idx = 7 (start), row_idx=0 (promote)
-                    # We'll give a bonus for smaller row_idx => advanced
-                    # e.g. row=6 => (7-6)=1 => 0.1, row=5 => 0.2, row=4 => 0.3, etc.
-                    # This is just one approach; you can invert it if you prefer
                     distance_from_start = 7 - row_idx
                     advanced_pawn_score += ADVANCED_PAWN_BONUS * distance_from_start
                 elif piece == 'p':
-                    # For Black, row_idx=0 (start), row_idx=7 (promote)
                     distance_from_start = row_idx
                     advanced_pawn_score -= ADVANCED_PAWN_BONUS * distance_from_start
 
@@ -278,37 +270,20 @@ class ChessBot:
         best_move = None
         best_score = float('-inf') if bot_side == 'white' else float('inf')
 
-        # Pick the move based on the improved evaluate_position()
         for move in moves:
             start_row, start_col, end_row, end_col = move
             piece = self.board[start_row][start_col]
 
             board_copy = copy.deepcopy(self.board)
 
-            # Handle potential promotions by testing all promotion pieces
+            # If it's a potential promotion, test all promotion candidates
             if (piece == 'P' and end_row == 0) or (piece == 'p' and end_row == 7):
-                if piece == 'P':
-                    promo_list = ['Q', 'R', 'B', 'N']
-                else:
-                    promo_list = ['q', 'r', 'b', 'n']
+                best_promo_piece, _ = self.choose_best_promotion(
+                    start_row, start_col, end_row, end_col,
+                    piece, bot_side, board_copy
+                )
 
-                best_promo_eval = float('-inf') if bot_side == 'white' else float('inf')
-                best_promo_piece = promo_list[0]
-
-                for promo in promo_list:
-                    self.board[start_row][start_col] = '.'
-                    self.board[end_row][end_col] = promo
-                    promo_score = self.evaluate_position()
-                    self.board = copy.deepcopy(board_copy)
-
-                    if bot_side == 'white' and promo_score > best_promo_eval:
-                        best_promo_eval = promo_score
-                        best_promo_piece = promo
-                    elif bot_side == 'black' and promo_score < best_promo_eval:
-                        best_promo_eval = promo_score
-                        best_promo_piece = promo
-
-                # Place the best promotion piece, evaluate
+                # Now place the best promotion piece on board, evaluate
                 self.board = copy.deepcopy(board_copy)
                 self.board[start_row][start_col] = '.'
                 self.board[end_row][end_col] = best_promo_piece
@@ -320,6 +295,7 @@ class ChessBot:
                 self.board[end_row][end_col] = piece
                 final_score = self.evaluate_position()
 
+            # Revert
             self.board = copy.deepcopy(board_copy)
 
             # Track best move
@@ -337,32 +313,16 @@ class ChessBot:
 
             # Double-check if it's a promotion
             if (piece == 'P' and er == 0) or (piece == 'p' and er == 7):
-                if piece == 'P':
-                    promo_list = ['Q', 'R', 'B', 'N']
-                else:
-                    promo_list = ['q', 'r', 'b', 'n']
-
                 board_before = copy.deepcopy(self.board)
-                best_promo_eval = float('-inf') if bot_side == 'white' else float('inf')
-                best_promo_piece = promo_list[0]
-
-                for promo in promo_list:
-                    self.board[sr][sc] = '.'
-                    self.board[er][ec] = promo
-                    test_eval = self.evaluate_position()
-                    self.board = copy.deepcopy(board_before)
-
-                    if bot_side == 'white' and test_eval > best_promo_eval:
-                        best_promo_eval = test_eval
-                        best_promo_piece = promo
-                    elif bot_side == 'black' and test_eval < best_promo_eval:
-                        best_promo_eval = test_eval
-                        best_promo_piece = promo
-
-                # Manually finalize
+                best_promo_piece, _ = self.choose_best_promotion(
+                    sr, sc, er, ec, piece, bot_side, board_before
+                )
+                # Finalize the chosen promotion
                 self.board = copy.deepcopy(board_before)
                 self.board[sr][sc] = '.'
                 self.board[er][ec] = best_promo_piece
+
+                # Update halfmove clock, en passant, etc.
                 if piece.lower() == 'p':
                     self.halfmove_clock = 0
                 else:
@@ -375,6 +335,42 @@ class ChessBot:
             else:
                 self.make_move(best_move)
                 print(f"Bot plays: {self.convert_to_algebraic(best_move)}")
+
+    def choose_best_promotion(self, start_row, start_col, end_row, end_col,
+                            piece, bot_side, board_before):
+        """
+        Temporarily tries all possible promotion pieces and returns:
+        (best_promo_piece, best_promo_eval)
+
+        'board_before' is a deep copy of the board before we make any promotion move.
+        """
+        if piece == 'P':
+            promo_list = ['Q', 'R', 'B', 'N']
+        else:
+            promo_list = ['q', 'r', 'b', 'n']
+
+        best_promo_eval = float('-inf') if bot_side == 'white' else float('inf')
+        best_promo_piece = promo_list[0]
+
+        for promo in promo_list:
+            # Make the promotion on a temp board
+            self.board[start_row][start_col] = '.'
+            self.board[end_row][end_col] = promo
+
+            promo_score = self.evaluate_position()
+
+            # Restore board
+            self.board = copy.deepcopy(board_before)
+
+            # Track best/worst eval depending on side
+            if bot_side == 'white' and promo_score > best_promo_eval:
+                best_promo_eval = promo_score
+                best_promo_piece = promo
+            elif bot_side == 'black' and promo_score < best_promo_eval:
+                best_promo_eval = promo_score
+                best_promo_piece = promo
+
+        return best_promo_piece, best_promo_eval
 
     def make_move(self, move):
         """
@@ -627,13 +623,18 @@ class ChessBot:
             moves = self.generate_all_moves(self.turn, validate_check=True)
             return len(moves) == 0
         return False
-    
+
     def check_draw_conditions(self):
-        return self.is_stalemate() or self.is_threefold_repetition() or self.is_fifty_move_rule() or self.is_insufficient_material()
-    
+        return (
+            self.is_stalemate() or 
+            self.is_threefold_repetition() or
+            self.is_fifty_move_rule() or
+            self.is_insufficient_material()
+        )
+
     def is_threefold_repetition(self):
         return self.position_counts[self.create_position_key()] >= 3
-        
+
     def is_fifty_move_rule(self):
         return self.halfmove_clock >= 50
 
@@ -731,7 +732,7 @@ class ChessBot:
             self.turn = 'black' if self.turn == 'white' else 'white'
             self.print_board()
 
-        time.sleep(5) # optional pause at game end
+        time.sleep(5)  # optional pause at game end
 
 
 def board_copy_check(chessbot, sr, sc, er, ec):
