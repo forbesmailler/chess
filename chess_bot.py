@@ -66,48 +66,72 @@ class ChessBot:
         directions = {
             'P': [(-1, 0)],  # White pawn moves forward
             'p': [(1, 0)],   # Black pawn moves forward
-            'R': [(i, 0) for i in range(-7, 8)] + [(0, i) for i in range(-7, 8)],  # Rook
-            'N': [(-2, -1), (-2, 1), (-1, -2), (-1, 2), (1, -2), (1, 2), (2, -1), (2, 1)],  # Knight
-            'B': [(i, i) for i in range(-7, 8)] + [(i, -i) for i in range(-7, 8)],  # Bishop
-            'Q': [(i, 0) for i in range(-7, 8)] + [(0, i) for i in range(-7, 8)] +
-                [(i, i) for i in range(-7, 8)] + [(i, -i) for i in range(-7, 8)],  # Queen
-            'K': [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]   # King
+            'R': [(0, 1), (0, -1), (1, 0), (-1, 0)],  # Rook directions
+            'N': [(-2, -1), (-2, 1), (-1, -2), (-1, 2), (1, -2), (1, 2), (2, -1), (2, 1)],  # Knight moves
+            'B': [(-1, -1), (-1, 1), (1, -1), (1, 1)],  # Bishop directions
+            'Q': [(-1, -1), (-1, 1), (1, -1), (1, 1), (0, 1), (0, -1), (1, 0), (-1, 0)],  # Queen (rook + bishop)
+            'K': [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]   # King moves
         }
 
         if piece == 'P':  # White pawn
+            # Single forward move
             if self.is_within_bounds(row - 1, col) and self.board[row - 1][col] == '.':
                 moves.append((row, col, row - 1, col))
+                # Double forward move (only from the starting position)
                 if row == 6 and self.board[row - 2][col] == '.':
                     moves.append((row, col, row - 2, col))
+
+            # Diagonal captures
             for dr, dc in [(-1, -1), (-1, 1)]:
                 r, c = row + dr, col + dc
-                if self.is_within_bounds(r, c) and self.board[r][c].islower():
-                    moves.append((row, col, r, c))
-                elif self.en_passant_target == (r, c):
-                    moves.append((row, col, r, c))
+                if self.is_within_bounds(r, c):
+                    if self.board[r][c].islower():  # Capture opponent piece
+                        moves.append((row, col, r, c))
+                    elif (r, c) == self.en_passant_target:  # En passant
+                        moves.append((row, col, r, c))
 
         elif piece == 'p':  # Black pawn
+            # Single forward move
             if self.is_within_bounds(row + 1, col) and self.board[row + 1][col] == '.':
                 moves.append((row, col, row + 1, col))
+                # Double forward move (only from the starting position)
                 if row == 1 and self.board[row + 2][col] == '.':
                     moves.append((row, col, row + 2, col))
+
+            # Diagonal captures
             for dr, dc in [(1, -1), (1, 1)]:
                 r, c = row + dr, col + dc
-                if self.is_within_bounds(r, c) and self.board[r][c].isupper():
-                    moves.append((row, col, r, c))
-                elif self.en_passant_target == (r, c):
-                    moves.append((row, col, r, c))
-
-        else:  # Other pieces
-            for dr, dc in directions.get(piece, []):
-                r, c = row + dr, col + dc
-                while self.is_within_bounds(r, c):  # Stay within board boundaries
-                    if self.board[r][c] == '.' or (piece.isupper() and self.board[r][c].islower()) or (piece.islower() and self.board[r][c].isupper()):
+                if self.is_within_bounds(r, c):
+                    if self.board[r][c].isupper():  # Capture opponent piece
                         moves.append((row, col, r, c))
-                    if self.board[r][c] != '.':  # Stop if square is occupied
+                    elif (r, c) == self.en_passant_target:  # En passant
+                        moves.append((row, col, r, c))
+
+
+        # For sliding pieces (rook, bishop, queen)
+        elif piece in 'RrBbQq':
+            for dr, dc in directions[piece.upper()]:
+                r, c = row + dr, col + dc
+                while self.is_within_bounds(r, c):
+                    if self.board[r][c] == '.':
+                        moves.append((row, col, r, c))
+                    elif (piece.isupper() and self.board[r][c].islower()) or (piece.islower() and self.board[r][c].isupper()):
+                        moves.append((row, col, r, c))
+                        break
+                    else:  # Stop if the square is occupied by a same-side piece
                         break
                     r, c = r + dr, c + dc
+
+        # For knights and kings
+        elif piece in 'NnKk':
+            for dr, dc in directions[piece.upper()]:
+                r, c = row + dr, col + dc
+                if self.is_within_bounds(r, c):
+                    if self.board[r][c] == '.' or (piece.isupper() and self.board[r][c].islower()) or (piece.islower() and self.board[r][c].isupper()):
+                        moves.append((row, col, r, c))
+
         return moves
+
 
 
     def generate_all_moves(self, turn, validate_check=True):
@@ -124,6 +148,7 @@ class ChessBot:
                             continue
                         moves.append(move)
         return moves
+
 
 
     def does_move_leave_king_safe(self, move):
@@ -259,9 +284,11 @@ class ChessBot:
         return self.is_under_attack(king_pos[0], king_pos[1], opponent_turn)
 
     def is_checkmate(self):
+        """Check if the current player is in checkmate."""
         if self.is_in_check(self.turn) and not self.generate_all_moves(self.turn):
             return True
         return False
+
 
     def is_stalemate(self):
         if not self.is_in_check(self.turn) and not self.generate_all_moves(self.turn):
@@ -288,6 +315,7 @@ class ChessBot:
         while True:
             if self.is_checkmate():
                 print(f"Checkmate! {self.turn} loses.")
+                print(f"{'White' if self.turn == 'black' else 'Black'} wins!")
                 break
             if self.is_stalemate():
                 print("Stalemate! It's a draw.")
