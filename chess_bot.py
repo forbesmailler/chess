@@ -101,13 +101,14 @@ class ChessBot:
         else:  # Other pieces
             for dr, dc in directions.get(piece, []):
                 r, c = row + dr, col + dc
-                while self.is_within_bounds(r, c):
-                    if self.board[r][c] == '.' or self.board[r][c].islower() if piece.isupper() else self.board[r][c].isupper():
+                while self.is_within_bounds(r, c):  # Stay within board boundaries
+                    if self.board[r][c] == '.' or (piece.isupper() and self.board[r][c].islower()) or (piece.islower() and self.board[r][c].isupper()):
                         moves.append((row, col, r, c))
                     if self.board[r][c] != '.':  # Stop if square is occupied
                         break
                     r, c = r + dr, c + dc
         return moves
+
 
     def generate_all_moves(self, turn, validate_check=True):
         moves = []
@@ -117,10 +118,13 @@ class ChessBot:
                 if (turn == 'white' and piece.isupper()) or (turn == 'black' and piece.islower()):
                     piece_moves = self.get_piece_moves(piece, row, col)
                     for move in piece_moves:
+                        if not self.is_within_bounds(move[2], move[3]):  # Check bounds
+                            continue
                         if validate_check and not self.does_move_leave_king_safe(move):
                             continue
                         moves.append(move)
         return moves
+
 
     def does_move_leave_king_safe(self, move):
         start_row, start_col, end_row, end_col = move
@@ -143,10 +147,13 @@ class ChessBot:
                 score += self.piece_values.get(piece, 0)
         return score if self.turn == 'white' else -score
 
-    def bot_move(self):
-        moves = self.generate_all_moves('black')
+    def bot_move(self, bot_side):
+        """
+        Makes the bot's move for the assigned side (white or black).
+        """
+        moves = self.generate_all_moves(bot_side)
         best_move = None
-        best_score = float('-inf')
+        best_score = float('-inf') if bot_side == 'white' else float('inf')
 
         for move in moves:
             start_row, start_col, end_row, end_col = move
@@ -154,7 +161,7 @@ class ChessBot:
             self.board[start_row][start_col] = '.'
             self.board[end_row][end_col] = board_copy[start_row][start_col]
             score = self.evaluate_position()
-            if score > best_score:
+            if (bot_side == 'white' and score > best_score) or (bot_side == 'black' and score < best_score):
                 best_score = score
                 best_move = move
             self.board = board_copy  # Undo move
@@ -164,12 +171,64 @@ class ChessBot:
             print(f"Bot plays: {self.convert_to_algebraic(best_move)}")
 
     def make_move(self, move):
+        """
+        Makes a move on the board and updates the game state.
+        """
         start_row, start_col, end_row, end_col = move
         piece = self.board[start_row][start_col]
+
+        # Ensure the starting square contains a valid piece
+        if piece == '.':
+            raise ValueError("Invalid move: No piece to move from the starting square.")
+
+        # Move the piece
         self.board[start_row][start_col] = '.'
         self.board[end_row][end_col] = piece
-        if piece in 'Kk':
-            self.king_positions[self.turn] = (end_row, end_col)
+
+        # Update the king's position if moved
+        if piece == 'K':
+            self.king_positions['white'] = (end_row, end_col)
+        elif piece == 'k':
+            self.king_positions['black'] = (end_row, end_col)
+
+        # Handle en passant capture
+        if self.en_passant_target and piece in ('P', 'p'):
+            if (end_row, end_col) == self.en_passant_target:
+                if piece == 'P':  # White pawn
+                    self.board[end_row + 1][end_col] = '.'
+                elif piece == 'p':  # Black pawn
+                    self.board[end_row - 1][end_col] = '.'
+
+        # Handle pawn promotion
+        if piece == 'P' and end_row == 0:  # White pawn promotion
+            self.board[end_row][end_col] = 'Q'  # Promote to Queen
+        elif piece == 'p' and end_row == 7:  # Black pawn promotion
+            self.board[end_row][end_col] = 'q'  # Promote to Queen
+
+        # Update en passant target
+        if piece in ('P', 'p') and abs(start_row - end_row) == 2:
+            self.en_passant_target = ((start_row + end_row) // 2, start_col)
+        else:
+            self.en_passant_target = None
+
+        # Reset castling rights if rooks or king move
+        if piece == 'K':
+            self.castling_rights['white']['kingside'] = False
+            self.castling_rights['white']['queenside'] = False
+        elif piece == 'k':
+            self.castling_rights['black']['kingside'] = False
+            self.castling_rights['black']['queenside'] = False
+        elif piece == 'R':
+            if start_row == 7 and start_col == 0:  # Queenside rook
+                self.castling_rights['white']['queenside'] = False
+            elif start_row == 7 and start_col == 7:  # Kingside rook
+                self.castling_rights['white']['kingside'] = False
+        elif piece == 'r':
+            if start_row == 0 and start_col == 0:  # Queenside rook
+                self.castling_rights['black']['queenside'] = False
+            elif start_row == 0 and start_col == 7:  # Kingside rook
+                self.castling_rights['black']['kingside'] = False
+
 
     def parse_move(self, move_str):
         """
@@ -213,7 +272,19 @@ class ChessBot:
         """
         Main game loop: alternates between user and bot moves, ensuring valid inputs and game progression.
         """
+        # Allow the user to choose their side
+        while True:
+            user_side = input("Do you want to play as 'white' or 'black'? ").strip().lower()
+            if user_side in ['white', 'black']:
+                bot_side = 'black' if user_side == 'white' else 'white'
+                print(f"You are playing as {user_side}. The bot will play as {bot_side}.")
+                break
+            else:
+                print("Invalid choice. Please type 'white' or 'black'.")
+
+        self.turn = 'white'  # White always starts in chess
         self.print_board()
+
         while True:
             if self.is_checkmate():
                 print(f"Checkmate! {self.turn} loses.")
@@ -222,20 +293,20 @@ class ChessBot:
                 print("Stalemate! It's a draw.")
                 break
 
-            if self.turn == 'white':  # Player's turn
+            if self.turn == user_side:  # Player's turn
                 move_str = input("Enter your move (e.g., 'e2 e4') or type 'resign' to quit: ").strip()
                 if move_str.lower() == 'resign':
-                    print("White resigns. Black wins!")
+                    print(f"{user_side.capitalize()} resigns. {bot_side.capitalize()} wins!")
                     break
                 parsed_move = self.parse_move(move_str)
-                if parsed_move in self.generate_all_moves('white'):
+                if parsed_move in self.generate_all_moves(user_side):
                     self.make_move(parsed_move)
                 else:
                     print("Invalid move. Try again.")
                     continue
             else:  # Bot's turn
                 print("Bot is thinking...")
-                self.bot_move()
+                self.bot_move(bot_side)
 
             self.turn = 'black' if self.turn == 'white' else 'white'
             self.print_board()
