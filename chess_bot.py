@@ -4,8 +4,10 @@ class ChessBot:
     def __init__(self):
         self.board = self.initialize_board()
         self.turn = 'white'
-        self.castling_rights = {'white': {'kingside': True, 'queenside': True},
-                                'black': {'kingside': True, 'queenside': True}}
+        self.castling_rights = {
+            'white': {'kingside': True, 'queenside': True},
+            'black': {'kingside': True, 'queenside': True}
+        }
         self.en_passant_target = None
         self.king_positions = {'white': (7, 4), 'black': (0, 4)}
         self.piece_values = {
@@ -18,6 +20,7 @@ class ChessBot:
         }
 
     def initialize_board(self):
+        """Initialize a standard 8x8 chessboard."""
         return [
             ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'],
             ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'],
@@ -30,154 +33,152 @@ class ChessBot:
         ]
 
     def print_board(self):
-        """
-        Prints the current state of the chessboard with rank and file labels on all sides, ensuring proper alignment.
-        """
-        # File labels (columns) on the top
-        print("    a  b  c  d  e  f  g  h")  
-        
-        # Top border with file labels
+        """Print the current chessboard state with rank/file labels."""
+        print("    a  b  c  d  e  f  g  h")
         print("  +-------------------------+")
-        
         for row in range(8):
-            rank = 8 - row  # Ranks are numbered from 8 to 1, from top to bottom
-            row_str = f"{rank} |"  # Add rank label on the left side of each row
+            rank = 8 - row
+            row_str = f"{rank} |"
             for col in range(8):
-                piece = self.board[row][col]
-                row_str += f" {piece} "  # Add the piece (or empty space) to the row with extra spacing
-            row_str += f"| {rank}"  # Add rank label on the right side of the row
-            print(row_str)  # Print the row with rank labels on both sides
-        
-        # Bottom border with file labels
+                row_str += f" {self.board[row][col]} "
+            row_str += f"| {rank}"
+            print(row_str)
         print("  +-------------------------+")
-        
-        # File labels (columns) on the bottom
-        print("    a  b  c  d  e  f  g  h")  
+        print("    a  b  c  d  e  f  g  h")
 
     def is_within_bounds(self, row, col):
+        """Check if (row, col) is within the board."""
         return 0 <= row < 8 and 0 <= col < 8
 
     def is_under_attack(self, row, col, opponent_turn):
         """
         Check if (row, col) is under attack by the opponent.
-        We generate *pseudo-legal* moves for the opponent (validate_check=False),
-        so we do NOT call does_move_leave_king_safe or is_in_check inside this!
+        Generate opponent's *pseudo-legal* moves (validate_check=False).
         """
-        opponent_pseudo_moves = self.generate_all_moves(opponent_turn, validate_check=False)
-        # If any of these moves can land on (row, col), that means (row, col) is attacked
-        return any( (r2 == row and c2 == col) for (_, _, r2, c2) in opponent_pseudo_moves )
-    
+        opponent_moves = self.generate_all_moves(opponent_turn, validate_check=False)
+        return any((r2 == row and c2 == col) for (_, _, r2, c2) in opponent_moves)
+
     def get_piece_moves(self, piece, row, col):
+        """Generate all pseudo-legal moves for a given piece on (row, col)."""
         moves = []
         directions = {
-            'P': [(-1, 0)],  # White pawn moves forward
-            'p': [(1, 0)],   # Black pawn moves forward
-            'R': [(0, 1), (0, -1), (1, 0), (-1, 0)],  # Rook directions
-            'N': [(-2, -1), (-2, 1), (-1, -2), (-1, 2), (1, -2), (1, 2), (2, -1), (2, 1)],  # Knight moves
-            'B': [(-1, -1), (-1, 1), (1, -1), (1, 1)],  # Bishop directions
-            'Q': [(-1, -1), (-1, 1), (1, -1), (1, 1), (0, 1), (0, -1), (1, 0), (-1, 0)],  # Queen (rook + bishop)
-            'K': [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]   # King moves
+            'P': [(-1, 0)],  # White pawn
+            'p': [(1, 0)],   # Black pawn
+            'R': [(0, 1), (0, -1), (1, 0), (-1, 0)],
+            'N': [(-2, -1), (-2, 1), (-1, -2), (-1, 2),
+                  (1, -2), (1, 2), (2, -1), (2, 1)],
+            'B': [(-1, -1), (-1, 1), (1, -1), (1, 1)],
+            'Q': [(-1, -1), (-1, 1), (1, -1), (1, 1),
+                  (0, 1), (0, -1), (1, 0), (-1, 0)],
+            'K': [(-1, -1), (-1, 0), (-1, 1), (0, -1),
+                  (0, 1), (1, -1), (1, 0), (1, 1)]
         }
 
-        if piece == 'P':  # White pawn
-            # Single forward move
+        # White Pawn
+        if piece == 'P':
             if self.is_within_bounds(row - 1, col) and self.board[row - 1][col] == '.':
                 moves.append((row, col, row - 1, col))
-                # Double forward move (only from the starting position)
                 if row == 6 and self.board[row - 2][col] == '.':
                     moves.append((row, col, row - 2, col))
-
-            # Diagonal captures
             for dr, dc in [(-1, -1), (-1, 1)]:
                 r, c = row + dr, col + dc
                 if self.is_within_bounds(r, c):
-                    if self.board[r][c].islower():  # Capture opponent piece
+                    if self.board[r][c].islower():
                         moves.append((row, col, r, c))
-                    elif (r, c) == self.en_passant_target:  # En passant
+                    elif (r, c) == self.en_passant_target:
                         moves.append((row, col, r, c))
 
-        elif piece == 'p':  # Black pawn
-            # Single forward move
+        # Black Pawn
+        elif piece == 'p':
             if self.is_within_bounds(row + 1, col) and self.board[row + 1][col] == '.':
                 moves.append((row, col, row + 1, col))
-                # Double forward move (only from the starting position)
                 if row == 1 and self.board[row + 2][col] == '.':
                     moves.append((row, col, row + 2, col))
-
-            # Diagonal captures
             for dr, dc in [(1, -1), (1, 1)]:
                 r, c = row + dr, col + dc
                 if self.is_within_bounds(r, c):
-                    if self.board[r][c].isupper():  # Capture opponent piece
+                    if self.board[r][c].isupper():
                         moves.append((row, col, r, c))
-                    elif (r, c) == self.en_passant_target:  # En passant
+                    elif (r, c) == self.en_passant_target:
                         moves.append((row, col, r, c))
 
-
-        # For sliding pieces (rook, bishop, queen)
+        # Sliding pieces: R, B, Q (and their lowercase counterparts)
         elif piece in 'RrBbQq':
             for dr, dc in directions[piece.upper()]:
                 r, c = row + dr, col + dc
                 while self.is_within_bounds(r, c):
                     if self.board[r][c] == '.':
                         moves.append((row, col, r, c))
-                    elif (piece.isupper() and self.board[r][c].islower()) or (piece.islower() and self.board[r][c].isupper()):
+                    elif (piece.isupper() and self.board[r][c].islower()) or \
+                         (piece.islower() and self.board[r][c].isupper()):
                         moves.append((row, col, r, c))
                         break
-                    else:  # Stop if the square is occupied by a same-side piece
+                    else:
                         break
-                    r, c = r + dr, c + dc
+                    r += dr
+                    c += dc
 
-        # For knights and kings
+        # Knights & Kings
         elif piece in 'NnKk':
             for dr, dc in directions[piece.upper()]:
                 r, c = row + dr, col + dc
                 if self.is_within_bounds(r, c):
-                    if self.board[r][c] == '.' or (piece.isupper() and self.board[r][c].islower()) or (piece.islower() and self.board[r][c].isupper()):
+                    if (self.board[r][c] == '.') or \
+                       (piece.isupper() and self.board[r][c].islower()) or \
+                       (piece.islower() and self.board[r][c].isupper()):
                         moves.append((row, col, r, c))
 
         return moves
 
     def generate_all_moves(self, turn, validate_check=True):
-        """ Return all *legal* moves if validate_check=True, 
-            else return all *pseudo-legal* moves (no check test). 
+        """
+        Return all moves for 'turn'. If validate_check=True,
+        only return moves that do not leave own king in check.
         """
         moves = []
         for row in range(8):
             for col in range(8):
                 piece = self.board[row][col]
-                # Check if piece color matches 'turn'
                 if (turn == 'white' and piece.isupper()) or (turn == 'black' and piece.islower()):
                     pseudo_moves = self.get_piece_moves(piece, row, col)
                     for move in pseudo_moves:
-                        # 1. Always skip out-of-bounds
+                        # Skip out of bounds
                         if not self.is_within_bounds(move[2], move[3]):
                             continue
-
-                        # 2. If we are validating check, skip moves leaving king in check
-                        if validate_check:
-                            if not self.does_move_leave_king_safe(move):
-                                continue
+                        # Validate check
+                        if validate_check and not self.does_move_leave_king_safe(move):
+                            continue
                         moves.append(move)
-
         return moves
 
-
     def does_move_leave_king_safe(self, move):
+        """Check if executing 'move' leaves the current player's king in check."""
         start_row, start_col, end_row, end_col = move
         piece = self.board[start_row][start_col]
         board_copy = copy.deepcopy(self.board)
+
+        # Make the move
         self.board[start_row][start_col] = '.'
         self.board[end_row][end_col] = piece
+
+        # If it's the king moving, update temporary king position
         king_pos = self.king_positions[self.turn]
-        if piece in 'Kk':  # Update king position if it moves
+        if piece in 'Kk':
             king_pos = (end_row, end_col)
+
+        # Check if king is under attack
         opponent_turn = 'black' if self.turn == 'white' else 'white'
         is_safe = not self.is_under_attack(king_pos[0], king_pos[1], opponent_turn)
+
+        # Undo move
         self.board = board_copy
         return is_safe
 
     def evaluate_position(self):
+        """
+        Basic evaluation: sum of piece values.
+        White pieces add points; black pieces subtract points.
+        """
         score = 0
         for row in self.board:
             for piece in row:
@@ -185,74 +186,75 @@ class ChessBot:
         return score if self.turn == 'white' else -score
 
     def bot_move(self, bot_side):
-        """
-        Makes the bot's move for the assigned side (white or black).
-        """
-        # Check for immediate checkmate
+        """Bot chooses a move for its side (white or black)."""
         moves = self.generate_all_moves(bot_side, validate_check=True)
+        if not moves:
+            return
+
         best_move = None
         best_score = float('-inf') if bot_side == 'white' else float('inf')
 
-        # If there's a checkmate move, select it
+        # (Optional) Attempt to find a checkmate move
         for move in moves:
-            start_row, start_col, end_row, end_col = move
-            # Simulate the move to check if it results in checkmate
             if self.is_checkmate():
                 best_move = move
                 break
 
-        # If no checkmate move, evaluate normally
+        # Otherwise, pick move based on evaluation
         if not best_move:
             for move in moves:
                 start_row, start_col, end_row, end_col = move
                 board_copy = copy.deepcopy(self.board)
+
+                # Simulate move
                 self.board[start_row][start_col] = '.'
                 self.board[end_row][end_col] = board_copy[start_row][start_col]
                 score = self.evaluate_position()
-                if (bot_side == 'white' and score > best_score) or (bot_side == 'black' and score < best_score):
+
+                # Choose best or worst score depending on side
+                if (bot_side == 'white' and score > best_score) or \
+                   (bot_side == 'black' and score < best_score):
                     best_score = score
                     best_move = move
-                self.board = board_copy  # Undo move
 
+                self.board = board_copy
+
+        # Execute chosen move
         if best_move:
             self.make_move(best_move)
             print(f"Bot plays: {self.convert_to_algebraic(best_move)}")
 
-
     def make_move(self, move):
-        """
-        Makes a move on the board and updates the game state.
-        """
+        """Execute the given move and update the game state."""
         start_row, start_col, end_row, end_col = move
         piece = self.board[start_row][start_col]
 
-        # Ensure the starting square contains a valid piece
         if piece == '.':
-            raise ValueError("Invalid move: No piece to move from the starting square.")
+            raise ValueError("Invalid move: No piece to move.")
 
-        # Move the piece
+        # Move piece
         self.board[start_row][start_col] = '.'
         self.board[end_row][end_col] = piece
 
-        # Update the king's position if moved
+        # Update king positions if moved
         if piece == 'K':
             self.king_positions['white'] = (end_row, end_col)
         elif piece == 'k':
             self.king_positions['black'] = (end_row, end_col)
 
-        # Handle en passant capture
+        # Handle en passant
         if self.en_passant_target and piece in ('P', 'p'):
             if (end_row, end_col) == self.en_passant_target:
-                if piece == 'P':  # White pawn
+                if piece == 'P':
                     self.board[end_row + 1][end_col] = '.'
-                elif piece == 'p':  # Black pawn
+                else:
                     self.board[end_row - 1][end_col] = '.'
 
-        # Handle pawn promotion
-        if piece == 'P' and end_row == 0:  # White pawn promotion
-            self.board[end_row][end_col] = 'Q'  # Promote to Queen
-        elif piece == 'p' and end_row == 7:  # Black pawn promotion
-            self.board[end_row][end_col] = 'q'  # Promote to Queen
+        # Pawn promotion
+        if piece == 'P' and end_row == 0:
+            self.board[end_row][end_col] = 'Q'
+        elif piece == 'p' and end_row == 7:
+            self.board[end_row][end_col] = 'q'
 
         # Update en passant target
         if piece in ('P', 'p') and abs(start_row - end_row) == 2:
@@ -260,7 +262,7 @@ class ChessBot:
         else:
             self.en_passant_target = None
 
-        # Reset castling rights if rooks or king move
+        # Update castling rights
         if piece == 'K':
             self.castling_rights['white']['kingside'] = False
             self.castling_rights['white']['queenside'] = False
@@ -268,73 +270,70 @@ class ChessBot:
             self.castling_rights['black']['kingside'] = False
             self.castling_rights['black']['queenside'] = False
         elif piece == 'R':
-            if start_row == 7 and start_col == 0:  # Queenside rook
+            if start_row == 7 and start_col == 0:
                 self.castling_rights['white']['queenside'] = False
-            elif start_row == 7 and start_col == 7:  # Kingside rook
+            elif start_row == 7 and start_col == 7:
                 self.castling_rights['white']['kingside'] = False
         elif piece == 'r':
-            if start_row == 0 and start_col == 0:  # Queenside rook
+            if start_row == 0 and start_col == 0:
                 self.castling_rights['black']['queenside'] = False
-            elif start_row == 0 and start_col == 7:  # Kingside rook
+            elif start_row == 0 and start_col == 7:
                 self.castling_rights['black']['kingside'] = False
 
-
     def parse_move(self, move_str):
-        """
-        Parses a move in algebraic notation (e.g., 'e2 e4') into internal board coordinates.
-        """
+        """Parse algebraic notation (e.g., 'e2 e4') into board coordinates."""
         try:
             start, end = move_str.strip().split()
-            start_row = 8 - int(start[1])  # Convert rank (1-8) to row (7-0)
-            start_col = ord(start[0].lower()) - ord('a')  # Convert file (a-h) to column (0-7)
-            end_row = 8 - int(end[1])  # Convert rank (1-8) to row (7-0)
-            end_col = ord(end[0].lower()) - ord('a')  # Convert file (a-h) to column (0-7)
-            if self.is_within_bounds(start_row, start_col) and self.is_within_bounds(end_row, end_col):
+            start_row = 8 - int(start[1])
+            start_col = ord(start[0].lower()) - ord('a')
+            end_row = 8 - int(end[1])
+            end_col = ord(end[0].lower()) - ord('a')
+            if self.is_within_bounds(start_row, start_col) and \
+               self.is_within_bounds(end_row, end_col):
                 return (start_row, start_col, end_row, end_col)
-            else:
-                return None
-        except Exception:
-            return None
+        except:
+            pass
+        return None
 
     def convert_to_algebraic(self, move):
-        start_row, start_col, end_row, end_col = move
-        start = f"{chr(start_col + ord('a'))}{8 - start_row}"
-        end = f"{chr(end_col + ord('a'))}{8 - end_row}"
+        """Convert board coordinates back to standard algebraic notation."""
+        sr, sc, er, ec = move
+        start = f"{chr(sc + ord('a'))}{8 - sr}"
+        end = f"{chr(ec + ord('a'))}{8 - er}"
         return f"{start} {end}"
 
     def is_in_check(self, turn):
+        """Check if the current player's king is in check."""
         king_pos = self.king_positions[turn]
         opponent_turn = 'black' if turn == 'white' else 'white'
         return self.is_under_attack(king_pos[0], king_pos[1], opponent_turn)
 
     def is_checkmate(self):
-        # Check if the king is in check
+        """Check if the current player is checkmated."""
         if self.is_in_check(self.turn):
-            # Check if there are any valid moves to escape check
             moves = self.generate_all_moves(self.turn, validate_check=True)
-            if moves is None or len(moves) == 0:  # If no moves are possible, it's checkmate
+            if not moves:
                 return True
         return False
 
-
     def is_stalemate(self):
+        """Check if the game is in stalemate."""
         return not self.is_in_check(self.turn) and not self.generate_all_moves(self.turn)
 
     def play(self):
         """
-        Main game loop: alternates between user and bot moves, ensuring valid inputs and game progression.
+        Main game loop: user chooses side, then alternate turns between user and bot.
         """
-        # Allow the user to choose their side
         while True:
             user_side = input("Do you want to play as 'white' or 'black'? ").strip().lower()
             if user_side in ['white', 'black']:
                 bot_side = 'black' if user_side == 'white' else 'white'
-                print(f"You are playing as {user_side}. The bot will play as {bot_side}.")
+                print(f"You are playing as {user_side}. The bot plays as {bot_side}.")
                 break
             else:
                 print("Invalid choice. Please type 'white' or 'black'.")
 
-        self.turn = 'white'  # White always starts in chess
+        self.turn = 'white'
         self.print_board()
 
         while True:
@@ -345,18 +344,19 @@ class ChessBot:
                 print("Stalemate! It's a draw.")
                 break
 
-            if self.turn == user_side:  # Player's turn
-                move_str = input("Enter your move (e.g., 'e2 e4') or type 'resign' to quit: ").strip()
+            if self.turn == user_side:
+                move_str = input("Enter your move (e.g., 'e2 e4') or 'resign': ").strip()
                 if move_str.lower() == 'resign':
                     print(f"{user_side.capitalize()} resigns. {bot_side.capitalize()} wins!")
                     break
                 parsed_move = self.parse_move(move_str)
-                if parsed_move in self.generate_all_moves(user_side):
+                user_moves = self.generate_all_moves(user_side)
+                if parsed_move in user_moves:
                     self.make_move(parsed_move)
                 else:
                     print("Invalid move. Try again.")
                     continue
-            else:  # Bot's turn
+            else:
                 self.bot_move(bot_side)
 
             self.turn = 'black' if self.turn == 'white' else 'white'
