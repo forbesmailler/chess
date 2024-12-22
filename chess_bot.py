@@ -1,6 +1,15 @@
 import copy
-from collections import defaultdict
 import time
+from collections import defaultdict
+
+
+def board_copy_check(chessbot, sr, sc, er, ec):
+    """
+    Returns True if (er, ec) was occupied prior to the move,
+    so that we know if a capture occurred.
+    """
+    return chessbot.board[er][ec] != '.'
+
 
 class ChessBot:
     def __init__(self):
@@ -84,13 +93,19 @@ class ChessBot:
             'P': [(-1, 0)],  # White pawn
             'p': [(1, 0)],   # Black pawn
             'R': [(0, 1), (0, -1), (1, 0), (-1, 0)],
-            'N': [(-2, -1), (-2, 1), (-1, -2), (-1, 2),
-                  (1, -2), (1, 2), (2, -1), (2, 1)],
+            'N': [
+                (-2, -1), (-2, 1), (-1, -2), (-1, 2),
+                (1, -2), (1, 2), (2, -1), (2, 1)
+            ],
             'B': [(-1, -1), (-1, 1), (1, -1), (1, 1)],
-            'Q': [(-1, -1), (-1, 1), (1, -1), (1, 1),
-                  (0, 1), (0, -1), (1, 0), (-1, 0)],
-            'K': [(-1, -1), (-1, 0), (-1, 1), (0, -1),
-                  (0, 1), (1, -1), (1, 0), (1, 1)]
+            'Q': [
+                (-1, -1), (-1, 1), (1, -1), (1, 1),
+                (0, 1), (0, -1), (1, 0), (-1, 0)
+            ],
+            'K': [
+                (-1, -1), (-1, 0), (-1, 1), (0, -1),
+                (0, 1), (1, -1), (1, 0), (1, 1)
+            ]
         }
 
         # White Pawn
@@ -99,6 +114,7 @@ class ChessBot:
                 moves.append((row, col, row - 1, col))
                 if row == 6 and self.board[row - 2][col] == '.':
                     moves.append((row, col, row - 2, col))
+
             for dr, dc in [(-1, -1), (-1, 1)]:
                 r, c = row + dr, col + dc
                 if self.is_within_bounds(r, c):
@@ -113,6 +129,7 @@ class ChessBot:
                 moves.append((row, col, row + 1, col))
                 if row == 1 and self.board[row + 2][col] == '.':
                     moves.append((row, col, row + 2, col))
+
             for dr, dc in [(1, -1), (1, 1)]:
                 r, c = row + dr, col + dc
                 if self.is_within_bounds(r, c):
@@ -128,8 +145,10 @@ class ChessBot:
                 while self.is_within_bounds(r, c):
                     if self.board[r][c] == '.':
                         moves.append((row, col, r, c))
-                    elif (piece.isupper() and self.board[r][c].islower()) or \
-                         (piece.islower() and self.board[r][c].isupper()):
+                    elif (
+                        (piece.isupper() and self.board[r][c].islower())
+                        or (piece.islower() and self.board[r][c].isupper())
+                    ):
                         moves.append((row, col, r, c))
                         break
                     else:
@@ -142,9 +161,11 @@ class ChessBot:
             for dr, dc in directions[piece.upper()]:
                 r, c = row + dr, col + dc
                 if self.is_within_bounds(r, c):
-                    if self.board[r][c] == '.' or \
-                       (piece.isupper() and self.board[r][c].islower()) or \
-                       (piece.islower() and self.board[r][c].isupper()):
+                    if (
+                        self.board[r][c] == '.'
+                        or (piece.isupper() and self.board[r][c].islower())
+                        or (piece.islower() and self.board[r][c].isupper())
+                    ):
                         moves.append((row, col, r, c))
 
         return moves
@@ -158,7 +179,9 @@ class ChessBot:
         for row in range(8):
             for col in range(8):
                 piece = self.board[row][col]
-                if (turn == 'white' and piece.isupper()) or (turn == 'black' and piece.islower()):
+                if (turn == 'white' and piece.isupper()) or (
+                    turn == 'black' and piece.islower()
+                ):
                     pseudo_moves = self.get_piece_moves(piece, row, col)
                     for move in pseudo_moves:
                         if not self.is_within_bounds(move[2], move[3]):
@@ -167,7 +190,8 @@ class ChessBot:
                             continue
                         moves.append(move)
 
-        # Only add castling moves if validate_check is True, to avoid recursion in evaluate_position
+        # Only add castling moves if validate_check is True, to avoid recursion
+        # in evaluate_position
         if validate_check:
             if self.is_castling_legal(turn, 'kingside'):
                 moves.append(("castle", turn, "kingside"))
@@ -259,7 +283,10 @@ class ChessBot:
                     advanced_pawn_score -= ADVANCED_PAWN_BONUS * distance_from_start
 
         # Combine sub-scores
-        return material_score + mobility_score + bishop_pair_score + advanced_pawn_score
+        return (material_score
+                + mobility_score
+                + bishop_pair_score
+                + advanced_pawn_score)
 
     def bot_move(self, bot_side):
         """Bot chooses and makes a move for its side (white or black)."""
@@ -273,20 +300,19 @@ class ChessBot:
         for move in moves:
             start_row, start_col, end_row, end_col = move
             piece = self.board[start_row][start_col]
-
-            board_copy = copy.deepcopy(self.board)
+            board_copy_state = copy.deepcopy(self.board)
 
             # If it's a potential promotion, test all promotion candidates
             if (piece == 'P' and end_row == 0) or (piece == 'p' and end_row == 7):
-                best_promo_piece, _ = self.choose_best_promotion(
+                self.choose_best_promotion(
                     start_row, start_col, end_row, end_col,
-                    piece, bot_side, board_copy
+                    piece, bot_side, board_copy_state
                 )
 
             final_score = self.simulate_two_ply(move, bot_side)
 
             # Revert
-            self.board = copy.deepcopy(board_copy)
+            self.board = copy.deepcopy(board_copy_state)
 
             # Track best move
             if bot_side == 'white' and final_score > best_score:
@@ -321,7 +347,7 @@ class ChessBot:
                 self.record_position()
 
                 print(f"Bot promotes to {best_promo_piece}!")
-        
+
             self.make_move(best_move)
             print(f"Bot plays: {self.convert_to_algebraic(best_move)}")
 
@@ -331,7 +357,7 @@ class ChessBot:
         Return the final position evaluation (from White's perspective).
         """
         # 1. Save state for revert
-        board_copy = copy.deepcopy(self.board)
+        board_copy_state = copy.deepcopy(self.board)
         turn_save = self.turn
         king_positions_save = self.king_positions.copy()
         castling_rights_save = copy.deepcopy(self.castling_rights)
@@ -339,15 +365,15 @@ class ChessBot:
         halfmove_clock_save = self.halfmove_clock
 
         # 2. Make the bot's move
-        self.make_move(move)     # This updates self.board, self.turn, etc.
-        
+        self.make_move(move)  # This updates self.board, self.turn, etc.
+
         opponent_side = 'black' if bot_side == 'white' else 'white'
         # If no opponent moves => either checkmate or stalemate, so just evaluate
         opponent_moves = self.generate_all_moves(opponent_side, validate_check=True)
         if not opponent_moves:
             final_eval = self.evaluate_position()
             # revert
-            self.board = board_copy
+            self.board = board_copy_state
             self.turn = turn_save
             self.king_positions = king_positions_save
             self.castling_rights = castling_rights_save
@@ -356,8 +382,6 @@ class ChessBot:
             return final_eval
 
         # 3. Opponent picks best move *from opponent's perspective*
-        #    - If opponent is White, they maximize
-        #    - If opponent is Black, they minimize
         best_eval_for_opponent = float('-inf') if opponent_side == 'white' else float('inf')
         best_opponent_move = None
 
@@ -399,7 +423,7 @@ class ChessBot:
         final_eval = self.evaluate_position()
 
         # Revert everything
-        self.board = board_copy
+        self.board = board_copy_state
         self.turn = turn_save
         self.king_positions = king_positions_save
         self.castling_rights = castling_rights_save
@@ -409,7 +433,7 @@ class ChessBot:
         return final_eval
 
     def choose_best_promotion(self, start_row, start_col, end_row, end_col,
-                            piece, bot_side, board_before):
+                              piece, bot_side, board_before):
         """
         Temporarily tries all possible promotion pieces and returns:
         (best_promo_piece, best_promo_eval)
@@ -463,7 +487,7 @@ class ChessBot:
 
         captured_piece = None
         if board_copy_check(self, start_row, start_col, end_row, end_col):
-            captured_piece = piece
+            captured_piece = self.board[end_row][end_col]
 
         self.board[start_row][start_col] = '.'
         self.board[end_row][end_col] = piece
@@ -484,7 +508,7 @@ class ChessBot:
                     self.board[end_row - 1][end_col] = '.'
                     captured_piece = 'P'
 
-        # User promotion logic (bot promotions handled in bot_move)
+        # User promotion logic (bot promotions are handled in bot_move)
         if piece == 'P' and end_row == 0:
             if self.turn == self.user_side == 'white':
                 promotion_piece = ''
@@ -599,10 +623,12 @@ class ChessBot:
             start_col = ord(start[0].lower()) - ord('a')
             end_row = 8 - int(end[1])
             end_col = ord(end[0].lower()) - ord('a')
-            if self.is_within_bounds(start_row, start_col) and \
-               self.is_within_bounds(end_row, end_col):
+            if (
+                self.is_within_bounds(start_row, start_col)
+                and self.is_within_bounds(end_row, end_col)
+            ):
                 return (start_row, start_col, end_row, end_col)
-        except:
+        except Exception:
             pass
 
         return None
@@ -629,7 +655,9 @@ class ChessBot:
         castling_info = []
         for side in ['white', 'black']:
             rights = self.castling_rights[side]
-            castling_info.append(f"{side[0]}K{rights['kingside']}Q{rights['queenside']}")
+            castling_info.append(
+                f"{side[0]}K{rights['kingside']}Q{rights['queenside']}"
+            )
 
         ep_str = str(self.en_passant_target) if self.en_passant_target else '-'
         turn_str = self.turn[0]  # 'w' or 'b'
@@ -656,16 +684,22 @@ class ChessBot:
         if side == 'kingside':
             if self.board[row][5] != '.' or self.board[row][6] != '.':
                 return False
-            if self.is_under_attack(row, 5, opponent_turn) or \
-               self.is_under_attack(row, 6, opponent_turn):
+            if (
+                self.is_under_attack(row, 5, opponent_turn)
+                or self.is_under_attack(row, 6, opponent_turn)
+            ):
                 return False
         else:
-            if (self.board[row][1] != '.' or
-                self.board[row][2] != '.' or
-                self.board[row][3] != '.'):
+            if (
+                self.board[row][1] != '.'
+                or self.board[row][2] != '.'
+                or self.board[row][3] != '.'
+            ):
                 return False
-            if self.is_under_attack(row, 3, opponent_turn) or \
-               self.is_under_attack(row, 2, opponent_turn):
+            if (
+                self.is_under_attack(row, 3, opponent_turn)
+                or self.is_under_attack(row, 2, opponent_turn)
+            ):
                 return False
 
         return True
@@ -685,7 +719,7 @@ class ChessBot:
         return f"{start} {end}"
 
     def is_in_check(self, turn):
-        """True if the 'turn' player's king is in check."""
+        """Return True if the 'turn' player's king is in check."""
         king_pos = self.king_positions[turn]
         opponent_turn = 'black' if turn == 'white' else 'white'
         return self.is_under_attack(king_pos[0], king_pos[1], opponent_turn)
@@ -698,17 +732,20 @@ class ChessBot:
         return False
 
     def check_draw_conditions(self):
+        """Check if any draw condition (stalemate, threefold, 50-move, insufficient)."""
         return (
-            self.is_stalemate() or 
-            self.is_threefold_repetition() or
-            self.is_fifty_move_rule() or
-            self.is_insufficient_material()
+            self.is_stalemate()
+            or self.is_threefold_repetition()
+            or self.is_fifty_move_rule()
+            or self.is_insufficient_material()
         )
 
     def is_threefold_repetition(self):
+        """Return True if the current position has occurred at least three times."""
         return self.position_counts[self.create_position_key()] >= 3
 
     def is_fifty_move_rule(self):
+        """Return True if there have been at least 50 moves since a capture or pawn move."""
         return self.halfmove_clock >= 50
 
     def is_insufficient_material(self):
@@ -731,9 +768,9 @@ class ChessBot:
         if set(white_pieces) == {'K'} and set(black_pieces) == {'k'}:
             return True
 
-        # Check for King + single minor
-        minor_white = set(['K', 'N', 'B'])
-        minor_black = set(['k', 'n', 'b'])
+        # Check for King + single minor vs. King
+        minor_white = {'K', 'N', 'B'}
+        minor_black = {'k', 'n', 'b'}
 
         if (all(p in minor_white for p in white_pieces)
                 and all(p in minor_black for p in black_pieces)):
@@ -743,7 +780,7 @@ class ChessBot:
         return False
 
     def is_stalemate(self):
-        """True if current player is stalemated."""
+        """True if current player is stalemated (not in check, no legal moves)."""
         return not self.is_in_check(self.turn) and not self.generate_all_moves(self.turn)
 
     def play(self):
@@ -783,7 +820,10 @@ class ChessBot:
                 break
 
             if self.turn == self.user_side:
-                move_str = input("Enter your move (e.g., 'e2 e4', 'O-O', or 'O-O-O') or 'resign': ").strip()
+                move_str = input(
+                    "Enter your move (e.g., 'e2 e4', 'O-O', or 'O-O-O') "
+                    "or 'resign': "
+                ).strip()
                 if move_str.lower() == 'resign':
                     winner = 'white' if self.user_side == 'black' else 'black'
                     print(f"{self.user_side.capitalize()} resigns. {winner.capitalize()} wins!")
@@ -806,14 +846,6 @@ class ChessBot:
             self.print_board()
 
         time.sleep(5)  # optional pause at game end
-
-
-def board_copy_check(chessbot, sr, sc, er, ec):
-    """
-    Returns True if (er, ec) was occupied prior to the move,
-    so that we know if a capture occurred.
-    """
-    return chessbot.board[er][ec] != '.'
 
 
 if __name__ == "__main__":
