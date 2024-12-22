@@ -267,13 +267,7 @@ class ChessBot:
                     advanced_pawn_score -= ADVANCED_PAWN_BONUS * distance_from_start
 
         # Combine sub-scores
-        total_score = material_score + mobility_score + bishop_pair_score + advanced_pawn_score
-
-        # If black to move, invert sign so White advantage becomes negative from Black's viewpoint
-        if self.turn == 'black':
-            total_score = -total_score
-
-        return total_score
+        return material_score + mobility_score + bishop_pair_score + advanced_pawn_score
 
     def bot_move(self, bot_side):
         """Bot chooses and makes a move for its side (white or black)."""
