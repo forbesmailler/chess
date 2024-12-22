@@ -1,4 +1,6 @@
 import copy
+from collections import defaultdict
+import time
 
 class ChessBot:
     def __init__(self):
@@ -18,6 +20,16 @@ class ChessBot:
             'Q': 9, 'q': -9,
             'K': 0, 'k': 0
         }
+
+        # For tracking threefold repetition
+        self.position_counts = defaultdict(int)
+
+        # For the fifty-move rule: halfmove_clock is the number of halfmoves
+        # since the last capture or pawn advance.
+        self.halfmove_clock = 0
+
+        # Store which side the user is playing (set in play())
+        self.user_side = None
 
     def initialize_board(self):
         """
@@ -135,7 +147,7 @@ class ChessBot:
             for dr, dc in directions[piece.upper()]:
                 r, c = row + dr, col + dc
                 if self.is_within_bounds(r, c):
-                    if self.board[r][c] == '.' or \
+                    if (self.board[r][c] == '.') or \
                        (piece.isupper() and self.board[r][c].islower()) or \
                        (piece.islower() and self.board[r][c].isupper()):
                         moves.append((row, col, r, c))
@@ -249,6 +261,9 @@ class ChessBot:
         if isinstance(move, tuple) and len(move) == 3 and move[0] == "castle":
             _, turn, side = move
             self.execute_castling(turn, side)
+            # After castling, reset halfmove clock (not strictly required by FIDE rules,
+            # since castling is neither a capture nor a pawn move).
+            self.record_position()
             return
 
         start_row, start_col, end_row, end_col = move
@@ -261,19 +276,30 @@ class ChessBot:
         self.board[start_row][start_col] = '.'
         self.board[end_row][end_col] = piece
 
+        # Check if this was a capture or a pawn move
+        is_capture = (self.board[end_row][end_col] != '.') and (start_row, start_col) != (end_row, end_col)
+        # Actually, we need to see if *before* we overwrote it, it was a piece from the other side.
+        # But we've already placed 'piece' there. Let's fix that:
+        # store the "captured piece" for detection
+        captured_piece = None
+        if start_row != end_row or start_col != end_col:
+            captured_piece = self.board[end_row][end_col] if board_copy_check(self, start_row, start_col, end_row, end_col) else None
+
         # Update king position if a king has moved
         if piece == 'K':
             self.king_positions['white'] = (end_row, end_col)
         elif piece == 'k':
             self.king_positions['black'] = (end_row, end_col)
 
-        # Handle en passant
+        # En passant capture
         if self.en_passant_target and piece in ('P', 'p'):
             if (end_row, end_col) == self.en_passant_target:
                 if piece == 'P':
                     self.board[end_row + 1][end_col] = '.'
+                    captured_piece = 'p'  # black pawn captured
                 else:
                     self.board[end_row - 1][end_col] = '.'
+                    captured_piece = 'P'  # white pawn captured
 
         # Handle promotion (white or black pawns reaching back rank)
         if piece == 'P' and end_row == 0:
@@ -316,6 +342,16 @@ class ChessBot:
                 self.castling_rights['black']['queenside'] = False
             elif start_row == 0 and start_col == 7:
                 self.castling_rights['black']['kingside'] = False
+
+        # Update halfmove clock for the fifty-move rule
+        # If a pawn moved or a capture happened, reset to 0
+        if piece.lower() == 'p' or captured_piece:
+            self.halfmove_clock = 0
+        else:
+            self.halfmove_clock += 1
+
+        # Record the new position for threefold repetition
+        self.record_position()
 
     def execute_castling(self, turn, side):
         """Physically execute castling for the given side (kingside or queenside)."""
@@ -392,6 +428,103 @@ class ChessBot:
 
         return None
 
+    def record_position(self):
+        """
+        Record the current position in position_counts for threefold repetition.
+        The position key should include:
+            - board layout
+            - active player (turn)
+            - castling rights
+            - en_passant_target
+        """
+        pos_key = self.create_position_key()
+        self.position_counts[pos_key] += 1
+
+    def create_position_key(self):
+        """
+        Create a string that uniquely identifies the position for repetition tracking.
+        Includes board, turn, castling rights, and en passant target.
+        """
+        board_str = []
+        for row in self.board:
+            board_str.append(''.join(row))
+        board_str = '/'.join(board_str)
+
+        castling_str = []
+        for side in ['white', 'black']:
+            rights = self.castling_rights[side]
+            castling_str.append(f"{side[0]}K{rights['kingside']}Q{rights['queenside']}")
+
+        ep_str = str(self.en_passant_target) if self.en_passant_target else '-'
+        turn_str = self.turn[0]  # 'w' or 'b'
+
+        # Combine everything
+        return f"{board_str} {turn_str} {' '.join(castling_str)} {ep_str}"
+
+    def check_draw_conditions(self):
+        """
+        Check the three newly-added draw conditions:
+          1) Threefold repetition
+          2) Fifty-move rule
+          3) Insufficient material
+        Return True if any of them is triggered, else False.
+        """
+        # 1) Threefold repetition
+        pos_key = self.create_position_key()
+        if self.position_counts[pos_key] >= 3:
+            print("Draw by threefold repetition!")
+            return True
+
+        # 2) Fifty-move rule
+        if self.halfmove_clock >= 50:
+            print("Draw by fifty-move rule!")
+            return True
+
+        # 3) Insufficient material
+        if self.is_insufficient_material():
+            print("Draw by insufficient material!")
+            return True
+
+        return False
+
+    def is_insufficient_material(self):
+        """
+        Check if neither side can force a checkmate based on material:
+          - King vs King
+          - King + (Bishop or Knight) vs King
+          - King vs King + (Bishop or Knight)
+          (Advanced checks like K+B vs K+B on same color squares can be added if desired.)
+        """
+        # Gather pieces
+        white_pieces = []
+        black_pieces = []
+        for row in self.board:
+            for piece in row:
+                if piece.isupper():
+                    white_pieces.append(piece)
+                elif piece.islower():
+                    black_pieces.append(piece)
+
+        # If only kings remain
+        if set(white_pieces) == {'K'} and set(black_pieces) == {'k'}:
+            return True
+
+        # Allowed single minor piece sets:
+        # E.g., white has only King or King+one minor piece, black has only King or King+one minor piece
+        # Define all minor pieces we allow:
+        minor_pieces_white = set(['K', 'N', 'B'])
+        minor_pieces_black = set(['k', 'n', 'b'])
+
+        # Check white
+        if all(p in minor_pieces_white for p in white_pieces) and \
+           all(p in minor_pieces_black for p in black_pieces):
+            # White can't have more than 2 pieces total if it's only K plus (B or N).
+            # Black can't have more than 2 pieces total if it's only k plus (b or n).
+            if len(white_pieces) <= 2 and len(black_pieces) <= 2:
+                return True
+
+        return False
+
     def is_castling_legal(self, turn, side):
         """
         Check the basic castling conditions:
@@ -463,22 +596,31 @@ class ChessBot:
         """Return True if the current player is stalemated."""
         return not self.is_in_check(self.turn) and not self.generate_all_moves(self.turn)
 
+
     def play(self):
         """
         Main game loop: user chooses a side, then we alternate between user and bot.
+        We also check for draws every turn: threefold repetition, 50-move rule, and insufficient material.
         """
         while True:
             user_side = input("Do you want to play as 'white' or 'black'? ").strip().lower()
             if user_side in ['white', 'black']:
+                self.user_side = user_side
                 bot_side = 'black' if user_side == 'white' else 'white'
                 print(f"You are playing as {user_side}. The bot plays as {bot_side}.")
                 break
             print("Invalid choice. Please type 'white' or 'black'.")
 
         self.turn = 'white'
+        # Record the initial position before moves start
+        self.record_position()
         self.print_board()
 
         while True:
+            # Check immediate draw conditions (e.g. after each move, we see if the position repeated)
+            if self.check_draw_conditions():
+                break
+
             if self.is_checkmate():
                 print(f"Checkmate! {'White' if self.turn == 'black' else 'Black'} wins.")
                 break
@@ -486,17 +628,16 @@ class ChessBot:
                 print("Stalemate! It's a draw.")
                 break
 
-            if self.turn == user_side:
+            if self.turn == self.user_side:
                 move_str = input("Enter your move (e.g., 'e2 e4', 'O-O', or 'O-O-O') or 'resign': ").strip()
                 if move_str.lower() == 'resign':
-                    print(f"{user_side.capitalize()} resigns. {bot_side.capitalize()} wins!")
+                    print(f"{self.user_side.capitalize()} resigns. {('white' if self.user_side=='black' else 'black').capitalize()} wins!")
                     break
 
                 parsed_move = self.parse_move(move_str)
-                user_moves = self.generate_all_moves(user_side)
+                user_moves = self.generate_all_moves(self.user_side)
 
-                # Check if user attempt is castling or in the list of valid moves
-                if (isinstance(parsed_move, tuple) and parsed_move and parsed_move[0] == "castle"):
+                if isinstance(parsed_move, tuple) and parsed_move and parsed_move[0] == "castle":
                     self.make_move(parsed_move)
                 elif parsed_move in user_moves:
                     self.make_move(parsed_move)
@@ -509,6 +650,20 @@ class ChessBot:
             # Switch turn
             self.turn = 'black' if self.turn == 'white' else 'white'
             self.print_board()
+
+            # Check for draw conditions again after the move
+            if self.check_draw_conditions():
+                break
+
+        time.sleep(5)
+
+# A small helper to see if the move was a capture (for resetting halfmove clock).
+def board_copy_check(chessbot, sr, sc, er, ec):
+    """
+    Returns the piece at the destination before it is overwritten,
+    so we know if a capture occurred.
+    """
+    return chessbot.board[er][ec] != '.'
 
 
 if __name__ == "__main__":
