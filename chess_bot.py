@@ -76,7 +76,8 @@ class ChessBot:
     def get_piece_moves(self, piece, row, col):
         """
         Generate all pseudo-legal moves for a given piece on (row, col).
-        This includes pawn moves (with en passant), rook/bishop/queen sliding, knight, king.
+        This includes pawn moves (with en passant), rook/bishop/queen sliding,
+        knight, and king moves.
         """
         moves = []
         directions = {
@@ -100,7 +101,7 @@ class ChessBot:
                 # Double push from row 6
                 if row == 6 and self.board[row - 2][col] == '.':
                     moves.append((row, col, row - 2, col))
-            # Captures (+ possible en passant)
+            # Captures (and possible en passant)
             for dr, dc in [(-1, -1), (-1, 1)]:
                 r, c = row + dr, col + dc
                 if self.is_within_bounds(r, c):
@@ -117,7 +118,7 @@ class ChessBot:
                 # Double push from row 1
                 if row == 1 and self.board[row + 2][col] == '.':
                     moves.append((row, col, row + 2, col))
-            # Captures (+ possible en passant)
+            # Captures (and possible en passant)
             for dr, dc in [(1, -1), (1, 1)]:
                 r, c = row + dr, col + dc
                 if self.is_within_bounds(r, c):
@@ -147,7 +148,7 @@ class ChessBot:
             for dr, dc in directions[piece.upper()]:
                 r, c = row + dr, col + dc
                 if self.is_within_bounds(r, c):
-                    if (self.board[r][c] == '.') or \
+                    if self.board[r][c] == '.' or \
                        (piece.isupper() and self.board[r][c].islower()) or \
                        (piece.islower() and self.board[r][c].isupper()):
                         moves.append((row, col, r, c))
@@ -175,8 +176,8 @@ class ChessBot:
 
     def does_move_leave_king_safe(self, move):
         """
-        Check if executing 'move' will leave the current player's king in check.
-        Temporarily apply the move, check for check, then revert the move.
+        Check if executing 'move' leaves the current player's king in check.
+        Temporarily apply the move, check for check, then revert.
         """
         start_row, start_col, end_row, end_col = move
         piece = self.board[start_row][start_col]
@@ -195,16 +196,14 @@ class ChessBot:
         opponent_turn = 'black' if self.turn == 'white' else 'white'
         is_safe = not self.is_under_attack(king_pos[0], king_pos[1], opponent_turn)
 
-        # Revert to original board
+        # Revert
         self.board = board_copy
         return is_safe
 
     def evaluate_position(self):
         """
-        Basic material-only evaluation.
-        Sum up piece values based on self.piece_values:
-          - White pieces contribute positively,
-          - Black pieces contribute negatively.
+        Basic evaluation: sum of piece values. White pieces add points,
+        black pieces subtract points.
         """
         score = 0
         for row in self.board:
@@ -221,98 +220,79 @@ class ChessBot:
         best_move = None
         best_score = float('-inf') if bot_side == 'white' else float('inf')
 
-        # (Optional) Attempt to find a checkmate move outright.
+        # Pick the move based on evaluation (including potential underpromotion).
         for move in moves:
-            if self.is_checkmate():
-                best_move = move
-                break
+            start_row, start_col, end_row, end_col = move
+            piece = self.board[start_row][start_col]
 
-        # --- BOT UNDERPROMOTION LOGIC ---
-        # Otherwise, pick a move based on evaluation.
-        if not best_move:
-            for move in moves:
-                start_row, start_col, end_row, end_col = move
-                piece = self.board[start_row][start_col]
+            # Make a copy of the board before simulating
+            board_copy = copy.deepcopy(self.board)
 
-                # We'll simulate each move on a copy. If it's a promotion move,
-                # the bot will try Q, R, B, N (or q, r, b, n) and pick whichever yields the best eval.
-                board_copy = copy.deepcopy(self.board)
-
-                # Normal move (no promotion)
-                def do_move_with_piece(prom_piece):
-                    self.board[start_row][start_col] = '.'
-                    self.board[end_row][end_col] = prom_piece
-                    return self.evaluate_position()
-
-                if (piece == 'P' and end_row == 0) or (piece == 'p' and end_row == 7):
-                    # Potential promotion rank for the bot side.
-                    # Try all underpromotion possibilities + queen.
-                    # White's promotion pieces:
-                    if piece == 'P':
-                        promotion_options = ['Q', 'R', 'B', 'N']
-                    else:  # piece == 'p'
-                        promotion_options = ['q', 'r', 'b', 'n']
-
-                    best_promo_eval = float('-inf') if bot_side == 'white' else float('inf')
-                    best_promo_piece = promotion_options[0]
-
-                    for promo in promotion_options:
-                        copy_for_promo = copy.deepcopy(self.board)
-                        self.board[start_row][start_col] = '.'
-                        self.board[end_row][end_col] = promo
-                        promo_score = self.evaluate_position()
-                        # Revert to original board state for next attempt
-                        self.board = copy.deepcopy(copy_for_promo)
-
-                        # Maximize if white, minimize if black
-                        if bot_side == 'white' and promo_score > best_promo_eval:
-                            best_promo_eval = promo_score
-                            best_promo_piece = promo
-                        elif bot_side == 'black' and promo_score < best_promo_eval:
-                            best_promo_eval = promo_score
-                            best_promo_piece = promo
-
-                    # After testing all promotions, place the best one and get final eval.
-                    self.board = copy.deepcopy(board_copy)  # revert to pre-move state
-                    self.board[start_row][start_col] = '.'
-                    self.board[end_row][end_col] = best_promo_piece
-                    final_score = self.evaluate_position()
+            # If it's a promotion move, test all possible underpromotions + queen
+            if (piece == 'P' and end_row == 0) or (piece == 'p' and end_row == 7):
+                if piece == 'P':
+                    promo_list = ['Q', 'R', 'B', 'N']
                 else:
-                    # Normal, non-promotion move.
+                    promo_list = ['q', 'r', 'b', 'n']
+
+                best_promo_eval = float('-inf') if bot_side == 'white' else float('inf')
+                best_promo_piece = promo_list[0]
+
+                for promo in promo_list:
+                    promo_copy = copy.deepcopy(self.board)
                     self.board[start_row][start_col] = '.'
-                    self.board[end_row][end_col] = piece
-                    final_score = self.evaluate_position()
+                    self.board[end_row][end_col] = promo
+                    promo_score = self.evaluate_position()
+                    self.board = copy.deepcopy(promo_copy)
 
-                # Revert to original for next iteration.
+                    if bot_side == 'white' and promo_score > best_promo_eval:
+                        best_promo_eval = promo_score
+                        best_promo_piece = promo
+                    elif bot_side == 'black' and promo_score < best_promo_eval:
+                        best_promo_eval = promo_score
+                        best_promo_piece = promo
+
+                # After deciding on best promotion piece, place it and evaluate
                 self.board = copy.deepcopy(board_copy)
+                self.board[start_row][start_col] = '.'
+                self.board[end_row][end_col] = best_promo_piece
+                final_score = self.evaluate_position()
 
-                # Keep track of the best move for the bot side.
-                if bot_side == 'white' and final_score > best_score:
-                    best_score = final_score
-                    best_move = move
-                elif bot_side == 'black' and final_score < best_score:
-                    best_score = final_score
-                    best_move = move
+            else:
+                # Normal move: just place the piece and evaluate
+                self.board[start_row][start_col] = '.'
+                self.board[end_row][end_col] = piece
+                final_score = self.evaluate_position()
 
-        # Execute the chosen move (the make_move call will do normal or Queen-promotion by default).
-        # We'll also fix it so that if the best move is a promotion, the bot_move logic includes which piece was best.
+            # Revert to original
+            self.board = copy.deepcopy(board_copy)
+
+            # Track the best move found
+            if bot_side == 'white' and final_score > best_score:
+                best_score = final_score
+                best_move = move
+            elif bot_side == 'black' and final_score < best_score:
+                best_score = final_score
+                best_move = move
+
+        # Execute the best move
         if best_move:
-            # Re-run the logic to find which piece was best for promotions (if any).
             sr, sc, er, ec = best_move
             piece = self.board[sr][sc]
 
+            # Double-check if it's a promotion
             if (piece == 'P' and er == 0) or (piece == 'p' and er == 7):
-                # We need to figure out which promotion is best again.
+                # Re-run to find the best promotion piece
                 if piece == 'P':
-                    promotion_options = ['Q', 'R', 'B', 'N']
+                    promo_list = ['Q', 'R', 'B', 'N']
                 else:
-                    promotion_options = ['q', 'r', 'b', 'n']
+                    promo_list = ['q', 'r', 'b', 'n']
 
                 board_before = copy.deepcopy(self.board)
-                best_promo_piece = None
                 best_promo_eval = float('-inf') if bot_side == 'white' else float('inf')
+                best_promo_piece = promo_list[0]
 
-                for promo in promotion_options:
+                for promo in promo_list:
                     self.board[sr][sc] = '.'
                     self.board[er][ec] = promo
                     test_eval = self.evaluate_position()
@@ -325,24 +305,12 @@ class ChessBot:
                         best_promo_eval = test_eval
                         best_promo_piece = promo
 
-                # Now do final make_move with the best piece attached to the board.
+                # Manually finalize
                 self.board = copy.deepcopy(board_before)
                 self.board[sr][sc] = '.'
                 self.board[er][ec] = best_promo_piece
-                # We'll just manually finalize the board state and call record_position, etc.
-                # or we can do a mini version of make_move() logic specifically for promotions.
-                captured_piece = None
-                if board_before[er][ec] != '.':
-                    captured_piece = board_before[er][ec]
-
-                # Update king position if a king has moved (shouldn't happen with a promotion, but just in case)
-                if piece == 'K':
-                    self.king_positions['white'] = (er, ec)
-                elif piece == 'k':
-                    self.king_positions['black'] = (er, ec)
-
-                # En passant update, halfmove clock, etc.  (we replicate the key bits from make_move)
-                if piece.lower() == 'p' or captured_piece:
+                # Minimal version of make_move logic
+                if piece.lower() == 'p':
                     self.halfmove_clock = 0
                 else:
                     self.halfmove_clock += 1
@@ -352,15 +320,13 @@ class ChessBot:
                 print(f"Bot promotes to {best_promo_piece}!")
                 print(f"Bot plays: {self.convert_to_algebraic(best_move)}")
             else:
-                # Normal move if no promotion was necessary.
                 self.make_move(best_move)
                 print(f"Bot plays: {self.convert_to_algebraic(best_move)}")
 
     def make_move(self, move):
         """
         Execute the given move and update the game state.
-        (Supports normal moves, castling, en passant, and user-oriented promotions.)
-        Bot underpromotion logic is done in bot_move().
+        (Supports normal moves, castling, en passant, and user promotions.)
         """
         if isinstance(move, tuple) and len(move) == 3 and move[0] == "castle":
             _, turn, side = move
@@ -370,19 +336,15 @@ class ChessBot:
 
         start_row, start_col, end_row, end_col = move
         piece = self.board[start_row][start_col]
-
         if piece == '.':
             raise ValueError("Invalid move: No piece to move.")
 
-        # Move the piece
         self.board[start_row][start_col] = '.'
         self.board[end_row][end_col] = piece
 
-        # Check if this was a capture or a pawn move
-        is_capture = (self.board[end_row][end_col] != '.') and (start_row, start_col) != (end_row, end_col)
         captured_piece = None
-        if start_row != end_row or start_col != end_col:
-            captured_piece = self.board[end_row][end_col] if board_copy_check(self, start_row, start_col, end_row, end_col) else None
+        if board_copy_check(self, start_row, start_col, end_row, end_col):
+            captured_piece = piece
 
         # Update king position if a king has moved
         if piece == 'K':
@@ -395,13 +357,12 @@ class ChessBot:
             if (end_row, end_col) == self.en_passant_target:
                 if piece == 'P':
                     self.board[end_row + 1][end_col] = '.'
-                    captured_piece = 'p'  # black pawn captured
+                    captured_piece = 'p'
                 else:
                     self.board[end_row - 1][end_col] = '.'
-                    captured_piece = 'P'  # white pawn captured
+                    captured_piece = 'P'
 
-        # USER promotion logic (for the human, if they're the one moving pawns):
-        # If it's the bot, we've handled that in bot_move(). But let's keep user promotion here as is.
+        # User promotion logic (bot promotions handled in bot_move)
         if piece == 'P' and end_row == 0:
             if self.turn == self.user_side == 'white':
                 promotion_piece = ''
@@ -409,9 +370,7 @@ class ChessBot:
                     promotion_piece = input("Promote to (Q, R, B, N)? ").strip().upper()
                 self.board[end_row][end_col] = promotion_piece
             else:
-                # By default, user code made a promotion to 'Q' for the bot, but we now do it in bot_move().
                 self.board[end_row][end_col] = 'Q'
-
         elif piece == 'p' and end_row == 7:
             if self.turn == self.user_side == 'black':
                 promotion_piece = ''
@@ -427,7 +386,7 @@ class ChessBot:
         else:
             self.en_passant_target = None
 
-        # Update castling rights if relevant pieces moved
+        # Update castling rights
         if piece == 'K':
             self.castling_rights['white']['kingside'] = False
             self.castling_rights['white']['queenside'] = False
@@ -435,30 +394,30 @@ class ChessBot:
             self.castling_rights['black']['kingside'] = False
             self.castling_rights['black']['queenside'] = False
         elif piece == 'R':
-            if start_row == 7 and start_col == 0:
-                self.castling_rights['white']['queenside'] = False
-            elif start_row == 7 and start_col == 7:
-                self.castling_rights['white']['kingside'] = False
+            if start_row == 7 and start_col in [0, 7]:
+                if start_col == 0:
+                    self.castling_rights['white']['queenside'] = False
+                else:
+                    self.castling_rights['white']['kingside'] = False
         elif piece == 'r':
-            if start_row == 0 and start_col == 0:
-                self.castling_rights['black']['queenside'] = False
-            elif start_row == 0 and start_col == 7:
-                self.castling_rights['black']['kingside'] = False
+            if start_row == 0 and start_col in [0, 7]:
+                if start_col == 0:
+                    self.castling_rights['black']['queenside'] = False
+                else:
+                    self.castling_rights['black']['kingside'] = False
 
-        # Update halfmove clock for the fifty-move rule
+        # Update halfmove clock for fifty-move rule
         if piece.lower() == 'p' or captured_piece:
             self.halfmove_clock = 0
         else:
             self.halfmove_clock += 1
 
-        # Record the new position for threefold repetition
         self.record_position()
 
     def execute_castling(self, turn, side):
         """Physically execute castling for the given side (kingside or queenside)."""
         if turn == 'white':
             row = 7
-            # Kingside
             if side == 'kingside':
                 self.board[row][4] = '.'
                 self.board[row][6] = 'K'
@@ -477,7 +436,6 @@ class ChessBot:
                 self.castling_rights['white']['queenside'] = False
         else:
             row = 0
-            # Kingside
             if side == 'kingside':
                 self.board[row][4] = '.'
                 self.board[row][6] = 'k'
@@ -498,7 +456,7 @@ class ChessBot:
     def parse_move(self, move_str):
         """
         Parse user move (e.g. 'e2 e4', 'O-O', 'O-O-O'), returning a move tuple if valid.
-        Returns None if invalid or illegal.
+        Returns None if invalid.
         """
         move_str = move_str.strip()
 
@@ -512,9 +470,9 @@ class ChessBot:
                 return ("castle", self.turn, "queenside")
             return None
 
-        # Parse normal moves like "e2 e4"
+        # Parse moves like "e2 e4"
         try:
-            start, end = move_str.strip().split()
+            start, end = move_str.split()
             start_row = 8 - int(start[1])
             start_col = ord(start[0].lower()) - ord('a')
             end_row = 8 - int(end[1])
@@ -530,43 +488,38 @@ class ChessBot:
     def record_position(self):
         """
         Record the current position in position_counts for threefold repetition.
-        The position key should include:
-            - board layout
-            - active player (turn)
-            - castling rights
-            - en_passant_target
+        The position key includes board layout, turn, castling rights, and en passant.
         """
         pos_key = self.create_position_key()
         self.position_counts[pos_key] += 1
 
     def create_position_key(self):
         """
-        Create a string that uniquely identifies the position for repetition tracking.
-        Includes board, turn, castling rights, and en passant target.
+        Create a string that uniquely identifies the position for repetition tracking:
+        - board
+        - active player
+        - castling rights
+        - en_passant_target
         """
-        board_str = []
-        for row in self.board:
-            board_str.append(''.join(row))
-        board_str = '/'.join(board_str)
+        rows_joined = [''.join(row) for row in self.board]
+        board_str = '/'.join(rows_joined)
 
-        castling_str = []
+        castling_info = []
         for side in ['white', 'black']:
             rights = self.castling_rights[side]
-            castling_str.append(f"{side[0]}K{rights['kingside']}Q{rights['queenside']}")
+            castling_info.append(f"{side[0]}K{rights['kingside']}Q{rights['queenside']}")
 
         ep_str = str(self.en_passant_target) if self.en_passant_target else '-'
         turn_str = self.turn[0]  # 'w' or 'b'
 
-        # Combine everything
-        return f"{board_str} {turn_str} {' '.join(castling_str)} {ep_str}"
+        return f"{board_str} {turn_str} {' '.join(castling_info)} {ep_str}"
 
     def check_draw_conditions(self):
         """
-        Check the three newly-added draw conditions:
+        Check:
           1) Threefold repetition
           2) Fifty-move rule
           3) Insufficient material
-        Return True if any of them is triggered, else False.
         """
         # 1) Threefold repetition
         pos_key = self.create_position_key()
@@ -590,11 +543,9 @@ class ChessBot:
         """
         Check if neither side can force a checkmate based on material:
           - King vs King
-          - King + (Bishop or Knight) vs King
-          - King vs King + (Bishop or Knight)
-          (Advanced checks like K+B vs K+B on same color squares can be added if desired.)
+          - King + (B or N) vs King
+          - King vs King + (B or N)
         """
-        # Gather pieces
         white_pieces = []
         black_pieces = []
         for row in self.board:
@@ -604,21 +555,16 @@ class ChessBot:
                 elif piece.islower():
                     black_pieces.append(piece)
 
-        # If only kings remain
+        # King vs King
         if set(white_pieces) == {'K'} and set(black_pieces) == {'k'}:
             return True
 
-        # Allowed single minor piece sets:
-        # E.g., white has only King or King+one minor piece, black has only King or King+one minor piece
-        # Define all minor pieces we allow:
-        minor_pieces_white = set(['K', 'N', 'B'])
-        minor_pieces_black = set(['k', 'n', 'b'])
+        # Check for King + single minor
+        minor_white = set(['K', 'N', 'B'])
+        minor_black = set(['k', 'n', 'b'])
 
-        # Check white
-        if all(p in minor_pieces_white for p in white_pieces) and \
-           all(p in minor_pieces_black for p in black_pieces):
-            # White can't have more than 2 pieces total if it's only K plus (B or N).
-            # Black can't have more than 2 pieces total if it's only k plus (b or n).
+        if (all(p in minor_white for p in white_pieces)
+                and all(p in minor_black for p in black_pieces)):
             if len(white_pieces) <= 2 and len(black_pieces) <= 2:
                 return True
 
@@ -626,11 +572,8 @@ class ChessBot:
 
     def is_castling_legal(self, turn, side):
         """
-        Check the basic castling conditions:
-          - King and rook haven't moved.
-          - No pieces in between.
-          - King not in check.
-          - King does not pass through or end up on a square under attack.
+        Check that king/rook haven't moved, no pieces in between,
+        king not in check, etc.
         """
         if not self.castling_rights[turn][side]:
             return False
@@ -639,11 +582,8 @@ class ChessBot:
         king_pos_required = (row, 4)
         opponent_turn = 'black' if turn == 'white' else 'white'
 
-        # Ensure king is on e1 (white) or e8 (black)
         if self.king_positions[turn] != king_pos_required:
             return False
-
-        # If king is currently in check, can't castle
         if self.is_in_check(turn):
             return False
 
@@ -666,7 +606,7 @@ class ChessBot:
 
     def convert_to_algebraic(self, move):
         """
-        Convert move tuples back to standard algebraic notation (e.g., (6,4,4,4) -> 'e2 e4').
+        Convert move tuples back to standard notation. e.g. (6,4,4,4) -> 'e2 e4'.
         For castling, return 'O-O' or 'O-O-O'.
         """
         if isinstance(move, tuple) and move[0] == "castle":
@@ -679,26 +619,27 @@ class ChessBot:
         return f"{start} {end}"
 
     def is_in_check(self, turn):
-        """Return True if the 'turn' player's king is in check."""
+        """True if the 'turn' player's king is in check."""
         king_pos = self.king_positions[turn]
         opponent_turn = 'black' if turn == 'white' else 'white'
         return self.is_under_attack(king_pos[0], king_pos[1], opponent_turn)
 
     def is_checkmate(self):
-        """Return True if the current player is in checkmate."""
+        """True if current player is in checkmate."""
         if self.is_in_check(self.turn):
             moves = self.generate_all_moves(self.turn, validate_check=True)
             return len(moves) == 0
         return False
 
     def is_stalemate(self):
-        """Return True if the current player is stalemated."""
+        """True if current player is stalemated."""
         return not self.is_in_check(self.turn) and not self.generate_all_moves(self.turn)
 
     def play(self):
         """
-        Main game loop: user chooses a side, then we alternate between user and bot.
-        We also check for draws every turn: threefold repetition, 50-move rule, and insufficient material.
+        Main game loop: user picks side, alternate turns between user and bot.
+        Check for draws each move: threefold repetition, 50-move rule,
+        insufficient material, etc.
         """
         while True:
             user_side = input("Do you want to play as 'white' or 'black'? ").strip().lower()
@@ -710,15 +651,12 @@ class ChessBot:
             print("Invalid choice. Please type 'white' or 'black'.")
 
         self.turn = 'white'
-        # Record the initial position before moves start
         self.record_position()
         self.print_board()
 
         while True:
-            # Check immediate draw conditions (e.g. after each move, we see if the position repeated)
             if self.check_draw_conditions():
                 break
-
             if self.is_checkmate():
                 print(f"Checkmate! {'White' if self.turn == 'black' else 'Black'} wins.")
                 break
@@ -729,7 +667,8 @@ class ChessBot:
             if self.turn == self.user_side:
                 move_str = input("Enter your move (e.g., 'e2 e4', 'O-O', or 'O-O-O') or 'resign': ").strip()
                 if move_str.lower() == 'resign':
-                    print(f"{self.user_side.capitalize()} resigns. {('white' if self.user_side=='black' else 'black').capitalize()} wins!")
+                    winner = 'white' if self.user_side == 'black' else 'black'
+                    print(f"{self.user_side.capitalize()} resigns. {winner.capitalize()} wins!")
                     break
 
                 parsed_move = self.parse_move(move_str)
@@ -745,26 +684,17 @@ class ChessBot:
             else:
                 self.bot_move(bot_side)
 
-            # Switch turn
             self.turn = 'black' if self.turn == 'white' else 'white'
             self.print_board()
-
-            # Check for draw conditions again after the move
-            if self.check_draw_conditions():
-                break
 
         time.sleep(5)
 
 
 def board_copy_check(chessbot, sr, sc, er, ec):
     """
-    Returns True if the destination cell (er, ec) was occupied prior to the move,
-    so we know if a capture occurred. The board has already been overwritten in make_move().
+    Returns True if (er, ec) was occupied prior to the move,
+    so that we know if a capture occurred.
     """
-    # We'll do a quick check: if it wasn't '.' on the original board, it was a capture.
-    # But by the time this is called, the board's cell (er, ec) has the moving piece.
-    # We can rely on the 'board_before' we copy in the logic (where relevant).
-    # For the sake of minimal changes, we keep a placeholder that returns True if the cell wasn't empty.
     return chessbot.board[er][ec] != '.'
 
 
