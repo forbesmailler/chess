@@ -204,37 +204,72 @@ class ChessBot:
 
     def evaluate_position(self):
         """
-        IMPROVED EVALUATION FUNCTION:
-        1. Check immediate checkmate/stalemate (highest priority).
-        2. Material sum (existing logic).
+        ADVANCED EVALUATION FUNCTION:
+        1. Immediate checkmate/draw checks (highest priority).
+        2. Material sum.
         3. Mobility.
+        4. Bishop pair bonus.
+        5. Advanced pawns bonus.
         """
-        # --- 1. CHECKMATE/STALEMATE CHECKS ---
-        # We'll do a quick local check. If it's the current player's turn:
-        if self.is_checkmate():
-            # The side to move is checkmated => huge negative from their perspective
-            if self.turn == 'white':
-                return -9999  # White checkmated => losing
-            else:
-                return 9999   # Black checkmated => from White's perspective, big positive => so from Black's perspective, big negative => we invert
-        if self.is_stalemate():
-            # Stalemate => it's a draw => 0
-            return 0
 
-        # --- 2. MATERIAL ---
+        # 1. Checkmate and Stalemate
+        if self.is_checkmate():
+            # The side to move is checkmated => big negative from their perspective
+            return -9999 if self.turn == 'white' else 9999
+        if self.check_draw_conditions():
+            return 0  # Draw
+
+        # 2. Material
         material_score = 0
+        bishop_count_white = 0
+        bishop_count_black = 0
         for row in self.board:
             for piece in row:
                 material_score += self.piece_values.get(piece, 0)
+                # Track bishops to detect "bishop pair"
+                if piece == 'B':
+                    bishop_count_white += 1
+                elif piece == 'b':
+                    bishop_count_black += 1
 
-        # --- 3. MOBILITY ---
+        # 3. Mobility
         white_moves = self.generate_all_moves('white', validate_check=False)
         black_moves = self.generate_all_moves('black', validate_check=False)
         mobility_score = (len(white_moves) - len(black_moves)) * 0.1
 
-        total_score = material_score + mobility_score
+        # 4. Bishop Pair Bonus
+        # If either side has 2 or more bishops, that side gets a small bonus.
+        BISHOP_PAIR_BONUS = 0.5
+        bishop_pair_score = 0
+        if bishop_count_white >= 2:
+            bishop_pair_score += BISHOP_PAIR_BONUS
+        if bishop_count_black >= 2:
+            bishop_pair_score -= BISHOP_PAIR_BONUS
 
-        # If black to move, invert sign, so a "positive" White advantage becomes negative if it's black's viewpoint
+        # 5. Advanced Pawns
+        # Simple approach: for each White pawn, add 0.1 * row advance; for each Black pawn, subtract 0.1 * row.
+        # White pawns are advanced if they're on row < 6, 5, etc. (Remember row 7 is the back rank, row 0 is top.)
+        ADVANCED_PAWN_BONUS = 0.1
+        advanced_pawn_score = 0
+        for row_idx in range(8):
+            for col_idx in range(8):
+                piece = self.board[row_idx][col_idx]
+                if piece == 'P':
+                    # The further up the board for White: row_idx = 7 (start), row_idx=0 (promote)
+                    # We'll give a bonus for smaller row_idx => advanced
+                    # e.g. row=6 => (7-6)=1 => 0.1, row=5 => 0.2, row=4 => 0.3, etc.
+                    # This is just one approach; you can invert it if you prefer
+                    distance_from_start = 7 - row_idx
+                    advanced_pawn_score += ADVANCED_PAWN_BONUS * distance_from_start
+                elif piece == 'p':
+                    # For Black, row_idx=0 (start), row_idx=7 (promote)
+                    distance_from_start = row_idx
+                    advanced_pawn_score -= ADVANCED_PAWN_BONUS * distance_from_start
+
+        # Combine sub-scores
+        total_score = material_score + mobility_score + bishop_pair_score + advanced_pawn_score
+
+        # If black to move, invert sign so White advantage becomes negative from Black's viewpoint
         if self.turn == 'black':
             total_score = -total_score
 
@@ -538,62 +573,6 @@ class ChessBot:
 
         return f"{board_str} {turn_str} {' '.join(castling_info)} {ep_str}"
 
-    def check_draw_conditions(self):
-        """
-        Check:
-          1) Threefold repetition
-          2) Fifty-move rule
-          3) Insufficient material
-        """
-        # 1) Threefold repetition
-        pos_key = self.create_position_key()
-        if self.position_counts[pos_key] >= 3:
-            print("Draw by threefold repetition!")
-            return True
-
-        # 2) Fifty-move rule
-        if self.halfmove_clock >= 50:
-            print("Draw by fifty-move rule!")
-            return True
-
-        # 3) Insufficient material
-        if self.is_insufficient_material():
-            print("Draw by insufficient material!")
-            return True
-
-        return False
-
-    def is_insufficient_material(self):
-        """
-        Check if neither side can force a checkmate based on material:
-          - King vs King
-          - King + (B or N) vs King
-          - King vs King + (B or N)
-        """
-        white_pieces = []
-        black_pieces = []
-        for row in self.board:
-            for piece in row:
-                if piece.isupper():
-                    white_pieces.append(piece)
-                elif piece.islower():
-                    black_pieces.append(piece)
-
-        # King vs King
-        if set(white_pieces) == {'K'} and set(black_pieces) == {'k'}:
-            return True
-
-        # Check for King + single minor
-        minor_white = set(['K', 'N', 'B'])
-        minor_black = set(['k', 'n', 'b'])
-
-        if (all(p in minor_white for p in white_pieces)
-                and all(p in minor_black for p in black_pieces)):
-            if len(white_pieces) <= 2 and len(black_pieces) <= 2:
-                return True
-
-        return False
-
     def is_castling_legal(self, turn, side):
         """
         Check that king/rook haven't moved, no pieces in between,
@@ -654,6 +633,46 @@ class ChessBot:
             moves = self.generate_all_moves(self.turn, validate_check=True)
             return len(moves) == 0
         return False
+    
+    def check_draw_conditions(self):
+        return self.is_stalemate() or self.is_threefold_repetition() or self.is_fifty_move_rule() or self.is_insufficient_material()
+    
+    def is_threefold_repetition(self):
+        return self.position_counts[self.create_position_key()] >= 3
+        
+    def is_fifty_move_rule(self):
+        return self.halfmove_clock >= 50
+
+    def is_insufficient_material(self):
+        """
+        Check if neither side can force a checkmate based on material:
+          - King vs King
+          - King + (B or N) vs King
+          - King vs King + (B or N)
+        """
+        white_pieces = []
+        black_pieces = []
+        for row in self.board:
+            for piece in row:
+                if piece.isupper():
+                    white_pieces.append(piece)
+                elif piece.islower():
+                    black_pieces.append(piece)
+
+        # King vs King
+        if set(white_pieces) == {'K'} and set(black_pieces) == {'k'}:
+            return True
+
+        # Check for King + single minor
+        minor_white = set(['K', 'N', 'B'])
+        minor_black = set(['k', 'n', 'b'])
+
+        if (all(p in minor_white for p in white_pieces)
+                and all(p in minor_black for p in black_pieces)):
+            if len(white_pieces) <= 2 and len(black_pieces) <= 2:
+                return True
+
+        return False
 
     def is_stalemate(self):
         """True if current player is stalemated."""
@@ -679,13 +698,20 @@ class ChessBot:
         self.print_board()
 
         while True:
-            if self.check_draw_conditions():
-                break
             if self.is_checkmate():
                 print(f"Checkmate! {'White' if self.turn == 'black' else 'Black'} wins.")
                 break
             if self.is_stalemate():
                 print("Stalemate! It's a draw.")
+                break
+            if self.is_threefold_repetition():
+                print("Draw by threefold repetition!")
+                break
+            if self.is_fifty_move_rule():
+                print("Draw by fifty-move rule!")
+                break
+            if self.is_insufficient_material():
+                print("Draw by insufficient material!")
                 break
 
             if self.turn == self.user_side:
