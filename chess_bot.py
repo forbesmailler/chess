@@ -283,17 +283,7 @@ class ChessBot:
                     piece, bot_side, board_copy
                 )
 
-                # Now place the best promotion piece on board, evaluate
-                self.board = copy.deepcopy(board_copy)
-                self.board[start_row][start_col] = '.'
-                self.board[end_row][end_col] = best_promo_piece
-                final_score = self.evaluate_position()
-
-            else:
-                # Normal move
-                self.board[start_row][start_col] = '.'
-                self.board[end_row][end_col] = piece
-                final_score = self.evaluate_position()
+            final_score = self.simulate_two_ply(move, bot_side)
 
             # Revert
             self.board = copy.deepcopy(board_copy)
@@ -331,10 +321,92 @@ class ChessBot:
                 self.record_position()
 
                 print(f"Bot promotes to {best_promo_piece}!")
-                print(f"Bot plays: {self.convert_to_algebraic(best_move)}")
+        
+            self.make_move(best_move)
+            print(f"Bot plays: {self.convert_to_algebraic(best_move)}")
+
+    def simulate_two_ply(self, move, bot_side):
+        """
+        Apply 'move' for bot_side, then let the opponent pick its best move.
+        Return the final position evaluation (from White's perspective).
+        """
+        # 1. Save state for revert
+        board_copy = copy.deepcopy(self.board)
+        turn_save = self.turn
+        king_positions_save = self.king_positions.copy()
+        castling_rights_save = copy.deepcopy(self.castling_rights)
+        en_passant_save = self.en_passant_target
+        halfmove_clock_save = self.halfmove_clock
+
+        # 2. Make the bot's move
+        self.make_move(move)     # This updates self.board, self.turn, etc.
+        
+        opponent_side = 'black' if bot_side == 'white' else 'white'
+        # If no opponent moves => either checkmate or stalemate, so just evaluate
+        opponent_moves = self.generate_all_moves(opponent_side, validate_check=True)
+        if not opponent_moves:
+            final_eval = self.evaluate_position()
+            # revert
+            self.board = board_copy
+            self.turn = turn_save
+            self.king_positions = king_positions_save
+            self.castling_rights = castling_rights_save
+            self.en_passant_target = en_passant_save
+            self.halfmove_clock = halfmove_clock_save
+            return final_eval
+
+        # 3. Opponent picks best move *from opponent's perspective*
+        #    - If opponent is White, they maximize
+        #    - If opponent is Black, they minimize
+        best_eval_for_opponent = float('-inf') if opponent_side == 'white' else float('inf')
+        best_opponent_move = None
+
+        for op_move in opponent_moves:
+            # Save & apply
+            temp_board = copy.deepcopy(self.board)
+            temp_turn = self.turn
+            temp_king_pos = self.king_positions.copy()
+            temp_castling = copy.deepcopy(self.castling_rights)
+            temp_en_passant = self.en_passant_target
+            temp_halfmove = self.halfmove_clock
+
+            self.make_move(op_move)
+            current_eval = self.evaluate_position()
+
+            # Revert
+            self.board = temp_board
+            self.turn = temp_turn
+            self.king_positions = temp_king_pos
+            self.castling_rights = temp_castling
+            self.en_passant_target = temp_en_passant
+            self.halfmove_clock = temp_halfmove
+
+            # Opponent tries to produce a favorable eval for themselves
+            if opponent_side == 'white':
+                # Opponent is White => wants to MAXimize evaluation
+                if current_eval > best_eval_for_opponent:
+                    best_eval_for_opponent = current_eval
+                    best_opponent_move = op_move
             else:
-                self.make_move(best_move)
-                print(f"Bot plays: {self.convert_to_algebraic(best_move)}")
+                # Opponent is Black => wants to MINimize evaluation
+                if current_eval < best_eval_for_opponent:
+                    best_eval_for_opponent = current_eval
+                    best_opponent_move = op_move
+
+        # 4. Now we simulate applying that best_opponent_move for real,
+        #    evaluate the final position, revert, and return.
+        self.make_move(best_opponent_move)
+        final_eval = self.evaluate_position()
+
+        # Revert everything
+        self.board = board_copy
+        self.turn = turn_save
+        self.king_positions = king_positions_save
+        self.castling_rights = castling_rights_save
+        self.en_passant_target = en_passant_save
+        self.halfmove_clock = halfmove_clock_save
+
+        return final_eval
 
     def choose_best_promotion(self, start_row, start_col, end_row, end_col,
                             piece, bot_side, board_before):
@@ -385,15 +457,16 @@ class ChessBot:
 
         start_row, start_col, end_row, end_col = move
         piece = self.board[start_row][start_col]
+
         if piece == '.':
             raise ValueError("Invalid move: No piece to move.")
-
-        self.board[start_row][start_col] = '.'
-        self.board[end_row][end_col] = piece
 
         captured_piece = None
         if board_copy_check(self, start_row, start_col, end_row, end_col):
             captured_piece = piece
+
+        self.board[start_row][start_col] = '.'
+        self.board[end_row][end_col] = piece
 
         # Update king position if a king has moved
         if piece == 'K':
