@@ -58,8 +58,14 @@ class ChessBot:
         return 0 <= row < 8 and 0 <= col < 8
 
     def is_under_attack(self, row, col, opponent_turn):
-        opponent_moves = self.generate_all_moves(opponent_turn, validate_check=False)
-        return any(move[2] == (row, col) for move in opponent_moves)
+        """
+        Check if (row, col) is under attack by the opponent.
+        We generate *pseudo-legal* moves for the opponent (validate_check=False),
+        so we do NOT call does_move_leave_king_safe or is_in_check inside this!
+        """
+        opponent_pseudo_moves = self.generate_all_moves(opponent_turn, validate_check=False)
+        # If any of these moves can land on (row, col), that means (row, col) is attacked
+        return any( (r2 == row and c2 == col) for (_, _, r2, c2) in opponent_pseudo_moves )
     
     def get_piece_moves(self, piece, row, col):
         moves = []
@@ -132,23 +138,29 @@ class ChessBot:
 
         return moves
 
-
-
     def generate_all_moves(self, turn, validate_check=True):
+        """ Return all *legal* moves if validate_check=True, 
+            else return all *pseudo-legal* moves (no check test). 
+        """
         moves = []
         for row in range(8):
             for col in range(8):
                 piece = self.board[row][col]
+                # Check if piece color matches 'turn'
                 if (turn == 'white' and piece.isupper()) or (turn == 'black' and piece.islower()):
-                    piece_moves = self.get_piece_moves(piece, row, col)
-                    for move in piece_moves:
-                        if not self.is_within_bounds(move[2], move[3]):  # Check bounds
+                    pseudo_moves = self.get_piece_moves(piece, row, col)
+                    for move in pseudo_moves:
+                        # 1. Always skip out-of-bounds
+                        if not self.is_within_bounds(move[2], move[3]):
                             continue
-                        if validate_check and not self.does_move_leave_king_safe(move):
-                            continue
-                        moves.append(move)
-        return moves
 
+                        # 2. If we are validating check, skip moves leaving king in check
+                        if validate_check:
+                            if not self.does_move_leave_king_safe(move):
+                                continue
+                        moves.append(move)
+
+        return moves
 
 
     def does_move_leave_king_safe(self, move):
@@ -176,24 +188,36 @@ class ChessBot:
         """
         Makes the bot's move for the assigned side (white or black).
         """
-        moves = self.generate_all_moves(bot_side)
+        # Check for immediate checkmate
+        moves = self.generate_all_moves(bot_side, validate_check=True)
         best_move = None
         best_score = float('-inf') if bot_side == 'white' else float('inf')
 
+        # If there's a checkmate move, select it
         for move in moves:
             start_row, start_col, end_row, end_col = move
-            board_copy = copy.deepcopy(self.board)
-            self.board[start_row][start_col] = '.'
-            self.board[end_row][end_col] = board_copy[start_row][start_col]
-            score = self.evaluate_position()
-            if (bot_side == 'white' and score > best_score) or (bot_side == 'black' and score < best_score):
-                best_score = score
+            # Simulate the move to check if it results in checkmate
+            if self.is_checkmate():
                 best_move = move
-            self.board = board_copy  # Undo move
+                break
+
+        # If no checkmate move, evaluate normally
+        if not best_move:
+            for move in moves:
+                start_row, start_col, end_row, end_col = move
+                board_copy = copy.deepcopy(self.board)
+                self.board[start_row][start_col] = '.'
+                self.board[end_row][end_col] = board_copy[start_row][start_col]
+                score = self.evaluate_position()
+                if (bot_side == 'white' and score > best_score) or (bot_side == 'black' and score < best_score):
+                    best_score = score
+                    best_move = move
+                self.board = board_copy  # Undo move
 
         if best_move:
             self.make_move(best_move)
             print(f"Bot plays: {self.convert_to_algebraic(best_move)}")
+
 
     def make_move(self, move):
         """
@@ -284,16 +308,17 @@ class ChessBot:
         return self.is_under_attack(king_pos[0], king_pos[1], opponent_turn)
 
     def is_checkmate(self):
-        """Check if the current player is in checkmate."""
-        if self.is_in_check(self.turn) and not self.generate_all_moves(self.turn):
-            return True
+        # Check if the king is in check
+        if self.is_in_check(self.turn):
+            # Check if there are any valid moves to escape check
+            moves = self.generate_all_moves(self.turn, validate_check=True)
+            if moves is None or len(moves) == 0:  # If no moves are possible, it's checkmate
+                return True
         return False
 
 
     def is_stalemate(self):
-        if not self.is_in_check(self.turn) and not self.generate_all_moves(self.turn):
-            return True
-        return False
+        return not self.is_in_check(self.turn) and not self.generate_all_moves(self.turn)
 
     def play(self):
         """
@@ -314,8 +339,7 @@ class ChessBot:
 
         while True:
             if self.is_checkmate():
-                print(f"Checkmate! {self.turn} loses.")
-                print(f"{'White' if self.turn == 'black' else 'Black'} wins!")
+                print(f"Checkmate! {'White' if self.turn == 'black' else 'Black'} wins.")
                 break
             if self.is_stalemate():
                 print("Stalemate! It's a draw.")
@@ -333,8 +357,11 @@ class ChessBot:
                     print("Invalid move. Try again.")
                     continue
             else:  # Bot's turn
-                print("Bot is thinking...")
                 self.bot_move(bot_side)
 
             self.turn = 'black' if self.turn == 'white' else 'white'
             self.print_board()
+
+if __name__ == "__main__":
+    bot = ChessBot()
+    bot.play()
