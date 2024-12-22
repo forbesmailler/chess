@@ -205,27 +205,36 @@ class ChessBot:
     def evaluate_position(self):
         """
         IMPROVED EVALUATION FUNCTION:
-        1. Material sum (existing logic).
-        2. Mobility: count how many pseudo-legal moves each side has (validate_check=False).
-           White gets a small bonus for more mobility; Black gets a small penalty, etc.
+        1. Check immediate checkmate/stalemate (highest priority).
+        2. Material sum (existing logic).
+        3. Mobility.
         """
-        # 1. Material
+        # --- 1. CHECKMATE/STALEMATE CHECKS ---
+        # We'll do a quick local check. If it's the current player's turn:
+        if self.is_checkmate():
+            # The side to move is checkmated => huge negative from their perspective
+            if self.turn == 'white':
+                return -9999  # White checkmated => losing
+            else:
+                return 9999   # Black checkmated => from White's perspective, big positive => so from Black's perspective, big negative => we invert
+        if self.is_stalemate():
+            # Stalemate => it's a draw => 0
+            return 0
+
+        # --- 2. MATERIAL ---
         material_score = 0
         for row in self.board:
             for piece in row:
                 material_score += self.piece_values.get(piece, 0)
 
-        # 2. Mobility
+        # --- 3. MOBILITY ---
         white_moves = self.generate_all_moves('white', validate_check=False)
         black_moves = self.generate_all_moves('black', validate_check=False)
         mobility_score = (len(white_moves) - len(black_moves)) * 0.1
 
-        # Combine the scores from White's perspective
         total_score = material_score + mobility_score
 
-        # If it's currently Black's turn, we invert the score 
-        # so that a "positive" position from White's perspective 
-        # becomes negative for Black's perspective, and vice versa.
+        # If black to move, invert sign, so a "positive" White advantage becomes negative if it's black's viewpoint
         if self.turn == 'black':
             total_score = -total_score
 
