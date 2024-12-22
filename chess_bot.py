@@ -225,7 +225,16 @@ class ChessBot:
             print(f"Bot plays: {self.convert_to_algebraic(best_move)}")
 
     def make_move(self, move):
-        """Execute the given move and update the game state."""
+        """
+        Execute the given move and update the game state.
+        (Supports normal moves, castling, en passant, AND multi-piece pawn promotion.)
+        """
+        # Handle castling first
+        if isinstance(move, tuple) and len(move) == 3 and move[0] == "castle":
+            _, turn, side = move
+            self.execute_castling(turn, side)
+            return
+
         start_row, start_col, end_row, end_col = move
         piece = self.board[start_row][start_col]
 
@@ -250,11 +259,36 @@ class ChessBot:
                 else:
                     self.board[end_row - 1][end_col] = '.'
 
-        # Pawn promotion
+        # ----------------------
+        #   FLEXIBLE PROMOTION
+        # ----------------------
+        # White pawn reached row 0
         if piece == 'P' and end_row == 0:
-            self.board[end_row][end_col] = 'Q'
+            # If it's the user's turn (and they're white), prompt for the promotion piece
+            if self.turn == self.user_side == 'white':
+                promotion_piece = ''
+                # Keep asking until user chooses a valid piece
+                while promotion_piece not in ['Q', 'R', 'B', 'N']:
+                    promotion_piece = input("Promote to (Q, R, B, N)? ").strip().upper()
+                self.board[end_row][end_col] = promotion_piece
+            else:
+                # If the bot is promoting, just choose a Queen by default
+                # Or implement your own logic
+                self.board[end_row][end_col] = 'Q'
+
+        # Black pawn reached row 7
         elif piece == 'p' and end_row == 7:
-            self.board[end_row][end_col] = 'q'
+            # If it's the user's turn (and they're black), prompt for the promotion piece
+            if self.turn == self.user_side == 'black':
+                promotion_piece = ''
+                # Keep asking until user chooses a valid piece
+                # (lowercase for black: q, r, b, n)
+                while promotion_piece not in ['q', 'r', 'b', 'n']:
+                    promotion_piece = input("Promote to (q, r, b, n)? ").strip().lower()
+                self.board[end_row][end_col] = promotion_piece
+            else:
+                # If the bot is promoting, auto-promote to queen
+                self.board[end_row][end_col] = 'q'
 
         # Update en passant target
         if piece in ('P', 'p') and abs(start_row - end_row) == 2:
@@ -280,8 +314,75 @@ class ChessBot:
             elif start_row == 0 and start_col == 7:
                 self.castling_rights['black']['kingside'] = False
 
+    def execute_castling(self, turn, side):
+        """
+        Physically move the king and rook for castling.
+        White: king at (7,4), black: king at (0,4).
+        """
+        if turn == 'white':
+            row, king_col = 7, 4
+            if side == 'kingside':
+                # King goes e1 -> g1, Rook h1 -> f1
+                self.board[row][4] = '.'
+                self.board[row][6] = 'K'  # White king
+                self.board[row][7] = '.'
+                self.board[row][5] = 'R'
+                self.king_positions['white'] = (7, 6)
+                # Update castling rights
+                self.castling_rights['white']['kingside'] = False
+                self.castling_rights['white']['queenside'] = False
+            else:  # queenside
+                # King e1 -> c1, Rook a1 -> d1
+                self.board[row][4] = '.'
+                self.board[row][2] = 'K'
+                self.board[row][0] = '.'
+                self.board[row][3] = 'R'
+                self.king_positions['white'] = (7, 2)
+                self.castling_rights['white']['kingside'] = False
+                self.castling_rights['white']['queenside'] = False
+        else:
+            row, king_col = 0, 4
+            if side == 'kingside':
+                # King e8 -> g8, Rook h8 -> f8
+                self.board[row][4] = '.'
+                self.board[row][6] = 'k'
+                self.board[row][7] = '.'
+                self.board[row][5] = 'r'
+                self.king_positions['black'] = (0, 6)
+                self.castling_rights['black']['kingside'] = False
+                self.castling_rights['black']['queenside'] = False
+            else:  # queenside
+                # King e8 -> c8, Rook a8 -> d8
+                self.board[row][4] = '.'
+                self.board[row][2] = 'k'
+                self.board[row][0] = '.'
+                self.board[row][3] = 'r'
+                self.king_positions['black'] = (0, 2)
+                self.castling_rights['black']['kingside'] = False
+                self.castling_rights['black']['queenside'] = False
+
     def parse_move(self, move_str):
-        """Parse algebraic notation (e.g., 'e2 e4') into board coordinates."""
+        """Parse user move, including castling if input is 'O-O' or 'O-O-O'."""
+        move_str = move_str.strip()
+
+        # First, check if this is a castling command
+        if move_str in ('O-O', 'o-o'):
+            # User requests kingside castling
+            # We'll return a special tuple meaning "castle, turn, kingside".
+            if self.is_castling_legal(self.turn, 'kingside'):
+                return ("castle", self.turn, "kingside")
+            else:
+                return None
+
+        if move_str in ('O-O-O', 'o-o-o'):
+            # User requests queenside castling
+            # We'll return a special tuple meaning "castle, turn, queenside".
+            if self.is_castling_legal(self.turn, 'queenside'):
+                return ("castle", self.turn, "queenside")
+            else:
+                return None
+
+        # Otherwise, parse a normal move, e.g. "e2 e4"
         try:
             start, end = move_str.strip().split()
             start_row = 8 - int(start[1])
@@ -293,10 +394,61 @@ class ChessBot:
                 return (start_row, start_col, end_row, end_col)
         except:
             pass
+
         return None
+
+    def is_castling_legal(self, turn, side):
+        """
+        Check basic castling conditions:
+          - King and rook haven't moved (based on self.castling_rights).
+          - No pieces in between.
+          - King not in check, and doesn't pass through or land on an attacked square.
+        """
+        if not self.castling_rights[turn][side]:
+            return False
+
+        row = 7 if turn == 'white' else 0
+        king_piece = 'K' if turn == 'white' else 'k'
+        opponent_turn = 'black' if turn == 'white' else 'white'
+
+        # Make sure the king is on the correct square
+        if self.king_positions[turn] != (row, 4):
+            return False
+
+        # If the king is currently in check, can't castle
+        if self.is_in_check(turn):
+            return False
+
+        if side == 'kingside':
+            # Check squares f, g (i.e., (row,5), (row,6)) are empty
+            if self.board[row][5] != '.' or self.board[row][6] != '.':
+                return False
+            # Also ensure king won't pass through an attacked square
+            # Check squares (row,5) and (row,6)
+            if self.is_under_attack(row, 5, opponent_turn) or \
+               self.is_under_attack(row, 6, opponent_turn):
+                return False
+        else:
+            # Check squares b, c, d (i.e., (row,1), (row,2), (row,3)) for emptiness
+            if self.board[row][1] != '.' or self.board[row][2] != '.' or self.board[row][3] != '.':
+                return False
+            # Also ensure squares (row,3) and (row,2) not attacked
+            if self.is_under_attack(row, 3, opponent_turn) or \
+               self.is_under_attack(row, 2, opponent_turn):
+                return False
+
+        return True
 
     def convert_to_algebraic(self, move):
         """Convert board coordinates back to standard algebraic notation."""
+        # If castling move, just say "O-O" or "O-O-O"
+        if isinstance(move, tuple) and move[0] == "castle":
+            _, turn, side = move
+            if side == 'kingside':
+                return "O-O"
+            else:
+                return "O-O-O"
+
         sr, sc, er, ec = move
         start = f"{chr(sc + ord('a'))}{8 - sr}"
         end = f"{chr(ec + ord('a'))}{8 - er}"
@@ -345,13 +497,19 @@ class ChessBot:
                 break
 
             if self.turn == user_side:
-                move_str = input("Enter your move (e.g., 'e2 e4') or 'resign': ").strip()
+                move_str = input("Enter your move (e.g., 'e2 e4', 'O-O', or 'O-O-O') or 'resign': ").strip()
                 if move_str.lower() == 'resign':
                     print(f"{user_side.capitalize()} resigns. {bot_side.capitalize()} wins!")
                     break
                 parsed_move = self.parse_move(move_str)
                 user_moves = self.generate_all_moves(user_side)
-                if parsed_move in user_moves:
+                
+                # In case of castling, parsed_move is ("castle", turn, side),
+                # so we need to add that "pseudo-move" to valid moves or check separately:
+                if isinstance(parsed_move, tuple) and parsed_move and parsed_move[0] == "castle":
+                    # If parse_move returned a valid castling move, just make it
+                    self.make_move(parsed_move)
+                elif parsed_move in user_moves:
                     self.make_move(parsed_move)
                 else:
                     print("Invalid move. Try again.")
@@ -361,6 +519,7 @@ class ChessBot:
 
             self.turn = 'black' if self.turn == 'white' else 'white'
             self.print_board()
+
 
 if __name__ == "__main__":
     bot = ChessBot()
