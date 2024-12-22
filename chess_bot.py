@@ -234,34 +234,50 @@ class ChessBot:
         3. Mobility.
         4. Bishop pair bonus.
         5. Advanced pawns bonus.
+        6. Pawn structure penalties (doubled, isolated).
+        7. Rooks on open/semi-open files bonus.
+        8. King safety.
+
+        The final score is from White's perspective:
+        - Positive => good for White
+        - Negative => good for Black
         """
 
-        # 1. Checkmate and Stalemate
+        # -----------------------------
+        # 1. Checkmate and draw checks
+        # -----------------------------
         if self.is_checkmate():
             # The side to move is checkmated => big negative from their perspective
             return -9999 if self.turn == 'white' else 9999
         if self.check_draw_conditions():
             return 0  # Draw
 
-        # 2. Material
+        # -----------------------
+        # 2. Material evaluation
+        # -----------------------
         material_score = 0
         bishop_count_white = 0
         bishop_count_black = 0
+
         for row in self.board:
             for piece in row:
                 material_score += self.piece_values.get(piece, 0)
-                # Track bishops to detect "bishop pair"
+                # Count bishops to track bishop pair bonus
                 if piece == 'B':
                     bishop_count_white += 1
                 elif piece == 'b':
                     bishop_count_black += 1
 
+        # ----------------
         # 3. Mobility
+        # ----------------
         white_moves = self.generate_all_moves('white', validate_check=False)
         black_moves = self.generate_all_moves('black', validate_check=False)
         mobility_score = (len(white_moves) - len(black_moves)) * 0.1
 
-        # 4. Bishop Pair Bonus
+        # -------------------------
+        # 4. Bishop pair bonus
+        # -------------------------
         BISHOP_PAIR_BONUS = 0.5
         bishop_pair_score = 0
         if bishop_count_white >= 2:
@@ -269,9 +285,12 @@ class ChessBot:
         if bishop_count_black >= 2:
             bishop_pair_score -= BISHOP_PAIR_BONUS
 
-        # 5. Advanced Pawns
+        # --------------------------
+        # 5. Advanced Pawns bonus
+        # --------------------------
         ADVANCED_PAWN_BONUS = 0.1
         advanced_pawn_score = 0
+
         for row_idx in range(8):
             for col_idx in range(8):
                 piece = self.board[row_idx][col_idx]
@@ -282,11 +301,185 @@ class ChessBot:
                     distance_from_start = row_idx
                     advanced_pawn_score -= ADVANCED_PAWN_BONUS * distance_from_start
 
-        # Combine sub-scores
-        return (material_score
-                + mobility_score
-                + bishop_pair_score
-                + advanced_pawn_score)
+        # -------------------------------------------------
+        # 6. Pawn structure: penalize doubled/isolated pawns
+        # -------------------------------------------------
+        pawn_structure_score = self.evaluate_pawn_structure()
+
+        # --------------------------------------
+        # 7. Rooks on open or semi-open files
+        # --------------------------------------
+        rooks_on_open_files_score = self.evaluate_rooks_on_open_files()
+
+        # --------------------
+        # 8. Simple King Safety
+        # --------------------
+        king_safety_score = self.evaluate_king_safety()
+
+        # Combine all sub-scores
+        total_evaluation = (
+            material_score
+            + mobility_score
+            + bishop_pair_score
+            + advanced_pawn_score
+            + pawn_structure_score
+            + rooks_on_open_files_score
+            + king_safety_score
+        )
+
+        return total_evaluation
+
+    def evaluate_pawn_structure(self):
+        """
+        Evaluate various pawn-structure elements:
+        - Doubled pawns
+        - Isolated pawns
+        A positive return value favors White, negative favors Black.
+        """
+        DOUBLED_PAWN_PENALTY = 0.2
+        ISOLATED_PAWN_PENALTY = 0.25
+
+        score = 0
+
+        # Identify pawns by files
+        # We'll keep track of White pawns and Black pawns per file
+        white_pawns_in_file = [0] * 8
+        black_pawns_in_file = [0] * 8
+
+        for row_idx in range(8):
+            for col_idx in range(8):
+                piece = self.board[row_idx][col_idx]
+                if piece == 'P':
+                    white_pawns_in_file[col_idx] += 1
+                elif piece == 'p':
+                    black_pawns_in_file[col_idx] += 1
+
+        # Calculate doubled pawns
+        for col_idx in range(8):
+            if white_pawns_in_file[col_idx] > 1:
+                score -= DOUBLED_PAWN_PENALTY * (white_pawns_in_file[col_idx] - 1)
+            if black_pawns_in_file[col_idx] > 1:
+                score += DOUBLED_PAWN_PENALTY * (black_pawns_in_file[col_idx] - 1)
+
+        # Check for isolated pawns (no pawns in adjacent files)
+        for col_idx in range(8):
+            # White
+            if white_pawns_in_file[col_idx] > 0:
+                left_file = col_idx - 1
+                right_file = col_idx + 1
+                no_white_left = (left_file < 0 or white_pawns_in_file[left_file] == 0)
+                no_white_right = (right_file > 7 or white_pawns_in_file[right_file] == 0)
+                if no_white_left and no_white_right:
+                    score -= ISOLATED_PAWN_PENALTY * white_pawns_in_file[col_idx]
+
+            # Black
+            if black_pawns_in_file[col_idx] > 0:
+                left_file = col_idx - 1
+                right_file = col_idx + 1
+                no_black_left = (left_file < 0 or black_pawns_in_file[left_file] == 0)
+                no_black_right = (right_file > 7 or black_pawns_in_file[right_file] == 0)
+                if no_black_left and no_black_right:
+                    score += ISOLATED_PAWN_PENALTY * black_pawns_in_file[col_idx]
+
+        return score
+
+    def evaluate_rooks_on_open_files(self):
+        """
+        Give a bonus to rooks on open or semi-open files:
+        - An open file has no pawns of either color.
+        - A semi-open file has no pawns of the rook's color.
+        """
+        ROOK_OPEN_FILE_BONUS = 0.25
+        ROOK_SEMI_OPEN_FILE_BONUS = 0.1
+
+        score = 0
+
+        # Collect all pawns by file
+        white_pawns = [0] * 8
+        black_pawns = [0] * 8
+        for row in range(8):
+            for col in range(8):
+                if self.board[row][col] == 'P':
+                    white_pawns[col] += 1
+                elif self.board[row][col] == 'p':
+                    black_pawns[col] += 1
+
+        # Check rooks
+        for row in range(8):
+            for col in range(8):
+                piece = self.board[row][col]
+                if piece in ('R', 'r'):
+                    file_has_white_pawns = (white_pawns[col] > 0)
+                    file_has_black_pawns = (black_pawns[col] > 0)
+
+                    if piece == 'R':
+                        # White rook
+                        if not file_has_white_pawns and not file_has_black_pawns:
+                            score += ROOK_OPEN_FILE_BONUS
+                        elif not file_has_white_pawns and file_has_black_pawns:
+                            score += ROOK_SEMI_OPEN_FILE_BONUS
+                    else:
+                        # Black rook
+                        if not file_has_white_pawns and not file_has_black_pawns:
+                            score -= ROOK_OPEN_FILE_BONUS
+                        elif not file_has_black_pawns and file_has_white_pawns:
+                            score -= ROOK_SEMI_OPEN_FILE_BONUS
+
+        return score
+
+    def evaluate_king_safety(self):
+        """
+        Give a basic measure of king safety.
+        For simplicity, we can:
+        - Add a small bonus if king is castled
+        - Subtract a small penalty if the king is in the center or too exposed
+        - Bonus for having pawn cover
+        """
+        KING_CASTLED_BONUS = 0.3
+        KING_CENTER_PENALTY = 0.2
+        KING_PAWN_COVER_BONUS = 0.1
+
+        score = 0
+
+        # White king
+        wk_row, wk_col = self.king_positions['white']
+        # If white castled, the king should be on g1 or c1 (row=7, col=6 or col=2)
+        if (wk_row, wk_col) in [(7, 6), (7, 2)]:
+            score += KING_CASTLED_BONUS
+
+        # If the white king is in or near the center (rows 3..4, cols 3..4),
+        # we can penalize it for being more exposed
+        if 3 <= wk_row <= 4 and 3 <= wk_col <= 4:
+            score -= KING_CENTER_PENALTY
+
+        # Check if White king has pawns around it
+        # (this is a very rough approach - you can refine it a lot more)
+        for dr in [-1, 0, 1]:
+            for dc in [-1, 0, 1]:
+                rr = wk_row + dr
+                cc = wk_col + dc
+                if self.is_within_bounds(rr, cc):
+                    if self.board[rr][cc] == 'P':
+                        score += KING_PAWN_COVER_BONUS
+
+        # Black king
+        bk_row, bk_col = self.king_positions['black']
+        # If black castled, the king might be on g8 or c8 (row=0, col=6 or col=2)
+        if (bk_row, bk_col) in [(0, 6), (0, 2)]:
+            score -= KING_CASTLED_BONUS  # negative from White's perspective
+
+        if 3 <= bk_row <= 4 and 3 <= bk_col <= 4:
+            score += KING_CENTER_PENALTY  # reversed sign from White's perspective
+
+        for dr in [-1, 0, 1]:
+            for dc in [-1, 0, 1]:
+                rr = bk_row + dr
+                cc = bk_col + dc
+                if self.is_within_bounds(rr, cc):
+                    if self.board[rr][cc] == 'p':
+                        score -= KING_PAWN_COVER_BONUS
+
+        return score
 
     def bot_move(self, bot_side):
         """Bot chooses and makes a move for its side (white or black)."""
