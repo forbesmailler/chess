@@ -1,4 +1,5 @@
 import copy
+import time
 
 class ChessBot:
     """
@@ -6,98 +7,206 @@ class ChessBot:
     It references an existing ChessGame object to read/update board state.
     """
 
-    def __init__(self, game, side='black'):
-        self.game = game  # reference to an instance of ChessGame
-        self.side = side  # 'white' or 'black'
+    def __init__(self, game, side='black', max_depth=3, time_limit=30.0):
+        """
+        :param game: reference to an instance of ChessGame
+        :param side: 'white' or 'black'
+        :param max_depth: how many plies (levels) deep to search
+        :param time_limit: max number of seconds to search
+        """
+        self.game = game  
+        self.side = side
+        self.max_depth = max_depth
+        self.time_limit = time_limit
+
+        # We'll keep track of the start time each time we choose a move
+        self.start_time = None
 
     def choose_move(self):
         """
-        Finds the best move for self.side using a simple 2-ply lookahead
-        (simulate_two_ply). Then executes it on the game board.
+        Finds the best move for self.side using a deeper alpha-beta
+        search (up to self.max_depth). Also includes a time limit to avoid
+        taking too long.
         """
+        # Record when we started thinking about this move
+        self.start_time = time.time()
+
+        # Generate legal moves for this side
         moves = self.game.generate_all_moves(self.side, validate_check=True)
         if not moves:
             # No moves => checkmate or stalemate
             return
 
+        # If we have time, run alpha-beta up to max_depth
         best_move = None
-        # White wants to maximize the evaluation; Black wants to minimize
-        best_score = float('-inf') if self.side == 'white' else float('inf')
+        if self.side == 'white':
+            best_eval = float('-inf')
+        else:
+            best_eval = float('inf')
 
-        for move in moves:
-            # Some moves may be castling or normal piece moves
-            if isinstance(move, tuple) and move[0] == "castle":
-                # Evaluate castling quickly by simulating
-                final_score = self.simulate_two_ply(move)
-            else:
-                start_row, start_col, end_row, end_col = move
-                piece = self.game.board[start_row][start_col]
-
-                # If it's a potential promotion for the bot, test all promotion candidates
-                if (piece == 'P' and end_row == 0) or (piece == 'p' and end_row == 7):
-                    final_score = self.handle_bot_promotions(
-                        start_row, start_col, end_row, end_col, piece
-                    )
-                else:
-                    final_score = self.simulate_two_ply(move)
-
-            # Track best or worst move depending on side
-            if self.side == 'white' and final_score > best_score:
-                best_score = final_score
-                best_move = move
-            elif self.side == 'black' and final_score < best_score:
-                best_score = final_score
-                best_move = move
+        # We do a quick check: if there's only one legal move, no need to search
+        if len(moves) == 1:
+            best_move = moves[0]
+        else:
+            # Search moves up to self.max_depth
+            best_move, best_eval = self.alpha_beta_root(moves)
 
         # Execute the best move if found
         if best_move:
+            # Handle castling
             if isinstance(best_move, tuple) and best_move[0] == "castle":
                 self.game.make_move(best_move)
                 print(f"Bot plays: {self.game.convert_to_algebraic(best_move)}")
-            else:
-                sr, sc, er, ec = best_move
-                piece = self.game.board[sr][sc]
-                # Double-check promotion
-                if (piece == 'P' and er == 0) or (piece == 'p' and er == 7):
-                    # We already picked best promotion in handle_bot_promotions,
-                    # so just finalize it with the best piece found.
-                    board_before = copy.deepcopy(self.game.board)
-                    best_promo_piece, _ = self.choose_best_promotion(
-                        sr, sc, er, ec, piece, board_before
-                    )
-                    self.game.board = copy.deepcopy(board_before)
-                    self.game.board[sr][sc] = '.'
-                    self.game.board[er][ec] = best_promo_piece
+                return
 
-                    # En passant, halfmove clock, etc.:
-                    if piece.lower() == 'p':
-                        self.game.halfmove_clock = 0
-                    else:
-                        self.game.halfmove_clock += 1
-                    self.game.en_passant_target = None
-                    self.game.record_position()
+            # Handle promotions or normal moves
+            sr, sc, er, ec = best_move
+            piece = self.game.board[sr][sc]
+            if (piece == 'P' and er == 0) or (piece == 'p' and er == 7):
+                # We already pick the best promotion in alpha-beta, but if you still
+                # want to do a secondary logic, you can handle promotions here.
+                board_before = copy.deepcopy(self.game.board)
+                best_promo_piece, _ = self.choose_best_promotion(
+                    sr, sc, er, ec, piece, board_before
+                )
+                self.game.board = copy.deepcopy(board_before)
+                self.game.board[sr][sc] = '.'
+                self.game.board[er][ec] = best_promo_piece
 
-                    print(f"Bot promotes to {best_promo_piece}!")
-                self.game.make_move(best_move)
-                print(f"Bot plays: {self.game.convert_to_algebraic(best_move)}")
+                # Update halfmove clock, en passant, etc.
+                if piece.lower() == 'p':
+                    self.game.halfmove_clock = 0
+                else:
+                    self.game.halfmove_clock += 1
+                self.game.en_passant_target = None
+                self.game.record_position()
+                print(f"Bot promotes to {best_promo_piece}!")
 
+            self.game.make_move(best_move)
+            print(f"Bot plays: {self.game.convert_to_algebraic(best_move)}")
+
+    # -------------------------------------------------------------------------
+    #                 ALPHA-BETA SEARCH ENTRY POINT
+    # -------------------------------------------------------------------------
+    def alpha_beta_root(self, moves):
+        """
+        Entry point for alpha-beta. We assume 'moves' is the list of legal moves
+        for self.side. We'll iterate over them, do a search, and pick the best one.
+        """
+        best_move = None
+        
+        if self.side == 'white':
+            best_eval = float('-inf')
+            for move in moves:
+                if self._time_expired():
+                    break  # ran out of time
+                val = self.alpha_beta(move, depth=self.max_depth - 1,
+                                      alpha=float('-inf'), beta=float('inf'),
+                                      maximizing=False)
+                if val > best_eval:
+                    best_eval = val
+                    best_move = move
+        else:
+            best_eval = float('inf')
+            for move in moves:
+                if self._time_expired():
+                    break  # ran out of time
+                val = self.alpha_beta(move, depth=self.max_depth - 1,
+                                      alpha=float('-inf'), beta=float('inf'),
+                                      maximizing=True)
+                if val < best_eval:
+                    best_eval = val
+                    best_move = move
+
+        return best_move, best_eval
+
+    def alpha_beta(self, move, depth, alpha, beta, maximizing):
+        """
+        Perform one step of alpha-beta for the given 'move'. That is:
+        1) Make 'move'.
+        2) Recursively search up to (depth) more plies.
+        3) Revert 'move'.
+        4) Return the best evaluation from that subtree.
+        """
+        # Save state
+        board_copy_state = copy.deepcopy(self.game.board)
+        turn_save = self.game.turn
+        king_positions_save = self.game.king_positions.copy()
+        castling_rights_save = copy.deepcopy(self.game.castling_rights)
+        en_passant_save = self.game.en_passant_target
+        halfmove_clock_save = self.game.halfmove_clock
+
+        # Make the move
+        self.game.make_move(move)
+
+        # If time expired or depth=0, or game over => evaluate and revert
+        if depth == 0 or self._time_expired() or self.game.is_checkmate() or self.game.check_draw_conditions():
+            val = self.evaluate_position()
+            self.restore_game_state(board_copy_state, turn_save, king_positions_save,
+                                    castling_rights_save, en_passant_save, halfmove_clock_save)
+            return val
+
+        # Now generate moves for the next side
+        next_side = 'white' if self.game.turn == 'white' else 'black'
+        moves = self.game.generate_all_moves(next_side, validate_check=True)
+
+        if not moves:  
+            # No moves => checkmate or stalemate => evaluate
+            val = self.evaluate_position()
+            self.restore_game_state(board_copy_state, turn_save, king_positions_save,
+                                    castling_rights_save, en_passant_save, halfmove_clock_save)
+            return val
+
+        if maximizing:
+            best_eval = float('-inf')
+            for nxt_move in moves:
+                if self._time_expired():
+                    break
+                current_eval = self.alpha_beta(nxt_move, depth-1, alpha, beta, False)
+                best_eval = max(best_eval, current_eval)
+                alpha = max(alpha, best_eval)
+                if beta <= alpha:
+                    break  # beta cut-off
+            self.restore_game_state(board_copy_state, turn_save, king_positions_save,
+                                    castling_rights_save, en_passant_save, halfmove_clock_save)
+            return best_eval
+        else:
+            best_eval = float('inf')
+            for nxt_move in moves:
+                if self._time_expired():
+                    break
+                current_eval = self.alpha_beta(nxt_move, depth-1, alpha, beta, True)
+                best_eval = min(best_eval, current_eval)
+                beta = min(beta, best_eval)
+                if beta <= alpha:
+                    break  # alpha cut-off
+            self.restore_game_state(board_copy_state, turn_save, king_positions_save,
+                                    castling_rights_save, en_passant_save, halfmove_clock_save)
+            return best_eval
+
+    def _time_expired(self):
+        """Return True if we've exceeded our self.time_limit (in seconds)."""
+        if (time.time() - self.start_time) >= self.time_limit:
+            return True
+        return False
+
+    # -------------------------------------------------------------------------
+    #          EVERYTHING ELSE (evaluate_position, promotions, etc.)
+    # -------------------------------------------------------------------------
     def evaluate_position(self):
         """
-        ADVANCED EVALUATION FUNCTION (placeholder).
-        Returns a numeric evaluation from White's perspective.
+        Existing evaluation function from your code (slightly truncated for brevity).
         """
-        # 1. Checkmate/Draw checks
+        # 1. Checkmate / Draw
         if self.game.is_checkmate():
-            # The side to move is checkmated => big negative from their perspective
             return -9999 if self.game.turn == 'white' else 9999
         if self.game.check_draw_conditions():
-            return 0  # Draw
+            return 0
 
-        # 2. Material evaluation
+        # 2. Material + bishop pair
         material_score = 0
         bishop_count_white = 0
         bishop_count_black = 0
-
         for row in self.game.board:
             for piece in row:
                 material_score += self.game.piece_values.get(piece, 0)
@@ -105,19 +214,23 @@ class ChessBot:
                     bishop_count_white += 1
                 elif piece == 'b':
                     bishop_count_black += 1
+        # bishop pair
+        bishop_pair_score = 0
+        BISHOP_PAIR_BONUS = 0.5
+        if bishop_count_white >= 2:
+            bishop_pair_score += BISHOP_PAIR_BONUS
+        if bishop_count_black >= 2:
+            bishop_pair_score -= BISHOP_PAIR_BONUS
 
         # 3. Mobility
         white_moves = self.game.generate_all_moves('white', validate_check=False)
         black_moves = self.game.generate_all_moves('black', validate_check=False)
         mobility_score = (len(white_moves) - len(black_moves)) * 0.1
 
-        # 4. Bishop pair bonus
-        BISHOP_PAIR_BONUS = 0.5
-        bishop_pair_score = 0
-        if bishop_count_white >= 2:
-            bishop_pair_score += BISHOP_PAIR_BONUS
-        if bishop_count_black >= 2:
-            bishop_pair_score -= BISHOP_PAIR_BONUS
+        # 4. Add your other evaluation terms (advanced pawns, rook files, king safety, etc.)
+        structure_score = self.evaluate_pawn_structure()
+        rooks_score = self.evaluate_rooks_on_open_files()
+        king_safety = self.evaluate_king_safety()
 
         # 5. Advanced Pawns bonus
         ADVANCED_PAWN_BONUS = 0.1
@@ -133,16 +246,13 @@ class ChessBot:
                     distance_from_start = row_idx
                     advanced_pawn_score -= ADVANCED_PAWN_BONUS * distance_from_start
 
-        # Combine
-        total_evaluation = (
-            material_score
-            + mobility_score
-            + bishop_pair_score
-            + self.evaluate_pawn_structure()
-            + self.evaluate_rooks_on_open_files()
-            + self.evaluate_king_safety()
-        )
-        return total_evaluation
+        return (material_score
+                + bishop_pair_score
+                + mobility_score
+                + structure_score
+                + rooks_score
+                + king_safety
+                + advanced_pawn_score)
 
     def evaluate_pawn_structure(self):
         """
@@ -367,44 +477,9 @@ class ChessBot:
                                 halfmove_clock_save)
 
         return final_eval
-    
-    def handle_bot_promotions(self, sr, sc, er, ec, piece):
-        """
-        If a pawn is about to promote, try all promotion pieces and pick the one
-        giving the best 2-ply result.
-        """
-        board_copy_state = copy.deepcopy(self.game.board)
-        # Temporarily evaluate all promotions
-        best_score = float('-inf') if self.side == 'white' else float('inf')
-
-        promo_candidates = ['Q', 'R', 'B', 'N'] if piece == 'P' else ['q', 'r', 'b', 'n']
-        for promo in promo_candidates:
-            # Make the promotion
-            self.game.board[sr][sc] = '.'
-            self.game.board[er][ec] = promo
-
-            # Evaluate 2-ply
-            candidate_score = self.simulate_two_ply((sr, sc, er, ec))
-
-            # Revert
-            self.game.board = copy.deepcopy(board_copy_state)
-
-            if self.side == 'white' and candidate_score > best_score:
-                best_score = candidate_score
-            elif self.side == 'black' and candidate_score < best_score:
-                best_score = candidate_score
-
-        # Restore the board
-        self.game.board = copy.deepcopy(board_copy_state)
-        return best_score
 
     def choose_best_promotion(self, start_row, start_col, end_row, end_col,
                               piece, board_before):
-        """
-        Temporarily tries all possible promotion pieces and returns:
-        (best_promo_piece, best_promo_eval).
-        This is used by choose_move() to finalize the actual promotion piece.
-        """
         if piece == 'P':
             promo_list = ['Q', 'R', 'B', 'N']
         else:
@@ -414,16 +489,11 @@ class ChessBot:
         best_promo_piece = promo_list[0]
 
         for promo in promo_list:
-            # Make the promotion on a temp board
             self.game.board[start_row][start_col] = '.'
             self.game.board[end_row][end_col] = promo
-
             promo_score = self.evaluate_position()
-
-            # Restore board
             self.game.board = copy.deepcopy(board_before)
 
-            # Track best/worst eval depending on side
             if self.side == 'white' and promo_score > best_promo_eval:
                 best_promo_eval = promo_score
                 best_promo_piece = promo
