@@ -9,10 +9,6 @@ class ChessBot:
     """
 
     def __init__(self, game, side='black', max_depth=3, time_limit=30.0, random_range=0.05):
-        """
-        :param random_range: Controls how large the random 'noise' is.
-                             e.g. 0.05 means we add +/- 0.05 to each evaluation.
-        """
         self.game = game
         self.side = side
         self.max_depth = max_depth
@@ -25,119 +21,82 @@ class ChessBot:
         self.start_time = None
         self.debug = True
 
+        # Simple transposition table: { (pos_key, depth): (flag, value, alpha, beta) }
+        self.transposition_table = {}
+
     def choose_move(self):
-        """
-        Finds the best move for self.side using a deeper alpha-beta
-        search (up to self.max_depth). Also includes a time limit to avoid
-        taking too long.
-        """
         self.start_time = time.time()
 
-        # Generate legal moves for this side
+        # Generate legal moves
         moves = self.game.generate_all_moves(self.side, validate_check=True)
         if not moves:
-            # No moves => checkmate or stalemate
             return
 
         if self.debug:
-            print(f"[DEBUG] {self.side} possible moves: {moves}")
+            print(f"[DEBUG] {self.side} has {len(moves)} moves")
 
-        best_move = None
-        if self.side == 'white':
-            best_eval = float('-inf')
-        else:
-            best_eval = float('inf')
-
-        # If there's only 1 legal move, no need for alpha-beta
         if len(moves) == 1:
             best_move = moves[0]
-        else:
-            best_move, best_eval = self.alpha_beta_root(moves)
+            self._make_and_print_move(best_move)
+            return
 
-        # Execute best move
+        best_move, best_eval = self.alpha_beta_root(moves)
         if best_move:
-            # Handle castling
-            if isinstance(best_move, tuple) and best_move[0] == "castle":
-                self.game.make_move(best_move)
-                print(f"Bot plays: {self.game.convert_to_algebraic(best_move)}")
-                return
+            self._make_and_print_move(best_move)
 
-            # Handle promotion or normal move
-            sr, sc, er, ec = best_move
-            piece = self.game.board[sr][sc]
-            if (piece == 'P' and er == 0) or (piece == 'p' and er == 7):
-                board_before = copy.deepcopy(self.game.board)
-                best_promo_piece, _ = self.choose_best_promotion(
-                    sr, sc, er, ec, piece, board_before
-                )
-                self.game.board = copy.deepcopy(board_before)
-                self.game.board[sr][sc] = '.'
-                self.game.board[er][ec] = best_promo_piece
-
-                # Update halfmove clock, etc.
-                if piece.lower() == 'p':
-                    self.game.halfmove_clock = 0
-                else:
-                    self.game.halfmove_clock += 1
-                self.game.en_passant_target = None
-                self.game.record_position()
-                print(f"Bot promotes to {best_promo_piece}!")
-
-            self.game.make_move(best_move)
-            print(f"Bot plays: {self.game.convert_to_algebraic(best_move)}")
-
-    # ---------------------- ALPHA-BETA SEARCH ------------------------
     def alpha_beta_root(self, moves):
-        best_move = None
-        
-        # If you prefer, only add randomness at the root after
-        # we compute each move's eval. This won't randomize deeper nodes.
-        evals_with_noise = []
+        """
+        The root of alpha-beta: we do a shallow version of move-ordering here too.
+        """
+        # Move-order first
+        moves = self.order_moves(moves, self.side)
 
+        best_move = None
         if self.side == 'white':
             best_eval = float('-inf')
             for move in moves:
                 if self._time_expired():
                     break
                 val = self.alpha_beta(move, depth=self.max_depth - 1,
-                                    alpha=float('-inf'), beta=float('inf'),
-                                    maximizing=False)
-                # add the random tie-break
+                                      alpha=float('-inf'), beta=float('inf'),
+                                      maximizing=False)
+                # random noise only at the root
                 noise = random.uniform(-self.random_range, self.random_range)
                 val_with_noise = val + noise
-                evals_with_noise.append((move, val_with_noise))
 
                 if val_with_noise > best_eval:
                     best_eval = val_with_noise
                     best_move = move
 
                 if self.debug:
-                    print(f"[DEBUG] Root move {move} => eval {val_with_noise} (white)")
-
+                    print(f"[DEBUG] Move {move}, eval={val:.2f}, noisy={val_with_noise:.2f}")
         else:
             best_eval = float('inf')
             for move in moves:
                 if self._time_expired():
                     break
                 val = self.alpha_beta(move, depth=self.max_depth - 1,
-                                    alpha=float('-inf'), beta=float('inf'),
-                                    maximizing=True)
+                                      alpha=float('-inf'), beta=float('inf'),
+                                      maximizing=True)
+                # random noise only at the root
                 noise = random.uniform(-self.random_range, self.random_range)
                 val_with_noise = val + noise
-                evals_with_noise.append((move, val_with_noise))
 
                 if val_with_noise < best_eval:
                     best_eval = val_with_noise
                     best_move = move
 
                 if self.debug:
-                    print(f"[DEBUG] Root move {move} => eval {val_with_noise} (black)")
+                    print(f"[DEBUG] Move {move}, eval={val:.2f}, noisy={val_with_noise:.2f}")
 
         return best_move, best_eval
 
     def alpha_beta(self, move, depth, alpha, beta, maximizing):
-        # Save state
-        board_copy_state = copy.deepcopy(self.game.board)
+        """
+        Alpha-beta with transposition table + move ordering.
+        """
+        # Save game state
+        board_copy = copy.deepcopy(self.game.board)
         turn_save = self.game.turn
         king_positions_save = self.game.king_positions.copy()
         castling_rights_save = copy.deepcopy(self.game.castling_rights)
@@ -147,56 +106,118 @@ class ChessBot:
         # Make the move
         self.game.make_move(move)
 
-        # If time expired or depth=0 or game is over => evaluate and revert
-        if (depth == 0 or self._time_expired()
-            or self.game.is_checkmate() or self.game.check_draw_conditions()):
-            val = self.evaluate_position()
-            self.restore_game_state(board_copy_state, turn_save, king_positions_save,
-                                    castling_rights_save, en_passant_save, halfmove_clock_save)
-            return val
+        pos_key = (self.game.create_position_key(), depth)  # create_position_key must be stable
 
-        # Now generate moves for whoever is on move
-        next_side = self.game.turn  # 'white' or 'black'
-        moves = self.game.generate_all_moves(next_side, validate_check=True)
-
-        if not moves:  
-            # No moves => checkmate or stalemate => evaluate
-            val = self.evaluate_position()
-            self.restore_game_state(board_copy_state, turn_save, king_positions_save,
-                                    castling_rights_save, en_passant_save, halfmove_clock_save)
-            return val
-
-        if maximizing:
-            best_eval = float('-inf')
-            for nxt_move in moves:
-                if self._time_expired():
-                    break
-                current_eval = self.alpha_beta(nxt_move, depth-1, alpha, beta, False)
-                best_eval = max(best_eval, current_eval)
-                alpha = max(alpha, best_eval)
-                if beta <= alpha:
-                    break
+        # Check transposition table
+        if pos_key in self.transposition_table:
+            entry = self.transposition_table[pos_key]
+            # e.g. could store an 'eval' and a 'flag' (exact, lowerbound, upperbound)
+            # For simplicity, let's assume we stored an exact eval
+            cached_eval = entry['value']
         else:
-            best_eval = float('inf')
-            for nxt_move in moves:
-                if self._time_expired():
-                    break
-                current_eval = self.alpha_beta(nxt_move, depth-1, alpha, beta, True)
-                best_eval = min(best_eval, current_eval)
-                beta = min(beta, best_eval)
-                if beta <= alpha:
-                    break
+            cached_eval = None
 
-        self.restore_game_state(board_copy_state, turn_save, king_positions_save,
-                                castling_rights_save, en_passant_save, halfmove_clock_save)
-        return best_eval
+        if cached_eval is not None:
+            # We can skip searching deeper
+            val = cached_eval
+        else:
+            # If time expired or depth=0 or game over => evaluate
+            if (depth == 0 or self._time_expired() 
+                or self.game.is_checkmate() or self.game.check_draw_conditions()):
+                val = self.evaluate_position()
+            else:
+                # Next side
+                next_side = self.game.turn
+                next_moves = self.game.generate_all_moves(next_side, validate_check=True)
+                if not next_moves:
+                    val = self.evaluate_position()
+                else:
+                    # ORDER the next moves
+                    next_moves = self.order_moves(next_moves, next_side)
+
+                    if maximizing:
+                        val = float('-inf')
+                        for nxt_move in next_moves:
+                            if self._time_expired():
+                                break
+                            current_eval = self.alpha_beta(nxt_move, depth-1, alpha, beta, False)
+                            val = max(val, current_eval)
+                            alpha = max(alpha, val)
+                            if beta <= alpha:
+                                break
+                    else:
+                        val = float('inf')
+                        for nxt_move in next_moves:
+                            if self._time_expired():
+                                break
+                            current_eval = self.alpha_beta(nxt_move, depth-1, alpha, beta, True)
+                            val = min(val, current_eval)
+                            beta = min(beta, val)
+                            if beta <= alpha:
+                                break
+
+            # Store in table
+            self.transposition_table[pos_key] = {
+                'value': val
+                # you might store alpha/beta bounds, flags, etc. for advanced usage
+            }
+
+        # Restore game state
+        self.restore_game_state(board_copy,
+                                turn_save,
+                                king_positions_save,
+                                castling_rights_save,
+                                en_passant_save,
+                                halfmove_clock_save)
+
+        return cached_eval if cached_eval is not None else val
+
+    def order_moves(self, moves, side):
+        """
+        Basic move-ordering function:
+        1) Captures first (maybe checks first if you detect them).
+        2) Sort by piece value being captured, descending.
+        3) Then non-captures afterwards.
+        """
+        scored_moves = []
+        for m in moves:
+            # A move might be a castling tuple or normal move
+            if isinstance(m, tuple) and len(m) == 4:
+                sr, sc, er, ec = m
+                piece_captured = self.game.board[er][ec]
+                if piece_captured != '.':
+                    # It's a capture
+                    captured_value = abs(self.game.piece_values.get(piece_captured, 0))
+                    # higher is better for capturing big pieces
+                    scored_moves.append((m, 100 + captured_value))
+                else:
+                    # Non-capture
+                    scored_moves.append((m, 0))
+            else:
+                # If it's castling or something else, treat it as non-capture
+                scored_moves.append((m, 0))
+
+        # Sort in descending order if side is White (we want to see bigger values first),
+        # ascending order if side is Black. 
+        # Actually for alpha-beta, we typically do descending so we prune faster. 
+        # We'll do descending in both cases for simplicity:
+        scored_moves.sort(key=lambda x: x[1], reverse=True)
+
+        # Return the moves in new order
+        ordered = [x[0] for x in scored_moves]
+        return ordered
 
     def _time_expired(self):
         return (time.time() - self.start_time) >= self.time_limit
 
-    # ---------------- EVALUATION ------------------------------------
+    # ---------------- UTILITY & EVALUATION ------------------------------------
+    def _make_and_print_move(self, move):
+        # Move is either ("castle", side, "kingside"/"queenside") or normal
+        self.game.make_move(move)
+        print(f"Bot plays: {self.game.convert_to_algebraic(move)}")
+
     def evaluate_position(self):
-        # 1. Checkmate / Draw
+        # If checkmate => big +/- 
         if self.game.is_checkmate():
             return -9999 if self.game.turn == 'white' else 9999
         if self.game.check_draw_conditions():
@@ -205,22 +226,11 @@ class ChessBot:
         material_score = 0
         bishop_count_white = 0
         bishop_count_black = 0
-
-        # -------------------------------------
-        # MAIN LOOP THROUGH BOARD
-        # -------------------------------------
         for r in range(8):
             for c in range(8):
                 piece = self.game.board[r][c]
-                if piece == '.':
-                    continue
-
-                # Add piece material value (already positive for White, negative for Black)
-                piece_value = self.game.piece_values.get(piece, 0)
-                material_score += piece_value
-
-                # piece type (capital letter)
-                piece_type = piece.upper()
+                if piece != '.':
+                    material_score += self.game.piece_values.get(piece, 0)
 
         # bishop pair
         BISHOP_PAIR_BONUS = 0.5
@@ -230,12 +240,11 @@ class ChessBot:
         if bishop_count_black >= 2:
             bishop_pair_score -= BISHOP_PAIR_BONUS
 
-        # Mobility
+        # mobility
         white_moves = self.game.generate_all_moves('white', validate_check=False)
         black_moves = self.game.generate_all_moves('black', validate_check=False)
         mobility_score = (len(white_moves) - len(black_moves)) * 0.1
 
-        # Evaluate other heuristics
         structure_score = self.evaluate_pawn_structure()
         rooks_score = self.evaluate_rooks_on_open_files()
         king_safety = self.evaluate_king_safety()
@@ -253,9 +262,6 @@ class ChessBot:
                     distance_from_start = row_idx
                     advanced_pawn_score -= ADVANCED_PAWN_BONUS * distance_from_start
 
-        # Undefended piece penalty
-        undefended_penalty = self._penalize_undefended_pieces()
-
         # Sum up everything
         total_eval = (material_score
                     + bishop_pair_score
@@ -263,51 +269,9 @@ class ChessBot:
                     + structure_score
                     + rooks_score
                     + king_safety
-                    + advanced_pawn_score
-                    + undefended_penalty)
+                    + advanced_pawn_score)
 
         return total_eval
-
-    def _penalize_undefended_pieces(self):
-        """
-        Adds a penalty if a piece can be captured on next move with no recapture.
-        """
-        penalty = 0.0
-        # Opponent side
-        opp_side = 'black' if self.game.turn == 'white' else 'white'
-        # We'll generate all moves for both sides (without check validation, just to see attackers)
-        opp_moves = self.game.generate_all_moves(opp_side, validate_check=False)
-        my_moves = self.game.generate_all_moves(self.game.turn, validate_check=False)
-
-        # Create sets of squares attacked by each side
-        opp_attacks = set()
-        my_attacks = set()
-        for mv in opp_moves:
-            # normal moves are (sr, sc, er, ec)
-            if isinstance(mv, tuple) and len(mv) == 4:
-                opp_attacks.add((mv[2], mv[3]))
-        for mv in my_moves:
-            if isinstance(mv, tuple) and len(mv) == 4:
-                my_attacks.add((mv[2], mv[3]))
-
-        # Now we check each piece on the board
-        for r in range(8):
-            for c in range(8):
-                piece = self.game.board[r][c]
-                if piece == '.' or piece.lower() == 'k':
-                    continue  # ignore empty squares, or kings for now
-
-                # If piece belongs to the side to move
-                if (self.game.turn == 'white' and piece.isupper()) or \
-                   (self.game.turn == 'black' and piece.islower()):
-                    # It's "our" piece. If it is attacked by the opponent,
-                    # but not defended by our side, apply a penalty.
-                    if (r, c) in opp_attacks and (r, c) not in my_attacks:
-                        # Increase penalty by piece value / 2, for example
-                        penalty_value = abs(self.game.piece_values[piece]) * 0.5
-                        penalty -= penalty_value
-
-        return penalty
 
     def evaluate_pawn_structure(self):
         DOUBLED_PAWN_PENALTY = 0.2
@@ -442,13 +406,13 @@ class ChessBot:
 
         return best_promo_piece, best_promo_eval
 
-    def restore_game_state(self, board_copy_state,
+    def restore_game_state(self, board_copy,
                            turn_save,
                            king_positions_save,
                            castling_rights_save,
                            en_passant_save,
                            halfmove_clock_save):
-        self.game.board = board_copy_state
+        self.game.board = board_copy
         self.game.turn = turn_save
         self.game.king_positions = king_positions_save
         self.game.castling_rights = castling_rights_save
