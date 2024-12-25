@@ -1,68 +1,6 @@
 import copy
 import time
-
-piece_square_tables = {
-    'P': [
-        [ 0,   0,   0,   0,   0,   0,   0,  0],
-        [ 5,   5,   5,  -5,  -5,   5,   5,  5],
-        [ 1,   1,   2,   3,   3,   2,   1,  1],
-        [ 0.5, 0.5, 1,   2.5, 2.5,  1,   0.5,0.5],
-        [ 0,   0,   0,   2,   2,   0,   0,  0],
-        [ 0.5,-0.5,-1,   0,   0,  -1,  -0.5,0.5],
-        [ 0.5, 1,   1,  -2,  -2,   1,   1,  0.5],
-        [ 0,   0,   0,   0,   0,   0,   0,  0],
-    ],
-    'N': [
-        [-5.0, -4.0, -3.0, -3.0, -3.0, -3.0, -4.0, -5.0],
-        [-4.0, -2.0,  0.0,  0.0,  0.0,  0.0, -2.0, -4.0],
-        [-3.0,  0.0,  1.0,  1.5,  1.5,  1.0,  0.0, -3.0],
-        [-3.0,  0.5, 1.5,  2.0,  2.0,  1.5,  0.5, -3.0],
-        [-3.0,  0.0, 1.5,  2.0,  2.0,  1.5,  0.0, -3.0],
-        [-3.0,  0.5, 1.0,  1.5,  1.5,  1.0,  0.5, -3.0],
-        [-4.0, -2.0,  0.0,  0.5,  0.5,  0.0, -2.0, -4.0],
-        [-5.0, -4.0, -3.0, -3.0, -3.0, -3.0, -4.0, -5.0],
-    ],
-    'B': [
-        [-2.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -2.0],
-        [-1.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, -1.0],
-        [-1.0,  0.0,  0.5,  1.0,  1.0,  0.5,  0.0, -1.0],
-        [-1.0,  0.5,  0.5,  1.0,  1.0,  0.5,  0.5, -1.0],
-        [-1.0,  0.0,  1.0,  1.0,  1.0,  1.0,  0.0, -1.0],
-        [-1.0,  1.0,  1.0,  1.0,  1.0,  1.0,  1.0, -1.0],
-        [-1.0,  0.5,  0.0,  0.0,  0.0,  0.0,  0.5, -1.0],
-        [-2.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -2.0],
-    ],
-    'R': [
-        [ 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0],
-        [ 0.5,  1.0,  1.0,  1.0,  1.0,  1.0,  1.0,  0.5],
-        [-0.5,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, -0.5],
-        [-0.5,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, -0.5],
-        [-0.5,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, -0.5],
-        [-0.5,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, -0.5],
-        [-0.5,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, -0.5],
-        [ 0.0,  0.0,  0.0,  0.5,  0.5,  0.0,  0.0,  0.0],
-    ],
-    'Q': [
-        [-2.0, -1.0, -1.0, -0.5, -0.5, -1.0, -1.0, -2.0],
-        [-1.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0, -1.0],
-        [-1.0,  0.5,  0.5,  0.5,  0.5,  0.5,  0.0, -1.0],
-        [-0.5,  0.0,  0.5,  0.5,  0.5,  0.5,  0.0, -0.5],
-        [ 0.0,  0.0,  0.5,  0.5,  0.5,  0.5,  0.0, -0.5],
-        [-1.0,  0.5,  0.5,  0.5,  0.5,  0.5,  0.0, -1.0],
-        [-1.0,  0.0,  0.5,  0.0,  0.0,  0.0,  0.0, -1.0],
-        [-2.0, -1.0, -1.0, -0.5, -0.5, -1.0, -1.0, -2.0],
-    ],
-    'K': [
-        [ 2.0,  3.0,  1.0,  0.0,  0.0,  1.0,  3.0,  2.0],
-        [ 2.0,  2.0,  0.0,  0.0,  0.0,  0.0,  2.0,  2.0],
-        [-1.0, -2.0, -2.0, -2.0, -2.0, -2.0, -2.0, -1.0],
-        [-2.0, -3.0, -3.0, -4.0, -4.0, -3.0, -3.0, -2.0],
-        [-3.0, -4.0, -4.0, -5.0, -5.0, -4.0, -4.0, -3.0],
-        [-3.0, -4.0, -4.0, -5.0, -5.0, -4.0, -4.0, -3.0],
-        [-3.0, -4.0, -4.0, -5.0, -5.0, -4.0, -4.0, -3.0],
-        [-3.0, -4.0, -4.0, -5.0, -5.0, -4.0, -4.0, -3.0],
-    ],
-}
+import random
 
 class ChessBot:
     """
@@ -70,21 +8,21 @@ class ChessBot:
     It references an existing ChessGame object to read/update board state.
     """
 
-    def __init__(self, game, side='black', max_depth=4, time_limit=30.0):
+    def __init__(self, game, side='black', max_depth=3, time_limit=30.0, random_range=0.05):
         """
-        :param game: reference to an instance of ChessGame
-        :param side: 'white' or 'black'
-        :param max_depth: how many plies (levels) deep to search
-        :param time_limit: max number of seconds to search
+        :param random_range: Controls how large the random 'noise' is.
+                             e.g. 0.05 means we add +/- 0.05 to each evaluation.
         """
-        self.game = game  
+        self.game = game
         self.side = side
         self.max_depth = max_depth
         self.time_limit = time_limit
+        
+        # We'll add a random value in [-random_range, +random_range] to final eval
+        # so the bot doesn't always pick the same move.
+        self.random_range = random_range
 
         self.start_time = None
-
-        # For debugging, set this to True to see alpha-beta decisions
         self.debug = True
 
     def choose_move(self):
@@ -152,33 +90,48 @@ class ChessBot:
     def alpha_beta_root(self, moves):
         best_move = None
         
+        # If you prefer, only add randomness at the root after
+        # we compute each move's eval. This won't randomize deeper nodes.
+        evals_with_noise = []
+
         if self.side == 'white':
             best_eval = float('-inf')
             for move in moves:
                 if self._time_expired():
                     break
                 val = self.alpha_beta(move, depth=self.max_depth - 1,
-                                      alpha=float('-inf'), beta=float('inf'),
-                                      maximizing=False)
-                if val > best_eval:
-                    best_eval = val
-                    best_move = move
-                if self.debug:
-                    print(f"[DEBUG] Root move {move} => eval {val} (white)")
+                                    alpha=float('-inf'), beta=float('inf'),
+                                    maximizing=False)
+                # add the random tie-break
+                noise = random.uniform(-self.random_range, self.random_range)
+                val_with_noise = val + noise
+                evals_with_noise.append((move, val_with_noise))
 
-        else:  # self.side == 'black'
+                if val_with_noise > best_eval:
+                    best_eval = val_with_noise
+                    best_move = move
+
+                if self.debug:
+                    print(f"[DEBUG] Root move {move} => eval {val_with_noise} (white)")
+
+        else:
             best_eval = float('inf')
             for move in moves:
                 if self._time_expired():
                     break
                 val = self.alpha_beta(move, depth=self.max_depth - 1,
-                                      alpha=float('-inf'), beta=float('inf'),
-                                      maximizing=True)
-                if val < best_eval:
-                    best_eval = val
+                                    alpha=float('-inf'), beta=float('inf'),
+                                    maximizing=True)
+                noise = random.uniform(-self.random_range, self.random_range)
+                val_with_noise = val + noise
+                evals_with_noise.append((move, val_with_noise))
+
+                if val_with_noise < best_eval:
+                    best_eval = val_with_noise
                     best_move = move
+
                 if self.debug:
-                    print(f"[DEBUG] Root move {move} => eval {val} (black)")
+                    print(f"[DEBUG] Root move {move} => eval {val_with_noise} (black)")
 
         return best_move, best_eval
 
@@ -269,22 +222,6 @@ class ChessBot:
                 # piece type (capital letter)
                 piece_type = piece.upper()
 
-                # If it's in our piece-square table dict, apply a table bonus/penalty
-                if piece_type in piece_square_tables:
-                    if piece.isupper():
-                        # White piece => read table directly for (r, c)
-                        psq_bonus = piece_square_tables[piece_type][r][c]
-                        material_score += psq_bonus
-                        if piece_type == 'B':
-                            bishop_count_white += 1
-                    else:
-                        # Black piece => mirror row & col, then subtract
-                        # so that "good" squares for Black reduce White’s evaluation
-                        mirrored_bonus = piece_square_tables[piece_type][7 - r][7 - c]
-                        material_score -= mirrored_bonus
-                        if piece_type == 'B':
-                            bishop_count_black += 1
-
         # bishop pair
         BISHOP_PAIR_BONUS = 0.5
         bishop_pair_score = 0
@@ -331,23 +268,9 @@ class ChessBot:
 
         return total_eval
 
-    def _get_piece_square_value(self, piece_type, row, col, is_white):
-        """
-        Returns a piece-square table bonus. 
-        If is_white=False, we flip the row to account for black's perspective.
-        """
-        if is_white:
-            return piece_square_tables[piece_type][row][col]
-        else:
-            # For black, we can flip row & col to mirror the table
-            return piece_square_tables[piece_type][7 - row][col]
-
     def _penalize_undefended_pieces(self):
         """
         Adds a penalty if a piece can be captured on next move with no recapture.
-        This is a simplified approach:
-          - For each piece on the board, check if it's attacked by the opponent
-            and not defended by any friendly piece.
         """
         penalty = 0.0
         # Opponent side
