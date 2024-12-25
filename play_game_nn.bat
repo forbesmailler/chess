@@ -1,0 +1,1 @@
+c:\__full_path_to_virtualenv__\Scripts\activate.bat && python __full_path_to_python_script__.py

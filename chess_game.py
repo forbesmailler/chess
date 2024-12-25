@@ -28,6 +28,8 @@ class ChessGame:
             'K': 0, 'k': 0
         }
 
+        self.move_count = 0
+
         # For tracking threefold repetition
         self.position_counts = defaultdict(int)
 
@@ -541,6 +543,69 @@ class ChessGame:
     def is_stalemate(self):
         """True if current player is stalemated (not in check, no legal moves)."""
         return not self.is_in_check(self.turn) and not self.generate_all_moves(self.turn)
+    
+    def get_fen(self):
+        """
+        Return the current position in standard FEN notation.
+        Example of a starting position FEN:
+        'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+        """
+        # 1) Piece placement
+        # Note: row 0 is "top" of our board, which corresponds to the 8th rank in FEN.
+        fen_rows = []
+        for row in range(8):
+            empty_count = 0
+            fen_row = ""
+            for col in range(8):
+                piece = self.board[row][col]
+                if piece == '.':
+                    empty_count += 1
+                else:
+                    if empty_count > 0:
+                        fen_row += str(empty_count)
+                        empty_count = 0
+                    fen_row += piece
+            if empty_count > 0:
+                fen_row += str(empty_count)
+            fen_rows.append(fen_row)
+        fen_board = "/".join(fen_rows)
+
+        # 2) Active color
+        fen_active_color = 'w' if self.turn == 'white' else 'b'
+
+        # 3) Castling availability
+        castling_part = ""
+        if self.castling_rights['white']['kingside']:
+            castling_part += "K"
+        if self.castling_rights['white']['queenside']:
+            castling_part += "Q"
+        if self.castling_rights['black']['kingside']:
+            castling_part += "k"
+        if self.castling_rights['black']['queenside']:
+            castling_part += "q"
+        if castling_part == "":
+            castling_part = "-"
+
+        # 4) En passant target
+        if self.en_passant_target:
+            (r, c) = self.en_passant_target
+            # Convert row/col to algebraic, e.g. row=3,col=4 -> 'e5'
+            file_char = chr(ord('a') + c)
+            rank_num = 8 - r
+            fen_en_passant = f"{file_char}{rank_num}"
+        else:
+            fen_en_passant = "-"
+
+        # 5) Halfmove clock (since last capture or pawn move)
+        fen_halfmove = str(self.halfmove_clock)
+
+        # 6) Fullmove number = 1 + (move_count // 2)
+        fen_fullmove = str(1 + (self.move_count // 2))
+
+        # Put it all together
+        fen_string = f"{fen_board} {fen_active_color} {castling_part} {fen_en_passant} {fen_halfmove} {fen_fullmove}"
+        return fen_string
+
 
     def play(self, bot):
         """
@@ -603,6 +668,7 @@ class ChessGame:
 
             # Switch turns
             self.turn = 'black' if self.turn == 'white' else 'white'
+            self.move_count += 1
             self.print_board()
 
         time.sleep(5)  # optional pause at game end
