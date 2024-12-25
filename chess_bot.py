@@ -481,186 +481,6 @@ class ChessBot:
 
         return score
 
-    def bot_move(self, bot_side):
-        """Bot chooses and makes a move for its side (white or black)."""
-        moves = self.generate_all_moves(bot_side, validate_check=True)
-        if not moves:
-            return
-
-        best_move = None
-        best_score = float('-inf') if bot_side == 'white' else float('inf')
-
-        for move in moves:
-            start_row, start_col, end_row, end_col = move
-            piece = self.board[start_row][start_col]
-            board_copy_state = copy.deepcopy(self.board)
-
-            # If it's a potential promotion, test all promotion candidates
-            if (piece == 'P' and end_row == 0) or (piece == 'p' and end_row == 7):
-                self.choose_best_promotion(
-                    start_row, start_col, end_row, end_col,
-                    piece, bot_side, board_copy_state
-                )
-
-            final_score = self.simulate_two_ply(move, bot_side)
-
-            # Revert
-            self.board = copy.deepcopy(board_copy_state)
-
-            # Track best move
-            if bot_side == 'white' and final_score > best_score:
-                best_score = final_score
-                best_move = move
-            elif bot_side == 'black' and final_score < best_score:
-                best_score = final_score
-                best_move = move
-
-        # Execute the best move
-        if best_move:
-            sr, sc, er, ec = best_move
-            piece = self.board[sr][sc]
-
-            # Double-check if it's a promotion
-            if (piece == 'P' and er == 0) or (piece == 'p' and er == 7):
-                board_before = copy.deepcopy(self.board)
-                best_promo_piece, _ = self.choose_best_promotion(
-                    sr, sc, er, ec, piece, bot_side, board_before
-                )
-                # Finalize the chosen promotion
-                self.board = copy.deepcopy(board_before)
-                self.board[sr][sc] = '.'
-                self.board[er][ec] = best_promo_piece
-
-                # Update halfmove clock, en passant, etc.
-                if piece.lower() == 'p':
-                    self.halfmove_clock = 0
-                else:
-                    self.halfmove_clock += 1
-                self.en_passant_target = None
-                self.record_position()
-
-                print(f"Bot promotes to {best_promo_piece}!")
-
-            self.make_move(best_move)
-            print(f"Bot plays: {self.convert_to_algebraic(best_move)}")
-
-    def simulate_two_ply(self, move, bot_side):
-        """
-        Apply 'move' for bot_side, then let the opponent pick its best move.
-        Return the final position evaluation (from White's perspective).
-        """
-        # 1. Save state for revert
-        board_copy_state = copy.deepcopy(self.board)
-        turn_save = self.turn
-        king_positions_save = self.king_positions.copy()
-        castling_rights_save = copy.deepcopy(self.castling_rights)
-        en_passant_save = self.en_passant_target
-        halfmove_clock_save = self.halfmove_clock
-
-        # 2. Make the bot's move
-        self.make_move(move)  # This updates self.board, self.turn, etc.
-
-        opponent_side = 'black' if bot_side == 'white' else 'white'
-        # If no opponent moves => either checkmate or stalemate, so just evaluate
-        opponent_moves = self.generate_all_moves(opponent_side, validate_check=True)
-        if not opponent_moves:
-            final_eval = self.evaluate_position()
-            # revert
-            self.board = board_copy_state
-            self.turn = turn_save
-            self.king_positions = king_positions_save
-            self.castling_rights = castling_rights_save
-            self.en_passant_target = en_passant_save
-            self.halfmove_clock = halfmove_clock_save
-            return final_eval
-
-        # 3. Opponent picks best move *from opponent's perspective*
-        best_eval_for_opponent = float('-inf') if opponent_side == 'white' else float('inf')
-        best_opponent_move = None
-
-        for op_move in opponent_moves:
-            # Save & apply
-            temp_board = copy.deepcopy(self.board)
-            temp_turn = self.turn
-            temp_king_pos = self.king_positions.copy()
-            temp_castling = copy.deepcopy(self.castling_rights)
-            temp_en_passant = self.en_passant_target
-            temp_halfmove = self.halfmove_clock
-
-            self.make_move(op_move)
-            current_eval = self.evaluate_position()
-
-            # Revert
-            self.board = temp_board
-            self.turn = temp_turn
-            self.king_positions = temp_king_pos
-            self.castling_rights = temp_castling
-            self.en_passant_target = temp_en_passant
-            self.halfmove_clock = temp_halfmove
-
-            # Opponent tries to produce a favorable eval for themselves
-            if opponent_side == 'white':
-                # Opponent is White => wants to MAXimize evaluation
-                if current_eval > best_eval_for_opponent:
-                    best_eval_for_opponent = current_eval
-                    best_opponent_move = op_move
-            else:
-                # Opponent is Black => wants to MINimize evaluation
-                if current_eval < best_eval_for_opponent:
-                    best_eval_for_opponent = current_eval
-                    best_opponent_move = op_move
-
-        # 4. Now we simulate applying that best_opponent_move for real,
-        #    evaluate the final position, revert, and return.
-        self.make_move(best_opponent_move)
-        final_eval = self.evaluate_position()
-
-        # Revert everything
-        self.board = board_copy_state
-        self.turn = turn_save
-        self.king_positions = king_positions_save
-        self.castling_rights = castling_rights_save
-        self.en_passant_target = en_passant_save
-        self.halfmove_clock = halfmove_clock_save
-
-        return final_eval
-
-    def choose_best_promotion(self, start_row, start_col, end_row, end_col,
-                              piece, bot_side, board_before):
-        """
-        Temporarily tries all possible promotion pieces and returns:
-        (best_promo_piece, best_promo_eval)
-
-        'board_before' is a deep copy of the board before we make any promotion move.
-        """
-        if piece == 'P':
-            promo_list = ['Q', 'R', 'B', 'N']
-        else:
-            promo_list = ['q', 'r', 'b', 'n']
-
-        best_promo_eval = float('-inf') if bot_side == 'white' else float('inf')
-        best_promo_piece = promo_list[0]
-
-        for promo in promo_list:
-            # Make the promotion on a temp board
-            self.board[start_row][start_col] = '.'
-            self.board[end_row][end_col] = promo
-
-            promo_score = self.evaluate_position()
-
-            # Restore board
-            self.board = copy.deepcopy(board_before)
-
-            # Track best/worst eval depending on side
-            if bot_side == 'white' and promo_score > best_promo_eval:
-                best_promo_eval = promo_score
-                best_promo_piece = promo
-            elif bot_side == 'black' and promo_score < best_promo_eval:
-                best_promo_eval = promo_score
-                best_promo_piece = promo
-
-        return best_promo_piece, best_promo_eval
-
     def make_move(self, move):
         """
         Execute the given move and update the game state.
@@ -1039,6 +859,186 @@ class ChessBot:
             self.print_board()
 
         time.sleep(5)  # optional pause at game end
+
+    def bot_move(self, bot_side):
+        """Bot chooses and makes a move for its side (white or black)."""
+        moves = self.generate_all_moves(bot_side, validate_check=True)
+        if not moves:
+            return
+
+        best_move = None
+        best_score = float('-inf') if bot_side == 'white' else float('inf')
+
+        for move in moves:
+            start_row, start_col, end_row, end_col = move
+            piece = self.board[start_row][start_col]
+            board_copy_state = copy.deepcopy(self.board)
+
+            # If it's a potential promotion, test all promotion candidates
+            if (piece == 'P' and end_row == 0) or (piece == 'p' and end_row == 7):
+                self.choose_best_promotion(
+                    start_row, start_col, end_row, end_col,
+                    piece, bot_side, board_copy_state
+                )
+
+            final_score = self.simulate_two_ply(move, bot_side)
+
+            # Revert
+            self.board = copy.deepcopy(board_copy_state)
+
+            # Track best move
+            if bot_side == 'white' and final_score > best_score:
+                best_score = final_score
+                best_move = move
+            elif bot_side == 'black' and final_score < best_score:
+                best_score = final_score
+                best_move = move
+
+        # Execute the best move
+        if best_move:
+            sr, sc, er, ec = best_move
+            piece = self.board[sr][sc]
+
+            # Double-check if it's a promotion
+            if (piece == 'P' and er == 0) or (piece == 'p' and er == 7):
+                board_before = copy.deepcopy(self.board)
+                best_promo_piece, _ = self.choose_best_promotion(
+                    sr, sc, er, ec, piece, bot_side, board_before
+                )
+                # Finalize the chosen promotion
+                self.board = copy.deepcopy(board_before)
+                self.board[sr][sc] = '.'
+                self.board[er][ec] = best_promo_piece
+
+                # Update halfmove clock, en passant, etc.
+                if piece.lower() == 'p':
+                    self.halfmove_clock = 0
+                else:
+                    self.halfmove_clock += 1
+                self.en_passant_target = None
+                self.record_position()
+
+                print(f"Bot promotes to {best_promo_piece}!")
+
+            self.make_move(best_move)
+            print(f"Bot plays: {self.convert_to_algebraic(best_move)}")
+
+    def simulate_two_ply(self, move, bot_side):
+        """
+        Apply 'move' for bot_side, then let the opponent pick its best move.
+        Return the final position evaluation (from White's perspective).
+        """
+        # 1. Save state for revert
+        board_copy_state = copy.deepcopy(self.board)
+        turn_save = self.turn
+        king_positions_save = self.king_positions.copy()
+        castling_rights_save = copy.deepcopy(self.castling_rights)
+        en_passant_save = self.en_passant_target
+        halfmove_clock_save = self.halfmove_clock
+
+        # 2. Make the bot's move
+        self.make_move(move)  # This updates self.board, self.turn, etc.
+
+        opponent_side = 'black' if bot_side == 'white' else 'white'
+        # If no opponent moves => either checkmate or stalemate, so just evaluate
+        opponent_moves = self.generate_all_moves(opponent_side, validate_check=True)
+        if not opponent_moves:
+            final_eval = self.evaluate_position()
+            # revert
+            self.board = board_copy_state
+            self.turn = turn_save
+            self.king_positions = king_positions_save
+            self.castling_rights = castling_rights_save
+            self.en_passant_target = en_passant_save
+            self.halfmove_clock = halfmove_clock_save
+            return final_eval
+
+        # 3. Opponent picks best move *from opponent's perspective*
+        best_eval_for_opponent = float('-inf') if opponent_side == 'white' else float('inf')
+        best_opponent_move = None
+
+        for op_move in opponent_moves:
+            # Save & apply
+            temp_board = copy.deepcopy(self.board)
+            temp_turn = self.turn
+            temp_king_pos = self.king_positions.copy()
+            temp_castling = copy.deepcopy(self.castling_rights)
+            temp_en_passant = self.en_passant_target
+            temp_halfmove = self.halfmove_clock
+
+            self.make_move(op_move)
+            current_eval = self.evaluate_position()
+
+            # Revert
+            self.board = temp_board
+            self.turn = temp_turn
+            self.king_positions = temp_king_pos
+            self.castling_rights = temp_castling
+            self.en_passant_target = temp_en_passant
+            self.halfmove_clock = temp_halfmove
+
+            # Opponent tries to produce a favorable eval for themselves
+            if opponent_side == 'white':
+                # Opponent is White => wants to MAXimize evaluation
+                if current_eval > best_eval_for_opponent:
+                    best_eval_for_opponent = current_eval
+                    best_opponent_move = op_move
+            else:
+                # Opponent is Black => wants to MINimize evaluation
+                if current_eval < best_eval_for_opponent:
+                    best_eval_for_opponent = current_eval
+                    best_opponent_move = op_move
+
+        # 4. Now we simulate applying that best_opponent_move for real,
+        #    evaluate the final position, revert, and return.
+        self.make_move(best_opponent_move)
+        final_eval = self.evaluate_position()
+
+        # Revert everything
+        self.board = board_copy_state
+        self.turn = turn_save
+        self.king_positions = king_positions_save
+        self.castling_rights = castling_rights_save
+        self.en_passant_target = en_passant_save
+        self.halfmove_clock = halfmove_clock_save
+
+        return final_eval
+
+    def choose_best_promotion(self, start_row, start_col, end_row, end_col,
+                              piece, bot_side, board_before):
+        """
+        Temporarily tries all possible promotion pieces and returns:
+        (best_promo_piece, best_promo_eval)
+
+        'board_before' is a deep copy of the board before we make any promotion move.
+        """
+        if piece == 'P':
+            promo_list = ['Q', 'R', 'B', 'N']
+        else:
+            promo_list = ['q', 'r', 'b', 'n']
+
+        best_promo_eval = float('-inf') if bot_side == 'white' else float('inf')
+        best_promo_piece = promo_list[0]
+
+        for promo in promo_list:
+            # Make the promotion on a temp board
+            self.board[start_row][start_col] = '.'
+            self.board[end_row][end_col] = promo
+
+            promo_score = self.evaluate_position()
+
+            # Restore board
+            self.board = copy.deepcopy(board_before)
+
+            # Track best/worst eval depending on side
+            if bot_side == 'white' and promo_score > best_promo_eval:
+                best_promo_eval = promo_score
+                best_promo_piece = promo
+            elif bot_side == 'black' and promo_score < best_promo_eval:
+                best_promo_eval = promo_score
+                best_promo_piece = promo
+
+        return best_promo_piece, best_promo_eval
 
 
 if __name__ == "__main__":
