@@ -249,54 +249,61 @@ class ChessBot:
         if self.game.check_draw_conditions():
             return 0
 
-        # 2. Material
-        #    We'll also add piece-square values. For black pieces,
-        #    we invert the table or flip the board indexing.
         material_score = 0
         bishop_count_white = 0
         bishop_count_black = 0
 
+        # -------------------------------------
+        # MAIN LOOP THROUGH BOARD
+        # -------------------------------------
         for r in range(8):
             for c in range(8):
                 piece = self.game.board[r][c]
-                material = self.game.piece_values.get(piece, 0)
-                material_score += material
+                if piece == '.':
+                    continue
 
-                # piece-square bonus
-                if piece.isupper():
-                    # White piece
-                    piece_type = piece.upper()
-                    if piece_type in piece_square_tables:
-                        material_score += self._get_piece_square_value(piece_type, r, c, is_white=True)
-                    if piece_type == 'B':
-                        bishop_count_white += 1
-                elif piece.islower():
-                    # Black piece
-                    piece_type = piece.upper()  # 'P','N','B','R','Q','K'
-                    if piece_type in piece_square_tables:
-                        material_score += self._get_piece_square_value(piece_type, r, c, is_white=False)
-                    if piece_type == 'B':
-                        bishop_count_black += 1
+                # Add piece material value (already positive for White, negative for Black)
+                piece_value = self.game.piece_values.get(piece, 0)
+                material_score += piece_value
+
+                # piece type (capital letter)
+                piece_type = piece.upper()
+
+                # If it's in our piece-square table dict, apply a table bonus/penalty
+                if piece_type in piece_square_tables:
+                    if piece.isupper():
+                        # White piece => read table directly for (r, c)
+                        psq_bonus = piece_square_tables[piece_type][r][c]
+                        material_score += psq_bonus
+                        if piece_type == 'B':
+                            bishop_count_white += 1
+                    else:
+                        # Black piece => mirror row & col, then subtract
+                        # so that "good" squares for Black reduce White’s evaluation
+                        mirrored_bonus = piece_square_tables[piece_type][7 - r][7 - c]
+                        material_score -= mirrored_bonus
+                        if piece_type == 'B':
+                            bishop_count_black += 1
 
         # bishop pair
-        bishop_pair_score = 0
         BISHOP_PAIR_BONUS = 0.5
+        bishop_pair_score = 0
         if bishop_count_white >= 2:
             bishop_pair_score += BISHOP_PAIR_BONUS
         if bishop_count_black >= 2:
             bishop_pair_score -= BISHOP_PAIR_BONUS
 
-        # 3. Mobility
+        # Mobility
         white_moves = self.game.generate_all_moves('white', validate_check=False)
         black_moves = self.game.generate_all_moves('black', validate_check=False)
         mobility_score = (len(white_moves) - len(black_moves)) * 0.1
 
-        # 4. Our existing simpler heuristics
+        # Evaluate other heuristics
         structure_score = self.evaluate_pawn_structure()
         rooks_score = self.evaluate_rooks_on_open_files()
         king_safety = self.evaluate_king_safety()
 
-        # 5. Advanced pawns (from your original code)
+        # Advanced pawns
         ADVANCED_PAWN_BONUS = 0.1
         advanced_pawn_score = 0
         for row_idx in range(8):
@@ -309,18 +316,18 @@ class ChessBot:
                     distance_from_start = row_idx
                     advanced_pawn_score -= ADVANCED_PAWN_BONUS * distance_from_start
 
-        # 6. Quick check for undefended pieces => "hanging piece penalty"
+        # Undefended piece penalty
         undefended_penalty = self._penalize_undefended_pieces()
 
-        # Sum up
+        # Sum up everything
         total_eval = (material_score
-                      + bishop_pair_score
-                      + mobility_score
-                      + structure_score
-                      + rooks_score
-                      + king_safety
-                      + advanced_pawn_score
-                      + undefended_penalty)
+                    + bishop_pair_score
+                    + mobility_score
+                    + structure_score
+                    + rooks_score
+                    + king_safety
+                    + advanced_pawn_score
+                    + undefended_penalty)
 
         return total_eval
 
