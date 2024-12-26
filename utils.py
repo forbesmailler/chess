@@ -29,6 +29,9 @@ def fen_to_binary_features(fen: str) -> np.ndarray:
          8 for en passant rights.
     """
     board = chess.Board(fen=fen)
+    side_to_move = board.turn
+    if not side_to_move:  # Black to move
+        board = board.mirror()
 
     # (1) Piece placement (768 = 64 squares × 12 piece types)
     piece_placement = np.zeros((64, 12), dtype=int)

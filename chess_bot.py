@@ -1,4 +1,4 @@
-import copy
+from copy import deepcopy
 import time
 import random
 
@@ -96,16 +96,16 @@ class ChessBot:
         Alpha-beta with transposition table + move ordering.
         """
         # Save game state
-        board_copy = copy.deepcopy(self.game.board)
-        turn_save = self.game.turn
-        king_positions_save = self.game.king_positions.copy()
-        castling_rights_save = copy.deepcopy(self.game.castling_rights)
-        en_passant_save = self.game.en_passant_target
-        halfmove_clock_save = self.game.halfmove_clock
+        board_copy = deepcopy(self.game.board)
+        turn_save = deepcopy(self.game.turn)
+        king_positions_save = deepcopy(self.game.king_positions)
+        castling_rights_save = deepcopy(self.game.castling_rights)
+        en_passant_save = deepcopy(self.game.en_passant_target)
+        halfmove_clock_save = deepcopy(self.game.halfmove_clock)
 
         # Make the move
         self.game.make_move(move)
-
+        
         pos_key = (self.game.create_position_key(), depth)  # create_position_key must be stable
 
         # Check transposition table
@@ -395,7 +395,7 @@ class ChessBot:
             self.game.board[sr][sc] = '.'
             self.game.board[er][ec] = promo
             promo_score = self.evaluate_position()
-            self.game.board = copy.deepcopy(board_before)
+            self.game.board = deepcopy(board_before)
 
             if self.side == 'white' and promo_score > best_promo_eval:
                 best_promo_eval = promo_score
