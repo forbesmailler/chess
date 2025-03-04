@@ -1,6 +1,8 @@
 from copy import deepcopy
-import pickle
 import numpy as np
+import torch
+from cnn_model import ChessCNN  # Ensure this imports your model class definition
+from game import ChessGame
 from utils import fen_to_binary_features
 
 class ChessBot:
@@ -8,24 +10,19 @@ class ChessBot:
     A class responsible for choosing the best move for the bot side.
     It references an existing ChessGame object to read/update board state.
     """
-
-    def __init__(self, game, model_path, scaler_path, side='black', max_depth=3):
+    def __init__(self, game: ChessGame, model_path, side='black', max_depth=3):
         self.game = game
         self.side = side
         self.max_depth = max_depth
         self.debug = True
 
-        # Load the neural network model
-
-        with open(model_path, "rb") as f:
-            self.model = pickle.load(f)
-
-        with open(scaler_path, "rb") as f:
-            self.scaler = pickle.load(f)
+        # Load the neural network model from the .pth file.
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = ChessCNN().to(device)
+        self.model.load_state_dict(torch.load(model_path, map_location=device, weights_only=False))
+        self.model.eval()
 
     def choose_move(self):
-
-        # Generate legal moves
         moves = self.game.generate_all_moves(self.side, validate_check=True)
         if not moves:
             return
@@ -43,20 +40,18 @@ class ChessBot:
             self._make_and_print_move(best_move)
 
     def alpha_beta_root(self, moves):
-
         best_move = None
-
         best_eval = float('-inf')
         for move in moves:
             eval = self.alpha_beta(move, depth=self.max_depth - 1,
-                                    alpha=float('-inf'), beta=float('inf'),
-                                    maximizing=False)                
+                                     alpha=float('-inf'), beta=float('inf'),
+                                     maximizing=False)
             if eval > best_eval:
                 best_eval = eval
                 best_move = move
 
             if self.debug:
-                print(f"[DEBUG] Move {move}, eval={eval:.2f}")
+                print(f"[DEBUG] Move {move}, eval={eval:.4f}")
 
         return best_move
 
@@ -75,13 +70,11 @@ class ChessBot:
         if (depth == 0 or self.game.is_checkmate() or self.game.check_draw_conditions()):
             eval = self.evaluate_position()
         else:
-            # Next side
             next_side = self.game.turn
             next_moves = self.game.generate_all_moves(next_side, validate_check=True)
             if not next_moves:
                 eval = self.evaluate_position()
             else:
-
                 if maximizing:
                     eval = float('-inf')
                     for nxt_move in next_moves:
@@ -105,18 +98,31 @@ class ChessBot:
                                 castling_rights_save,
                                 en_passant_save,
                                 halfmove_clock_save)
-
         return eval
 
     def evaluate_position(self):
-        # Convert the board to NN input format
+        if self.game.is_checkmate():
+            return -9999 if self.game.turn == 'white' else 9999
+        if self.game.check_draw_conditions():
+            print("draw")
+            return 0
+
         nn_input = fen_to_binary_features(self.game.get_fen()).reshape(1, -1)
-        # Predict the value using the neural network
-        eval = np.sum(self.model.predict_proba(self.scaler.transform(nn_input))  * np.array([-1, 0, 1]))
-        return eval
+        device = next(self.model.parameters()).device
+        nn_input_tensor = torch.tensor(nn_input, dtype=torch.float32, device=device)
+
+        self.model.eval()
+        with torch.no_grad():
+            logits = self.model(nn_input_tensor)
+            probabilities = torch.softmax(logits, dim=1)
+            # Debug prints:
+            # print(f"Logits: {logits.cpu().numpy()}")
+            # print(f"Probabilities: {probabilities.cpu().numpy()}")
+            score = (probabilities[0, 2] - probabilities[0, 0]).item()
+        return score
+
 
     def _make_and_print_move(self, move):
-        # Move is either a normal move or a castling move
         self.game.make_move(move)
         print(f"Bot plays: {self.game.convert_to_algebraic(move)}")
 

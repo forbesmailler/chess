@@ -1,7 +1,7 @@
 from game import ChessGame
-from bot import ChessBot
+from cnn_bot import ChessBot
 
 if __name__ == "__main__":
     game = ChessGame()
-    bot = ChessBot(game)
+    bot = ChessBot(game, "pth/chess_model.pth")
     game.play(bot)

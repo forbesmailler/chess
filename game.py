@@ -397,6 +397,7 @@ class ChessGame:
         Record the current position in position_counts for threefold repetition.
         The position key includes board layout, turn, castling rights, and en passant.
         """
+        print("position recorded")
         pos_key = self.create_position_key()
         self.position_counts[pos_key] += 1
 
@@ -507,7 +508,7 @@ class ChessGame:
 
     def is_fifty_move_rule(self):
         """Return True if there have been at least 50 moves since a capture or pawn move."""
-        return self.halfmove_clock >= 50
+        return self.halfmove_clock >= 100
 
     def is_insufficient_material(self):
         """
