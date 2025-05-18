@@ -27,10 +27,7 @@ MY_ID = client.account.get()['id']
 
 
 def _extract_player_id(p):
-    """
-    Normalize whatever Lichess gives you into a simple user-id string.
-    Supports both nested {'user':{'id':…}} and flat {'id':…} schemas.
-    """
+    """Normalize Lichess player dict into a simple string ID."""
     if not isinstance(p, dict):
         return None
     user = p.get('user')
@@ -53,7 +50,7 @@ def handle_game(game_id: str):
         logging.error(f"Expected gameFull, got {first.get('type')} in {game_id}")
         return
 
-    # pull white/black out of either players{} or top‐level fields
+    # extract players
     if 'players' in first:
         raw_w = first['players'].get('white')
         raw_b = first['players'].get('black')
@@ -71,23 +68,41 @@ def handle_game(game_id: str):
         f"playing as {'White' if our_white else 'Black'}"
     )
 
+    # ——— Handle the initial position right away ———
+    init_moves = first.get('state', {}).get('moves', '')
+    board = chess.Board()
+    for uci in init_moves.split():
+        board.push(chess.Move.from_uci(uci))
+
+    # if it's our turn at the start, play immediately
+    if (board.turn == chess.WHITE and our_white) or \
+       (board.turn == chess.BLACK and not our_white):
+        root = mcts.search(board)
+        if root.children:
+            best = max(root.children.items(), key=lambda kv: kv[1].N)[0]
+            try:
+                client.bots.make_move(game_id, best.uci())
+                logging.info(f"Game {game_id}: played opening move {best}")
+            except ResponseError as e:
+                logging.warning(f"Game {game_id}: failed opening move ({e})")
+
+    # ——— Now process any further updates ———
     for event in stream:
         if event.get('type') != 'gameState':
             continue
 
-        # if Lichess tells you the status is no longer "started", quit
-        status = event.get('status')
-        if status != 'started':
-            logging.info(f"Game {game_id} ended with status={status}, winner={event.get('winner')}")
+        # if game ended, stop
+        if event.get('status') != 'started':
+            logging.info(f"Game {game_id} ended: status={event.get('status')}")
             break
 
-        # rebuild board
+        # rebuild board from all moves so far
         moves = event.get('moves', '')
         board = chess.Board()
         for uci in moves.split():
             board.push(chess.Move.from_uci(uci))
 
-        # if it's our turn, search & play
+        # if it's our turn, play
         if (board.turn == chess.WHITE and our_white) or \
            (board.turn == chess.BLACK and not our_white):
 
@@ -96,13 +111,12 @@ def handle_game(game_id: str):
                 logging.warning(f"Game {game_id}: no legal moves")
                 continue
 
-            best_move = max(root.children.items(), key=lambda kv: kv[1].N)[0]
+            best = max(root.children.items(), key=lambda kv: kv[1].N)[0]
             try:
-                client.bots.make_move(game_id, best_move.uci())
-                logging.info(f"Game {game_id}: played {best_move}")
+                client.bots.make_move(game_id, best.uci())
+                logging.info(f"Game {game_id}: played {best}")
             except ResponseError as e:
                 logging.warning(f"Game {game_id}: make_move failed ({e})")
-                # once you hit "not your turn or game over", bail out
                 break
 
 
