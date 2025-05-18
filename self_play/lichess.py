@@ -3,7 +3,7 @@ import logging
 import torch
 import berserk
 import chess
-from berserk.exceptions import ResponseError
+from berserk.exceptions import ResponseError, ApiError
 from train_bot import ChessNet, MCTS
 
 logging.basicConfig(level=logging.INFO)
@@ -27,7 +27,6 @@ MY_ID = client.account.get()['id']
 
 
 def _extract_player_id(p):
-    """Normalize Lichess player dict into a simple string ID."""
     if not isinstance(p, dict):
         return None
     user = p.get('user')
@@ -36,6 +35,23 @@ def _extract_player_id(p):
     if 'id' in p:
         return p['id']
     return p.get('name')
+
+
+def _try_make_move(game_id: str, uci: str) -> bool:
+    """
+    Attempt to send a move. Returns True on success, False on any error.
+    """
+    try:
+        client.bots.make_move(game_id, uci)
+        logging.info(f"Game {game_id}: played move {uci}")
+        return True
+    except ResponseError as e:
+        logging.warning(f"Game {game_id}: move {uci} rejected ({e})")
+    except ApiError as e:
+        logging.warning(f"Game {game_id}: API error on move {uci} ({e})")
+    except Exception as e:
+        logging.error(f"Game {game_id}: unexpected error on move {uci} ({e})")
+    return False
 
 
 def handle_game(game_id: str):
@@ -50,7 +66,7 @@ def handle_game(game_id: str):
         logging.error(f"Expected gameFull, got {first.get('type')} in {game_id}")
         return
 
-    # extract players
+    # extract white/black IDs
     if 'players' in first:
         raw_w = first['players'].get('white')
         raw_b = first['players'].get('black')
@@ -68,7 +84,7 @@ def handle_game(game_id: str):
         f"playing as {'White' if our_white else 'Black'}"
     )
 
-    # ——— Handle the initial position right away ———
+    # initial position
     init_moves = first.get('state', {}).get('moves', '')
     board = chess.Board()
     for uci in init_moves.split():
@@ -80,13 +96,10 @@ def handle_game(game_id: str):
         root = mcts.search(board)
         if root.children:
             best = max(root.children.items(), key=lambda kv: kv[1].N)[0]
-            try:
-                client.bots.make_move(game_id, best.uci())
-                logging.info(f"Game {game_id}: played opening move {best}")
-            except ResponseError as e:
-                logging.warning(f"Game {game_id}: failed opening move ({e})")
+            if not _try_make_move(game_id, best.uci()):
+                return  # bail out on failure
 
-    # ——— Now process any further updates ———
+    # process updates
     for event in stream:
         if event.get('type') != 'gameState':
             continue
@@ -96,7 +109,7 @@ def handle_game(game_id: str):
             logging.info(f"Game {game_id} ended: status={event.get('status')}")
             break
 
-        # rebuild board from all moves so far
+        # rebuild board
         moves = event.get('moves', '')
         board = chess.Board()
         for uci in moves.split():
@@ -112,12 +125,8 @@ def handle_game(game_id: str):
                 continue
 
             best = max(root.children.items(), key=lambda kv: kv[1].N)[0]
-            try:
-                client.bots.make_move(game_id, best.uci())
-                logging.info(f"Game {game_id}: played {best}")
-            except ResponseError as e:
-                logging.warning(f"Game {game_id}: make_move failed ({e})")
-                break
+            if not _try_make_move(game_id, best.uci()):
+                break  # bail out on error
 
 
 def main():
