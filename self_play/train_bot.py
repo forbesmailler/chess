@@ -1,3 +1,4 @@
+import os
 import math
 import time
 import random
@@ -28,6 +29,26 @@ for f1 in FILES:
 ALL_UCIS = list(dict.fromkeys(ALL_UCIS))
 UCI_TO_IDX = {u: i for i, u in enumerate(ALL_UCIS)}
 NUM_ACTIONS = len(ALL_UCIS)
+
+# directory for saving intermediate checkpoints
+CHECKPOINT_DIR = 'checkpoints'
+
+# training hyperparams
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+BUFFER_SIZE = 100_000
+BATCH_SIZE = 64
+LR = 1e-3
+EPOCHS = 50
+GAMES_PER_EPOCH = 50
+MCTS_SIMS = 100
+MAX_MOVES = 200
+TEMP_MOVES = 30
+
+# ensure checkpoint directory exists
+os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
 # -------------------- Neural Network --------------------
 class ResidualBlock(nn.Module):
@@ -136,7 +157,7 @@ def _get_path(node: MCTSNode):
     return path
 
 class MCTS:
-    def __init__(self, net: ChessNet, sims=400, c_puct=1.0, time_limit=None, device='cpu'):
+    def __init__(self, net: ChessNet, sims=MCTS_SIMS, c_puct=1.0, time_limit=None, device=DEVICE):
         self.net = net.to(device)
         self.sims = sims
         self.c_puct = c_puct
@@ -267,9 +288,10 @@ def selfplay_train_loop():
                 logger.info(f"  Training step loss={loss:.4f}")
 
         # checkpoint
-        ckpt = f'checkpoint_epoch{epoch}.pth'
-        torch.save(model.state_dict(), ckpt)
-        logger.info(f"Saved checkpoint: {ckpt}")
+        ckpt_name = f"checkpoint_epoch{epoch}.pth"
+        ckpt_path = os.path.join(CHECKPOINT_DIR, ckpt_name)
+        torch.save(model.state_dict(), ckpt_path)
+        logger.info(f"Saved checkpoint: {ckpt_path}")
 
     torch.save(model.state_dict(), 'best.pth')
     logger.info("Training complete. Model saved to best.pth")

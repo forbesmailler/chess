@@ -1,31 +1,78 @@
-# lichess.py
+# lichess_trainable.py
+# A Lichess bot that plays, learns from its games, and saves its model after each game.
+
+import os
 import logging
 import torch
 import berserk
 import chess
+import random
+from collections import deque
 from berserk.exceptions import ResponseError, ApiError
-from train_bot import ChessNet, MCTS
+from train_bot import (
+    ChessNet,
+    MCTS,
+    state_to_tensor,
+    UCI_TO_IDX,
+    ALL_UCIS,
+    BUFFER_SIZE,
+    BATCH_SIZE,
+    LR,
+    MCTS_SIMS,
+    DEVICE
+)
 
+# ------------------------- Setup -------------------------
 logging.basicConfig(level=logging.INFO)
-DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-# Load model
+# load or initialize model
 model = ChessNet().to(DEVICE)
-model.load_state_dict(torch.load('best.pth', map_location=DEVICE))
+if os.path.exists('best.pth'):
+    model.load_state_dict(torch.load('best.pth', map_location=DEVICE))
+else:
+    logging.info("No existing best.pth found. Starting from scratch.")
 model.eval()
 
-# Initialize MCTS
-mcts = MCTS(model, sims=200, device=DEVICE)
+# optimizer for online training
+optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=1e-4)
 
-# Lichess client setup
+# replay buffer for self-play examples
+buffer = deque(maxlen=BUFFER_SIZE)
+
+# Lichess client
 with open('token.txt', 'r') as f:
     token = f.read().strip()
 session = berserk.TokenSession(token)
 client = berserk.Client(session=session)
-
 MY_ID = client.account.get()['id']
 
+# ------------------------- Training utils -------------------------
+def tensor_from_pi(pi_dict):
+    pi = torch.zeros(len(ALL_UCIS), dtype=torch.float32)
+    for uci, p in pi_dict.items():
+        pi[UCI_TO_IDX[uci]] = p
+    return pi
 
+
+def train_on_batch(batch):
+    st_fens, pis, zs = zip(*batch)
+    states = torch.stack([state_to_tensor(chess.Board(fen)) for fen in st_fens]).to(DEVICE)
+    target_pis = torch.stack([tensor_from_pi(pi) for pi in pis]).to(DEVICE)
+    target_vals = torch.tensor(zs, dtype=torch.float32, device=DEVICE).unsqueeze(1)
+
+    model.train()
+    optimizer.zero_grad()
+    logits, values = model(states)
+    loss = (
+        torch.nn.functional.mse_loss(values, target_vals)
+        + torch.nn.functional.cross_entropy(logits, target_pis.argmax(dim=1))
+    )
+    loss.backward()
+    optimizer.step()
+    model.eval()
+    return loss.item()
+
+# ------------------------- Helper functions -------------------------
 def _extract_player_id(p):
     if not isinstance(p, dict):
         return None
@@ -38,22 +85,17 @@ def _extract_player_id(p):
 
 
 def _try_make_move(game_id: str, uci: str) -> bool:
-    """
-    Attempt to send a move. Returns True on success, False on any error.
-    """
     try:
         client.bots.make_move(game_id, uci)
         logging.info(f"Game {game_id}: played move {uci}")
         return True
-    except ResponseError as e:
-        logging.warning(f"Game {game_id}: move {uci} rejected ({e})")
-    except ApiError as e:
-        logging.warning(f"Game {game_id}: API error on move {uci} ({e})")
+    except (ResponseError, ApiError) as e:
+        logging.warning(f"Game {game_id}: could not play move {uci}: {e}")
     except Exception as e:
-        logging.error(f"Game {game_id}: unexpected error on move {uci} ({e})")
+        logging.error(f"Game {game_id}: unexpected error on move {uci}: {e}")
     return False
 
-
+# ------------------------- Game handler -------------------------
 def handle_game(game_id: str):
     stream = client.bots.stream_game_state(game_id)
     try:
@@ -63,10 +105,10 @@ def handle_game(game_id: str):
         return
 
     if first.get('type') != 'gameFull':
-        logging.error(f"Expected gameFull, got {first.get('type')} in {game_id}")
+        logging.error(f"Expected gameFull, got {first.get('type')}")
         return
 
-    # extract white/black IDs
+    # determine players
     if 'players' in first:
         raw_w = first['players'].get('white')
         raw_b = first['players'].get('black')
@@ -78,64 +120,79 @@ def handle_game(game_id: str):
     black_id = _extract_player_id(raw_b)
     our_white = (white_id == MY_ID)
 
-    logging.info(
-        f"Game {game_id}: our ID={MY_ID}, "
-        f"white_id={white_id}, black_id={black_id}, "
-        f"playing as {'White' if our_white else 'Black'}"
-    )
+    logging.info(f"Game {game_id}: we are {'White' if our_white else 'Black'}")
 
-    # initial position
-    init_moves = first.get('state', {}).get('moves', '')
+    # collect self-play examples
+    game_examples = []  # (fen, pi_dict, z)
     board = chess.Board()
+
+    # apply any initial moves
+    init_moves = first.get('state', {}).get('moves', '')
     for uci in init_moves.split():
         board.push(chess.Move.from_uci(uci))
 
-    # if it's our turn at the start, play immediately
-    if (board.turn == chess.WHITE and our_white) or \
-       (board.turn == chess.BLACK and not our_white):
-        root = mcts.search(board)
-        if root.children:
-            best = max(root.children.items(), key=lambda kv: kv[1].N)[0]
-            if not _try_make_move(game_id, best.uci()):
-                return  # bail out on failure
+    # if it's our turn from the start, play and record
+    if (board.turn == chess.WHITE and our_white) or (board.turn == chess.BLACK and not our_white):
+        root = MCTS(model, sims=MCTS_SIMS, device=DEVICE).search(board)
+        counts = {mv.uci(): nd.N for mv, nd in root.children.items()}
+        total = sum(counts.values())
+        pi = {u: n/total for u, n in counts.items()}
+        game_examples.append((board.fen(), pi, None))
+        best = max(root.children.items(), key=lambda kv: kv[1].N)[0]
+        _try_make_move(game_id, best.uci())
+        board.push(best)
 
-    # process updates
+    # play until end
+    result = None
     for event in stream:
         if event.get('type') != 'gameState':
             continue
-
-        # if game ended, stop
         if event.get('status') != 'started':
-            logging.info(f"Game {game_id} ended: status={event.get('status')}")
+            result = event.get('winner')
             break
 
-        # rebuild board
         moves = event.get('moves', '')
         board = chess.Board()
         for uci in moves.split():
             board.push(chess.Move.from_uci(uci))
 
-        # if it's our turn, play
-        if (board.turn == chess.WHITE and our_white) or \
-           (board.turn == chess.BLACK and not our_white):
-
-            root = mcts.search(board)
-            if not root.children:
-                logging.warning(f"Game {game_id}: no legal moves")
-                continue
-
+        if (board.turn == chess.WHITE and our_white) or (board.turn == chess.BLACK and not our_white):
+            root = MCTS(model, sims=MCTS_SIMS, device=DEVICE).search(board)
+            counts = {mv.uci(): nd.N for mv, nd in root.children.items()}
+            total = sum(counts.values())
+            pi = {u: n/total for u, n in counts.items()}
+            game_examples.append((board.fen(), pi, None))
             best = max(root.children.items(), key=lambda kv: kv[1].N)[0]
             if not _try_make_move(game_id, best.uci()):
-                break  # bail out on error
+                break
+            board.push(best)
 
+    # determine outcome z
+    z = 0.0
+    if result == 'white': z = 1.0
+    elif result == 'black': z = -1.0
 
+    # add to buffer and train
+    for fen, pi, _ in game_examples:
+        buffer.append((fen, pi, z))
+
+    logging.info(f"Completed game. Buffer size={len(buffer)}")
+
+    if len(buffer) >= BATCH_SIZE:
+        batch = random.sample(buffer, BATCH_SIZE)
+        loss = train_on_batch(batch)
+        logging.info(f"Training step: loss={loss:.4f}")
+        # save best model
+        torch.save(model.state_dict(), 'best.pth')
+        logging.info("Saved best.pth")
+
+# ------------------------- Main loop -------------------------
 def main():
     for ev in client.bots.stream_incoming_events():
         if ev['type'] == 'challenge':
             client.bots.accept_challenge(ev['challenge']['id'])
         elif ev['type'] == 'gameStart':
             handle_game(ev['game']['id'])
-
 
 if __name__ == '__main__':
     main()
