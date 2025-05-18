@@ -6,8 +6,6 @@ import logging
 import torch
 import berserk
 import chess
-import random
-from collections import deque
 from berserk.exceptions import ResponseError, ApiError
 from train_bot import (
     ChessNet,
@@ -15,8 +13,6 @@ from train_bot import (
     state_to_tensor,
     UCI_TO_IDX,
     ALL_UCIS,
-    BUFFER_SIZE,
-    BATCH_SIZE,
     LR,
     MCTS_SIMS,
     DEVICE
@@ -35,9 +31,6 @@ model.eval()
 
 # optimizer for online training
 optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=1e-4)
-
-# replay buffer for self-play examples
-buffer = deque(maxlen=BUFFER_SIZE)
 
 # Lichess client
 with open('token.txt', 'r') as f:
@@ -138,9 +131,9 @@ def handle_game(game_id: str):
         total = sum(counts.values())
         pi = {u: n/total for u, n in counts.items()}
         game_examples.append((board.fen(), pi, None))
-        best = max(root.children.items(), key=lambda kv: kv[1].N)[0]
-        _try_make_move(game_id, best.uci())
-        board.push(best)
+        best_move = max(root.children.items(), key=lambda kv: kv[1].N)[0]
+        _try_make_move(game_id, best_move.uci())
+        board.push(best_move)
 
     # play until end
     result = None
@@ -162,27 +155,23 @@ def handle_game(game_id: str):
             total = sum(counts.values())
             pi = {u: n/total for u, n in counts.items()}
             game_examples.append((board.fen(), pi, None))
-            best = max(root.children.items(), key=lambda kv: kv[1].N)[0]
-            if not _try_make_move(game_id, best.uci()):
+            best_move = max(root.children.items(), key=lambda kv: kv[1].N)[0]
+            if not _try_make_move(game_id, best_move.uci()):
                 break
-            board.push(best)
+            board.push(best_move)
 
     # determine outcome z
     z = 0.0
-    if result == 'white': z = 1.0
-    elif result == 'black': z = -1.0
+    if result == 'white':
+        z = 1.0
+    elif result == 'black':
+        z = -1.0
 
-    # add to buffer and train
-    for fen, pi, _ in game_examples:
-        buffer.append((fen, pi, z))
-
-    logging.info(f"Completed game. Buffer size={len(buffer)}")
-
-    if len(buffer) >= BATCH_SIZE:
-        batch = random.sample(buffer, BATCH_SIZE)
-        loss = train_on_batch(batch)
-        logging.info(f"Training step: loss={loss:.4f}")
-        # save best model
+    # train on all moves from this game
+    training_batch = [(fen, pi, z) for fen, pi, _ in game_examples]
+    if training_batch:
+        loss = train_on_batch(training_batch)
+        logging.info(f"Training on {len(training_batch)} examples: loss={loss:.4f}")
         torch.save(model.state_dict(), 'best.pth')
         logging.info("Saved best.pth")
 
