@@ -156,7 +156,6 @@ class MCTS:
         total = sum(probs) or len(probs)
         priors = [(mv, p/total) for mv, p in zip(legal, probs)]
 
-        # Inject Dirichlet noise at root
         noise = np.random.dirichlet([self.dir_alpha] * len(priors))
         priors = [
             (mv, (1 - self.epsilon) * p + self.epsilon * n)
@@ -181,11 +180,17 @@ class MCTS:
         return root
 
     def _evaluate_and_expand(self, node: MCTSNode) -> float:
-        if node.board.is_game_over():
-            res = node.board.result()
-            return 1.0 if res == '1-0' else (-1.0 if res == '0-1' else 0.0)
-        policy, value = self._infer(node.board)
-        legal = list(node.board.legal_moves)
+        board = node.board
+        if board.is_game_over(claim_draw=True):
+            outcome = board.outcome(claim_draw=True)
+            if outcome.winner is None:
+                return 0.0
+            return 1.0 if outcome.winner else -1.0
+        if board.can_claim_threefold_repetition() or board.can_claim_fifty_moves():
+            return 0.0
+
+        policy, value = self._infer(board)
+        legal = list(board.legal_moves)
         probs = [policy[UCI_TO_IDX[mv.uci()]] for mv in legal]
         total = sum(probs) or len(probs)
         priors = [(mv, p/total) for mv, p in zip(legal, probs)]
@@ -243,34 +248,54 @@ def selfplay_train_loop():
             mcts = MCTS(model, sims=MCTS_SIMS, device=DEVICE)
             examples = []
             move_count = 0
-            while not board.is_game_over() and move_count < MAX_MOVES:
+
+            while True:
+                if board.is_game_over(claim_draw=True):
+                    break
+                if board.can_claim_threefold_repetition() or board.can_claim_fifty_moves():
+                    break
+                if move_count >= MAX_MOVES:
+                    break
+
                 root = mcts.search(board)
                 counts = {mv.uci(): nd.N for mv, nd in root.children.items()}
                 total = sum(counts.values())
                 pi = {u: n/total for u, n in counts.items()}
                 examples.append((board.fen(), pi, None))
+
                 if move_count < TEMP_MOVES:
                     moves, weights = zip(*[(mv, nd.N) for mv, nd in root.children.items()])
                     best_move = random.choices(moves, weights=weights)[0]
                 else:
                     best_move = max(root.children.items(), key=lambda kv: kv[1].N)[0]
+
                 board.push(best_move)
                 move_count += 1
 
-            result = board.result()
-            if board.is_checkmate(): end = "checkmate"
-            elif board.is_stalemate(): end = "stalemate"
-            elif board.is_insufficient_material(): end = "insufficient_material"
-            elif board.can_claim_fifty_moves(): end = "50_move"
-            elif board.is_repetition(): end = "repetition"
-            else: end = "draw"
+            outcome = board.outcome(claim_draw=True)
+            # assign z
+            if outcome.winner is None:
+                z = 0.0
+            else:
+                z = 1.0 if outcome.winner else -1.0
+            # determine ending reason
+            if board.is_checkmate():
+                end = 'checkmate'
+            elif board.is_stalemate():
+                end = 'stalemate'
+            elif board.is_insufficient_material():
+                end = 'insufficient_material'
+            elif board.can_claim_fifty_moves():
+                end = '50_move'
+            elif board.can_claim_threefold_repetition():
+                end = 'repetition'
+            else:
+                end = 'draw'
 
-            z = 1.0 if result == '1-0' else (-1.0 if result == '0-1' else 0.0)
             game_data = [(fen, pi, z) for fen, pi, _ in examples]
 
-            # Train on this game's data and immediately save
             loss = train_on_batch(model, optimizer, game_data)
-            logger.info(f"Game {game_num}/{GAMES_PER_EPOCH}: result={result} ({end}), "
+            logger.info(f"Game {game_num}/{GAMES_PER_EPOCH}: result={board.result()} ({end}), "
                         f"{len(game_data)} examples, loss={loss:.4f}")
             torch.save(model.state_dict(), 'best.pth')
             logger.info("  Saved updated best.pth")
