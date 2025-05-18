@@ -11,6 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import chess
+import torch.cuda.amp as amp
 
 # -------------------- Constants --------------------
 FILES = "abcdefgh"
@@ -30,9 +31,7 @@ ALL_UCIS = list(dict.fromkeys(ALL_UCIS))
 UCI_TO_IDX = {u: i for i, u in enumerate(ALL_UCIS)}
 NUM_ACTIONS = len(ALL_UCIS)
 
-# directory for saving intermediate checkpoints
 CHECKPOINT_DIR = 'checkpoints'
-# training hyperparameters
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 BUFFER_SIZE = 100_000
 BATCH_SIZE = 64
@@ -44,7 +43,6 @@ MAX_MOVES = 200
 TEMP_MOVES = 30
 
 os.makedirs(CHECKPOINT_DIR, exist_ok=True)
-
 # logging setup
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
@@ -66,10 +64,13 @@ class ResidualBlock(nn.Module):
         return F.relu(out)
 
 class ChessNet(nn.Module):
-    def __init__(self, in_channels=13, hidden_channels=64, num_res_blocks=4, board_size=8, num_actions: int = NUM_ACTIONS):
+    def __init__(self, in_channels=13, hidden_channels=64, num_res_blocks=4,
+                 board_size=8, num_actions: int = NUM_ACTIONS):
         super().__init__()
         self.conv_init = nn.Conv2d(in_channels, hidden_channels, 3, padding=1)
-        self.res_blocks = nn.ModuleList([ResidualBlock(hidden_channels) for _ in range(num_res_blocks)])
+        self.res_blocks = nn.ModuleList([
+            ResidualBlock(hidden_channels) for _ in range(num_res_blocks)
+        ])
         self.policy_head = nn.Sequential(
             nn.Conv2d(hidden_channels, 2, 1),
             nn.BatchNorm2d(2),
@@ -100,7 +101,8 @@ class ChessNet(nn.Module):
 def state_to_tensor(board: chess.Board) -> torch.Tensor:
     arr = torch.zeros(13, 8, 8, dtype=torch.float32)
     for sq, piece in board.piece_map().items():
-        pt = {chess.PAWN:0, chess.KNIGHT:1, chess.BISHOP:2, chess.ROOK:3, chess.QUEEN:4, chess.KING:5}[piece.piece_type]
+        pt = {chess.PAWN:0, chess.KNIGHT:1, chess.BISHOP:2,
+              chess.ROOK:3, chess.QUEEN:4, chess.KING:5}[piece.piece_type]
         offset = 0 if piece.color == chess.WHITE else 6
         row, col = divmod(sq, 8)
         arr[pt + offset, row, col] = 1.0
@@ -137,13 +139,17 @@ def _get_path(node: MCTSNode):
     return path
 
 class MCTS:
-    def __init__(self, net: ChessNet, sims=MCTS_SIMS, c_puct=1.0, time_limit=None, device=DEVICE):
+    def __init__(self, net: ChessNet, sims=MCTS_SIMS, c_puct=1.0,
+                 time_limit=None, device=DEVICE):
         self.net = net.to(device)
         self.sims = sims
         self.c_puct = c_puct
         self.time_limit = time_limit
         self.device = device
+        self._infer_cache = {}
+
     def search(self, root_board: chess.Board) -> MCTSNode:
+        self._infer_cache.clear()
         root = MCTSNode(root_board)
         policy, _ = self._infer(root_board)
         legal = list(root_board.legal_moves)
@@ -157,7 +163,8 @@ class MCTS:
                 break
             node = root
             while not node.is_leaf():
-                mv, node = max(node.children.items(), key=lambda kv: uct(node, kv[1], self.c_puct))
+                mv, node = max(node.children.items(),
+                               key=lambda kv: uct(node, kv[1], self.c_puct))
             value = self._evaluate_and_expand(node)
             for nd in reversed(_get_path(node)):
                 nd.N += 1
@@ -165,6 +172,7 @@ class MCTS:
                 nd.Q = nd.W / nd.N
                 value = -value
         return root
+
     def _evaluate_and_expand(self, node: MCTSNode) -> float:
         if node.board.is_game_over():
             res = node.board.result()
@@ -176,12 +184,22 @@ class MCTS:
         priors = [(mv, p/total) for mv, p in zip(legal, probs)]
         node.expand(priors)
         return value
+
     def _infer(self, board: chess.Board):
+        fen = board.fen()
+        if fen in self._infer_cache:
+            return self._infer_cache[fen]
         t = state_to_tensor(board).to(self.device).unsqueeze(0)
         with torch.no_grad():
-            logits, v = self.net(t)
-            probs = torch.softmax(logits, dim=1).cpu().numpy()[0]
-            return probs, v.cpu().item()
+            if self.device.startswith('cuda'):
+                with amp.autocast():
+                    logits, v = self.net(t)
+            else:
+                logits, v = self.net(t)
+        probs = torch.softmax(logits, dim=1).cpu().numpy()[0]
+        val   = v.cpu().item()
+        self._infer_cache[fen] = (probs, val)
+        return probs, val
 
 # -------------------- Self-Play Training --------------------
 def tensor_from_pi(pi_dict):
@@ -204,10 +222,21 @@ def train_on_batch(model, optimizer, batch):
 
 def selfplay_train_loop():
     model = ChessNet().to(DEVICE)
-    # load initial model if available
     if os.path.exists('best.pth'):
         model.load_state_dict(torch.load('best.pth', map_location=DEVICE))
         logger.info("Loaded initial model from best.pth")
+
+    import platform
+
+    # optional JIT compile: skip on Windows to avoid missing-compiler errors
+    system = platform.system()
+    if hasattr(torch, 'compile') and system != 'Windows':
+        try:
+            model = torch.compile(model)
+            logger.info("Compiled model with torch.compile")
+        except Exception as e:
+            logger.warning(f"Model compilation failed, using eager execution: {e}")
+
     optimizer = optim.Adam(model.parameters(), lr=LR, weight_decay=1e-4)
     buffer = deque(maxlen=BUFFER_SIZE)
 
@@ -233,15 +262,31 @@ def selfplay_train_loop():
                 move_count += 1
 
             result = board.result()
+            # determine how the game ended
+            if board.is_checkmate():
+                end = "checkmate"
+            elif board.is_stalemate():
+                end = "stalemate"
+            elif board.is_insufficient_material():
+                end = "insufficient_material"
+            elif board.can_claim_fifty_moves():
+                end = "50_move"
+            elif board.is_repetition():
+                end = "repetition"
+            else:
+                end = "draw"
+
             z = 1.0 if result == '1-0' else (-1.0 if result == '0-1' else 0.0)
             game_data = [(fen, pi, z) for fen, pi, _ in examples]
             buffer.extend(game_data)
-            logger.info(f"Game {game_num}/{GAMES_PER_EPOCH}: {len(game_data)} examples, buffer size={len(buffer)}")
+            logger.info(
+                f"Game {game_num}/{GAMES_PER_EPOCH}: result={result} ({end}), "
+                f"{len(game_data)} examples, buffer size={len(buffer)}"
+            )
             if len(buffer) >= BATCH_SIZE:
                 loss = train_on_batch(model, optimizer, random.sample(buffer, BATCH_SIZE))
                 logger.info(f"  Training step loss={loss:.4f}")
 
-        # checkpoint
         ckpt_path = os.path.join(CHECKPOINT_DIR, f"checkpoint_epoch{epoch}.pth")
         torch.save(model.state_dict(), ckpt_path)
         logger.info(f"Saved checkpoint: {ckpt_path}")
