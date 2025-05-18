@@ -32,8 +32,7 @@ NUM_ACTIONS = len(ALL_UCIS)
 
 # directory for saving intermediate checkpoints
 CHECKPOINT_DIR = 'checkpoints'
-
-# training hyperparams
+# training hyperparameters
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 BUFFER_SIZE = 100_000
 BATCH_SIZE = 64
@@ -44,9 +43,9 @@ MCTS_SIMS = 100
 MAX_MOVES = 200
 TEMP_MOVES = 30
 
-# ensure checkpoint directory exists
 os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
+# logging setup
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
@@ -67,20 +66,10 @@ class ResidualBlock(nn.Module):
         return F.relu(out)
 
 class ChessNet(nn.Module):
-    def __init__(self,
-                 in_channels=13,
-                 hidden_channels=64,
-                 num_res_blocks=4,
-                 board_size=8,
-                 num_actions: int = NUM_ACTIONS):
+    def __init__(self, in_channels=13, hidden_channels=64, num_res_blocks=4, board_size=8, num_actions: int = NUM_ACTIONS):
         super().__init__()
-        # initial conv
         self.conv_init = nn.Conv2d(in_channels, hidden_channels, 3, padding=1)
-        # residual towers
-        self.res_blocks = nn.ModuleList(
-            [ResidualBlock(hidden_channels) for _ in range(num_res_blocks)]
-        )
-        # policy head
+        self.res_blocks = nn.ModuleList([ResidualBlock(hidden_channels) for _ in range(num_res_blocks)])
         self.policy_head = nn.Sequential(
             nn.Conv2d(hidden_channels, 2, 1),
             nn.BatchNorm2d(2),
@@ -88,7 +77,6 @@ class ChessNet(nn.Module):
             nn.Flatten(),
             nn.Linear(2 * board_size * board_size, num_actions)
         )
-        # value head
         self.value_head = nn.Sequential(
             nn.Conv2d(hidden_channels, 1, 1),
             nn.BatchNorm2d(1),
@@ -112,18 +100,10 @@ class ChessNet(nn.Module):
 def state_to_tensor(board: chess.Board) -> torch.Tensor:
     arr = torch.zeros(13, 8, 8, dtype=torch.float32)
     for sq, piece in board.piece_map().items():
-        pt = {
-            chess.PAWN:   0,
-            chess.KNIGHT: 1,
-            chess.BISHOP: 2,
-            chess.ROOK:   3,
-            chess.QUEEN:  4,
-            chess.KING:   5
-        }[piece.piece_type]
+        pt = {chess.PAWN:0, chess.KNIGHT:1, chess.BISHOP:2, chess.ROOK:3, chess.QUEEN:4, chess.KING:5}[piece.piece_type]
         offset = 0 if piece.color == chess.WHITE else 6
         row, col = divmod(sq, 8)
         arr[pt + offset, row, col] = 1.0
-    # side to move
     if board.turn == chess.WHITE:
         arr[12].fill_(1.0)
     return arr
@@ -163,8 +143,6 @@ class MCTS:
         self.c_puct = c_puct
         self.time_limit = time_limit
         self.device = device
-        self.last_max_depth = 0
-
     def search(self, root_board: chess.Board) -> MCTSNode:
         root = MCTSNode(root_board)
         policy, _ = self._infer(root_board)
@@ -173,32 +151,20 @@ class MCTS:
         total = sum(probs) or len(probs)
         priors = [(mv, p/total) for mv, p in zip(legal, probs)]
         root.expand(priors)
-
         start = time.time()
-        self.last_max_depth = 0
         for _ in range(self.sims):
             if self.time_limit and (time.time() - start) > self.time_limit:
                 break
             node = root
-            depth = 0
-            # selection
             while not node.is_leaf():
-                mv, node = max(
-                    node.children.items(),
-                    key=lambda kv: uct(node, kv[1], self.c_puct)
-                )
-                depth += 1
-            self.last_max_depth = max(self.last_max_depth, depth)
-            # evaluate & expand
+                mv, node = max(node.children.items(), key=lambda kv: uct(node, kv[1], self.c_puct))
             value = self._evaluate_and_expand(node)
-            # backpropagate
             for nd in reversed(_get_path(node)):
                 nd.N += 1
                 nd.W += value
                 nd.Q = nd.W / nd.N
                 value = -value
         return root
-
     def _evaluate_and_expand(self, node: MCTSNode) -> float:
         if node.board.is_game_over():
             res = node.board.result()
@@ -210,7 +176,6 @@ class MCTS:
         priors = [(mv, p/total) for mv, p in zip(legal, probs)]
         node.expand(priors)
         return value
-
     def _infer(self, board: chess.Board):
         t = state_to_tensor(board).to(self.device).unsqueeze(0)
         with torch.no_grad():
@@ -219,30 +184,16 @@ class MCTS:
             return probs, v.cpu().item()
 
 # -------------------- Self-Play Training --------------------
-
-# training hyperparams
-DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-BUFFER_SIZE, BATCH_SIZE = 100_000, 64
-LR = 1e-3
-EPOCHS, GAMES_PER_EPOCH = 50, 50
-MCTS_SIMS, MAX_MOVES = 100, 200
-TEMP_MOVES = 30
-
-logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
-
 def tensor_from_pi(pi_dict):
     pi = torch.zeros(len(ALL_UCIS), dtype=torch.float32)
     for uci, p in pi_dict.items():
         pi[UCI_TO_IDX[uci]] = p
     return pi
 
-
 def train_on_batch(model, optimizer, batch):
     states = torch.stack([state_to_tensor(chess.Board(fen)) for fen, _, _ in batch]).to(DEVICE)
     pis = torch.stack([tensor_from_pi(pi) for _, pi, _ in batch]).to(DEVICE)
     zs = torch.tensor([z for *_, z in batch], dtype=torch.float32, device=DEVICE).unsqueeze(1)
-
     model.train()
     optimizer.zero_grad()
     logits, values = model(states)
@@ -251,9 +202,12 @@ def train_on_batch(model, optimizer, batch):
     optimizer.step()
     return loss.item()
 
-
 def selfplay_train_loop():
     model = ChessNet().to(DEVICE)
+    # load initial model if available
+    if os.path.exists('best.pth'):
+        model.load_state_dict(torch.load('best.pth', map_location=DEVICE))
+        logger.info("Loaded initial model from best.pth")
     optimizer = optim.Adam(model.parameters(), lr=LR, weight_decay=1e-4)
     buffer = deque(maxlen=BUFFER_SIZE)
 
@@ -288,8 +242,7 @@ def selfplay_train_loop():
                 logger.info(f"  Training step loss={loss:.4f}")
 
         # checkpoint
-        ckpt_name = f"checkpoint_epoch{epoch}.pth"
-        ckpt_path = os.path.join(CHECKPOINT_DIR, ckpt_name)
+        ckpt_path = os.path.join(CHECKPOINT_DIR, f"checkpoint_epoch{epoch}.pth")
         torch.save(model.state_dict(), ckpt_path)
         logger.info(f"Saved checkpoint: {ckpt_path}")
 
