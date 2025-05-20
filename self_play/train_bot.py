@@ -31,12 +31,11 @@ UCI_TO_IDX = {u: i for i, u in enumerate(ALL_UCIS)}
 NUM_ACTIONS = len(ALL_UCIS)
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-LR = 1e-3
+LR = 0.1
 EPOCHS = 50
 GAMES_PER_EPOCH = 50
-MCTS_SIMS = 100
-MAX_MOVES = 200
-TEMP_MOVES = 30
+MCTS_SIMS = 200
+TEMP_MOVES = 20
 
 # logging setup
 logger = logging.getLogger(__name__)
@@ -181,13 +180,16 @@ class MCTS:
 
     def _evaluate_and_expand(self, node: MCTSNode) -> float:
         board = node.board
+        # full game-over with draw claims
         if board.is_game_over(claim_draw=True):
             outcome = board.outcome(claim_draw=True)
-            if outcome.winner is None:
-                return 0.0
-            return 1.0 if outcome.winner else -1.0
+            term = outcome.termination
+            if term == chess.Termination.CHECKMATE:
+                return 1.0 if outcome.winner else -1.0
+            return -0.5
+        # pre-claim draws
         if board.can_claim_threefold_repetition() or board.can_claim_fifty_moves():
-            return 0.0
+            return -0.5
 
         policy, value = self._infer(board)
         legal = list(board.legal_moves)
@@ -254,8 +256,6 @@ def selfplay_train_loop():
                     break
                 if board.can_claim_threefold_repetition() or board.can_claim_fifty_moves():
                     break
-                if move_count >= MAX_MOVES:
-                    break
 
                 root = mcts.search(board)
                 counts = {mv.uci(): nd.N for mv, nd in root.children.items()}
@@ -273,27 +273,27 @@ def selfplay_train_loop():
                 move_count += 1
 
             outcome = board.outcome(claim_draw=True)
-            # assign z
-            if outcome.winner is None:
-                z = 0.0
-            else:
+            term = outcome.termination
+            # assign z with draw penalties
+            if term == chess.Termination.CHECKMATE:
                 z = 1.0 if outcome.winner else -1.0
-            # determine ending reason
-            if board.is_checkmate():
+            else:
+                z = -0.5
+            # determine end reason string
+            if term == chess.Termination.CHECKMATE:
                 end = 'checkmate'
-            elif board.is_stalemate():
+            elif term == chess.Termination.STALEMATE:
                 end = 'stalemate'
-            elif board.is_insufficient_material():
+            elif term == chess.Termination.INSUFFICIENT_MATERIAL:
                 end = 'insufficient_material'
-            elif board.can_claim_fifty_moves():
+            elif term == chess.Termination.FIFTY_MOVES:
                 end = '50_move'
-            elif board.can_claim_threefold_repetition():
+            elif term == chess.Termination.THREEFOLD_REPETITION:
                 end = 'repetition'
             else:
                 end = 'draw'
 
             game_data = [(fen, pi, z) for fen, pi, _ in examples]
-
             loss = train_on_batch(model, optimizer, game_data)
             logger.info(f"Game {game_num}/{GAMES_PER_EPOCH}: result={board.result()} ({end}), "
                         f"{len(game_data)} examples, loss={loss:.4f}")
