@@ -21,9 +21,6 @@ logging.basicConfig(level=logging.INFO,
 
 # -------------------- Feature Extraction --------------------
 def state_to_tensor(board: chess.Board) -> torch.Tensor:
-    """
-    Returns flattened 12x64 binary representation, flipped for active color.
-    """
     b = board.copy()
     if b.turn == chess.BLACK:
         b = b.mirror()
@@ -134,11 +131,18 @@ class MCTS:
             if outcome.termination == chess.Termination.CHECKMATE:
                 return 1.0 if outcome.winner else -1.0
             return 0.0
+
         node.expand()
         feat = state_to_tensor(board).to(self.device).unsqueeze(0)
         with torch.no_grad():
-            val = self.net(feat).cpu().item()
-        return val
+            raw_val = self.net(feat).cpu().item()
+
+        # convert to "white-perspective" eval: multiply by -1 if black to move
+        adj_val = raw_val if board.turn == chess.WHITE else -raw_val
+        logger.info(f"Evaluated position (white-perspective): {adj_val:.4f}")
+
+        # but for MCTS update we return raw_val (perspective of current player)
+        return raw_val
 
 # -------------------- Training Helpers --------------------
 def train_on_batch(model, optimizer, batch):
@@ -186,19 +190,30 @@ def selfplay_train_loop():
 
         outcome = board.outcome(claim_draw=True)
         term = outcome.termination.name
-        if outcome.termination == chess.Termination.CHECKMATE:
-            z = 1.0 if outcome.winner else -1.0
-        else:
-            z = 0.0
-        result_str = "win" if z == 1.0 else "loss" if z == -1.0 else "draw"
-        logger.info(f"Game ended in {result_str} (z={z}), termination reason: {term}")
 
-        batch = [(fen, z) for fen in history]
+        # base_z is +1 if white won, -1 if black won, 0 on draw
+        if outcome.termination == chess.Termination.CHECKMATE:
+            base_z = 1.0 if outcome.winner else -1.0
+        else:
+            base_z = 0.0
+
+        result_str = ("win" if base_z == 1.0
+                      else "loss" if base_z == -1.0
+                      else "draw")
+        logger.info(f"Game ended in {result_str} (base_z={base_z}), termination reason: {term}")
+
+        # build batch with alternating targets: [base_z, -base_z, base_z, …]
+        batch = []
+        for i, fen in enumerate(history):
+            z_i = base_z * ((-1) ** i)
+            batch.append((fen, z_i))
+
         loss = train_on_batch(model, optimizer, batch)
         logger.info(f"Trained on {len(batch)} positions, loss={loss:.4f}")
 
         torch.save(model.state_dict(), 'best.pth')
         logger.info("Saved updated best.pth")
+
 
 
 if __name__ == '__main__':

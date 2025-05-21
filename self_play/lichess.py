@@ -18,10 +18,12 @@ from train_bot import (
 
 # ------------------------- Setup -------------------------
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 model = ChessNet().to(DEVICE)
 if os.path.exists('best.pth'):
     model.load_state_dict(torch.load('best.pth', map_location=DEVICE))
-    logging.info("Loaded existing best.pth")
+    logger.info("Loaded existing best.pth")
 model.eval()
 optimizer = torch.optim.Adam(model.parameters(), lr=LR, weight_decay=1e-4)
 
@@ -36,12 +38,12 @@ MY_ID = client.account.get()['id']
 def _try_make_move(game_id: str, uci: str) -> bool:
     try:
         client.bots.make_move(game_id, uci)
-        logging.info(f"Game {game_id}: played move {uci}")
+        logger.info(f"Game {game_id}: played move {uci}")
         return True
     except (ResponseError, ApiError) as e:
-        logging.warning(f"Game {game_id}: could not play move {uci}: {e}")
+        logger.warning(f"Game {game_id}: could not play move {uci}: {e}")
     except Exception as e:
-        logging.error(f"Game {game_id}: unexpected error on move {uci}: {e}")
+        logger.error(f"Game {game_id}: unexpected error on move {uci}: {e}")
     return False
 
 # ------------------------- Game handler -------------------------
@@ -49,19 +51,18 @@ def handle_game(game_id: str):
     stream = client.bots.stream_game_state(game_id)
     first = next(stream, None)
     if not first or first.get('type') != 'gameFull':
-        logging.error(f"No gameFull for {game_id}")
+        logger.error(f"No gameFull for {game_id}")
         return
 
     raw_w = first.get('white')
     our_white = (raw_w.get('user', {}).get('id') == MY_ID)
-    logging.info(f"Game {game_id}: we are {'White' if our_white else 'Black'}")
+    logger.info(f"Game {game_id}: we are {'White' if our_white else 'Black'}")
 
     board = chess.Board()
     for uci in first.get('state', {}).get('moves', '').split():
         board.push(chess.Move.from_uci(uci))
 
     examples = []
-    result = None
     for event in stream:
         if event.get('type') != 'gameState':
             continue
@@ -72,26 +73,27 @@ def handle_game(game_id: str):
         board = chess.Board()
         for uci in moves:
             board.push(chess.Move.from_uci(uci))
+
         if (board.turn == chess.WHITE and our_white) or (board.turn == chess.BLACK and not our_white):
+            # run MCTS (this will now log evals)
             root = MCTS(model, sims=MCTS_SIMS, c_puct=math.sqrt(2), device=DEVICE).search(board)
             examples.append(board.fen())
             best_move = max(root.children.items(), key=lambda kv: kv[1].N)[0]
             if not _try_make_move(game_id, best_move.uci()):
                 break
-    # determine z
-    z = 0.0
-    if result == 'white':
-        z = 1.0
-    elif result == 'black':
-        z = -1.0
 
-    # train on this game's data
-    batch = [(fen, z) for fen in examples]
+    # build alternating z sequence
+    base_z = 1.0 if result == 'white' else -1.0
+    batch = []
+    for i, fen in enumerate(examples):
+        z_i = base_z * ((-1) ** i)
+        batch.append((fen, z_i))
+
     if batch:
         loss = train_on_batch(model, optimizer, batch)
-        logging.info(f"Training on {len(batch)} examples: loss={loss:.4f}")
+        logger.info(f"Training on {len(batch)} examples: loss={loss:.4f}")
         torch.save(model.state_dict(), 'best.pth')
-        logging.info("Saved best.pth")
+        logger.info("Saved best.pth")
 
 # ------------------------- Main loop -------------------------
 def main():
