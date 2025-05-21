@@ -1,8 +1,7 @@
-# --- lichess.py (updated) ---
+# --- lichess.py ---
 import os
 import logging
 import math
-
 import torch
 import chess
 import berserk
@@ -55,35 +54,41 @@ def handle_game(game_id: str):
         logger.error(f"No gameFull for {game_id}")
         return
 
-    raw_w = first.get('white')
-    our_white = (raw_w.get('id') == MY_ID)
+    our_white = (first.get('white', {}).get('id') == MY_ID)
     logger.info(f"Game {game_id}: we are {'White' if our_white else 'Black'}")
 
-    # Reconstruct initial board
-    initial_moves = first.get('state', {}).get('moves', '').split()
+    # Initialize board and MCTS root
+    moves = first.get('state', {}).get('moves', '').split()
     board = chess.Board()
-    for uci in initial_moves:
+    for uci in moves:
         board.push(chess.Move.from_uci(uci))
-
+    ply_count = len(moves)
+    root = None
     examples = []
-    prev_move_count = len(initial_moves)
 
-    # Log eval of initial position before first move if it's our turn
+    # If it's our turn before any move
     if (board.turn == chess.WHITE and our_white) or (board.turn == chess.BLACK and not our_white):
         feat = state_to_tensor(board).to(DEVICE).unsqueeze(0)
         with torch.no_grad():
             raw_val = model(feat).cpu().item()
         adj_val = raw_val if board.turn == chess.WHITE else -raw_val
-        logger.info(f"Eval after ply {prev_move_count} (white-persp): {adj_val:.4f}")
+        logger.info(f"Eval after ply {ply_count} (white-persp): {adj_val:.4f}")
 
-        root = MCTS(model, sims=MCTS_SIMS, c_puct=math.sqrt(2), device=DEVICE).search(board)
+        sims = max(50, int(MCTS_SIMS * (1 - ply_count / 200)))
+        mcts = MCTS(model, sims=sims, c_puct=math.sqrt(2), device=DEVICE)
+        root = mcts.search(board)
+
         examples.append(board.fen())
         best_move = max(root.children.items(), key=lambda kv: kv[1].N)[0]
         _try_make_move(game_id, best_move.uci())
-        prev_move_count += 1
+        board.push(best_move)
+        ply_count += 1
+        root = root.children.get(best_move)
+        if root:
+            root.parent = None
 
+    # stream events
     result = None
-
     for event in stream:
         if event.get('type') != 'gameState':
             continue
@@ -91,43 +96,57 @@ def handle_game(game_id: str):
             result = event.get('winner')
             break
 
-        # Get full move list
-        moves = event.get('moves', '').split()
-        # Log any new moves (bot or opponent)
-        for i in range(prev_move_count, len(moves)):
-            uci = moves[i]
-            is_our_move = (i % 2 == 0 and our_white) or (i % 2 == 1 and not our_white)
-            actor = "Bot" if is_our_move else "Opponent"
+        new_moves = event.get('moves', '').split()
+        for uci in new_moves[ply_count:]:
+            actor = "Bot" if ((ply_count % 2 == 0 and our_white) or (ply_count % 2 == 1 and not our_white)) else "Opponent"
             logger.info(f"Game {game_id}: {actor} played move {uci}")
-        prev_move_count = len(moves)
-
-        # Rebuild board after moves
-        board = chess.Board()
-        for uci in moves:
             board.push(chess.Move.from_uci(uci))
+            if root and chess.Move.from_uci(uci) in root.children:
+                root = root.children[chess.Move.from_uci(uci)]
+                root.parent = None
+            else:
+                root = None
+            ply_count += 1
 
-        # Log evaluation after every ply
         feat = state_to_tensor(board).to(DEVICE).unsqueeze(0)
         with torch.no_grad():
             raw_val = model(feat).cpu().item()
         adj_val = raw_val if board.turn == chess.WHITE else -raw_val
-        logger.info(f"Eval after ply {len(moves)} (white-persp): {adj_val:.4f}")
+        logger.info(f"Eval after ply {ply_count} (white-persp): {adj_val:.4f}")
 
-        # Only play on our turns
         if (board.turn == chess.WHITE and our_white) or (board.turn == chess.BLACK and not our_white):
-            root = MCTS(model, sims=MCTS_SIMS, c_puct=math.sqrt(2), device=DEVICE).search(board)
+            sims = max(50, int(MCTS_SIMS * (1 - ply_count / 200)))
+            mcts = MCTS(model, sims=sims, c_puct=math.sqrt(2), device=DEVICE)
+            if root:
+                root = mcts.search(board, root)
+            else:
+                root = mcts.search(board)
             examples.append(board.fen())
+
             best_move = max(root.children.items(), key=lambda kv: kv[1].N)[0]
             if not _try_make_move(game_id, best_move.uci()):
                 break
+            board.push(best_move)
+            ply_count += 1
+            root = root.children.get(best_move)
+            if root:
+                root.parent = None
 
-    # Training phase
+    # Training
     base_z = 1.0 if result == 'white' else -1.0 if result == 'black' else 0.0
     batch = [(fen, base_z * ((-1) ** i)) for i, fen in enumerate(examples)]
-
     if batch:
         loss = train_on_batch(model, optimizer, batch)
         logger.info(f"Training on {len(batch)} examples: loss={loss:.4f}")
+
+        # Calibrate final bias so initial position evaluates to zero
+        # Prepare initial position
+        init_board = chess.Board()
+        feat0 = state_to_tensor(init_board).to(DEVICE).unsqueeze(0)
+        with torch.no_grad():
+            raw0 = model(feat0).cpu().item()
+        pre_act = torch.atanh(torch.tensor(raw0, device=DEVICE))
+        model.fc3.bias.data -= pre_act
         torch.save(model.state_dict(), 'best.pth')
         logger.info("Saved best.pth")
 
@@ -148,11 +167,11 @@ import os
 import math
 import logging
 import random
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import chess
+from collections import deque
 
 # -------------------- Constants --------------------
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -188,33 +207,29 @@ class ChessNet(nn.Module):
     def _init_weights(self):
         self.fc1.weight.data.normal_(0.0, 1e-3)
         self.fc1.bias.data.zero_()
-        values = torch.tensor([1.0, 3.0, 3.0, 5.0, 9.0, 0.0])
-        w0 = torch.zeros(12 * 64)
-        for ch in range(6):
-            w0[ch*64:(ch+1)*64] = values[ch]
+        vals = torch.tensor([1.0,3.0,3.0,5.0,9.0,0.0])
+        w0 = vals.repeat_interleave(64)
+        w1 = vals.repeat_interleave(64)
+        w1 = torch.cat([torch.zeros(64*6), w1])
         self.fc1.weight.data[0] = w0
         self.fc1.bias.data[0] = 0.0
-        w1 = torch.zeros(12 * 64)
-        for ch in range(6, 12):
-            w1[ch*64:(ch+1)*64] = values[ch-6]
         self.fc1.weight.data[1] = w1
         self.fc1.bias.data[1] = 0.0
 
         self.fc2.weight.data.normal_(0.0, 1e-3)
         self.fc2.bias.data.zero_()
-        self.fc2.weight.data[0, 0] = 1.0
-        self.fc2.weight.data[1, 1] = 1.0
+        self.fc2.weight.data[0,0] = 1.0
+        self.fc2.weight.data[1,1] = 1.0
 
         self.fc3.weight.data.normal_(0.0, 1e-3)
         self.fc3.bias.data.zero_()
-        self.fc3.weight.data[0, 0] = 1.0
-        self.fc3.weight.data[0, 1] = -1.0
+        self.fc3.weight.data[0,0] = 1.0
+        self.fc3.weight.data[0,1] = -1.0
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         h1 = torch.relu(self.fc1(x))
         h2 = torch.relu(self.fc2(h1))
-        out = self.fc3(h2)
-        return torch.tanh(out)
+        return torch.tanh(self.fc3(h2))
 
 # -------------------- MCTS --------------------
 class MCTSNode:
@@ -235,8 +250,10 @@ class MCTSNode:
             nb.push(mv)
             self.children[mv] = MCTSNode(nb, self)
 
+
 def uct_score(parent: MCTSNode, child: MCTSNode, c_puct):
     return child.Q + c_puct * math.sqrt(parent.N) / (1 + child.N)
+
 
 def _get_path(node: MCTSNode):
     path = []
@@ -252,9 +269,10 @@ class MCTS:
         self.c_puct = c_puct
         self.device = device
 
-    def search(self, root_board: chess.Board) -> MCTSNode:
-        root = MCTSNode(root_board)
-        root.expand()
+    def search(self, root_board: chess.Board, root: MCTSNode=None) -> MCTSNode:
+        if root is None or root.board.fen() != root_board.fen():
+            root = MCTSNode(root_board)
+            root.expand()
         for _ in range(self.sims):
             node = root
             while not node.is_leaf():
@@ -275,12 +293,10 @@ class MCTS:
             if outcome.termination == chess.Termination.CHECKMATE:
                 return 1.0 if outcome.winner else -1.0
             return 0.0
-
         node.expand()
         feat = state_to_tensor(board).to(self.device).unsqueeze(0)
         with torch.no_grad():
-            raw_val = self.net(feat).cpu().item()
-        return raw_val
+            return self.net(feat).cpu().item()
 
 # -------------------- Training Helpers --------------------
 def train_on_batch(model, optimizer, batch):
@@ -305,30 +321,30 @@ def selfplay_train_loop():
 
     while True:
         board = chess.Board()
-        mcts = MCTS(model, sims=MCTS_SIMS, device=DEVICE)
         history = []
-
+        ply = 0
         while not board.is_game_over(claim_draw=True):
-            # 1️⃣ eval & log once per move
             feat = state_to_tensor(board).to(DEVICE).unsqueeze(0)
             with torch.no_grad():
                 raw_val = model(feat).cpu().item()
             adj_val = raw_val if board.turn == chess.WHITE else -raw_val
-            logger.info(f"Self-play eval after move {len(history)+1}: {adj_val:.4f}")
+            logger.info(f"Self-play eval after move {ply+1}: {adj_val:.4f}")
 
-            # 2️⃣ search + play
+            sims = max(50, int(MCTS_SIMS * (1 - ply / 200)))
+            mcts = MCTS(model, sims=sims, c_puct=math.sqrt(2), device=DEVICE)
             root = mcts.search(board)
             sorted_children = sorted(root.children.items(),
                                      key=lambda kv: kv[1].N,
                                      reverse=True)
             best_move = sorted_children[0][0]
             second_move = sorted_children[1][0] if len(sorted_children) > 1 else best_move
-            move = second_move if random.random() < 0.20 else best_move
+            move = second_move if random.random() < 0.40 else best_move
             if move == second_move:
                 logger.debug(f"Played second-best move: {move}")
 
             history.append(board.fen())
             board.push(move)
+            ply += 1
 
         outcome = board.outcome(claim_draw=True)
         term = outcome.termination.name
@@ -343,9 +359,16 @@ def selfplay_train_loop():
         loss = train_on_batch(model, optimizer, batch)
         logger.info(f"Trained on {len(batch)} positions, loss={loss:.4f}")
 
+
+        # Calibrate final bias
+        init_board = chess.Board()
+        feat0 = state_to_tensor(init_board).to(DEVICE).unsqueeze(0)
+        with torch.no_grad():
+            raw0 = model(feat0).cpu().item()
+        pre_act = torch.atanh(torch.tensor(raw0, device=DEVICE))
+        model.fc3.bias.data -= pre_act
         torch.save(model.state_dict(), 'best.pth')
         logger.info("Saved updated best.pth")
-
 
 if __name__ == '__main__':
     selfplay_train_loop()

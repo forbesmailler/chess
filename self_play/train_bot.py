@@ -178,7 +178,7 @@ def selfplay_train_loop():
                                      reverse=True)
             best_move = sorted_children[0][0]
             second_move = sorted_children[1][0] if len(sorted_children) > 1 else best_move
-            move = second_move if random.random() < 0.20 else best_move
+            move = second_move if random.random() < 0.4 else best_move
             if move == second_move:
                 logger.debug(f"Played second-best move: {move}")
 
