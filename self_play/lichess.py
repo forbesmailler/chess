@@ -1,3 +1,4 @@
+# --- lichess.py (updated) ---
 import os
 import logging
 import math
@@ -39,7 +40,6 @@ MY_ID = client.account.get()['id']
 def _try_make_move(game_id: str, uci: str) -> bool:
     try:
         client.bots.make_move(game_id, uci)
-        logger.info(f"Game {game_id}: played move {uci}")
         return True
     except (ResponseError, ApiError) as e:
         logger.warning(f"Game {game_id}: could not play move {uci}: {e}")
@@ -66,6 +66,7 @@ def handle_game(game_id: str):
         board.push(chess.Move.from_uci(uci))
 
     examples = []
+    prev_move_count = len(initial_moves)
 
     # Log eval of initial position before first move if it's our turn
     if (board.turn == chess.WHITE and our_white) or (board.turn == chess.BLACK and not our_white):
@@ -73,12 +74,13 @@ def handle_game(game_id: str):
         with torch.no_grad():
             raw_val = model(feat).cpu().item()
         adj_val = raw_val if board.turn == chess.WHITE else -raw_val
-        logger.info(f"Eval after ply {len(initial_moves)} (white-persp): {adj_val:.4f}")
+        logger.info(f"Eval after ply {prev_move_count} (white-persp): {adj_val:.4f}")
 
         root = MCTS(model, sims=MCTS_SIMS, c_puct=math.sqrt(2), device=DEVICE).search(board)
         examples.append(board.fen())
         best_move = max(root.children.items(), key=lambda kv: kv[1].N)[0]
         _try_make_move(game_id, best_move.uci())
+        prev_move_count += 1
 
     result = None
 
@@ -89,8 +91,17 @@ def handle_game(game_id: str):
             result = event.get('winner')
             break
 
-        # Rebuild board after any move
+        # Get full move list
         moves = event.get('moves', '').split()
+        # Log any new moves (bot or opponent)
+        for i in range(prev_move_count, len(moves)):
+            uci = moves[i]
+            is_our_move = (i % 2 == 0 and our_white) or (i % 2 == 1 and not our_white)
+            actor = "Bot" if is_our_move else "Opponent"
+            logger.info(f"Game {game_id}: {actor} played move {uci}")
+        prev_move_count = len(moves)
+
+        # Rebuild board after moves
         board = chess.Board()
         for uci in moves:
             board.push(chess.Move.from_uci(uci))
