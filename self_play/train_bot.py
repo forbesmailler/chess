@@ -11,7 +11,7 @@ import chess
 
 # -------------------- Constants --------------------
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-LR = 0.01  # learning rate
+LR = 0.01
 MCTS_SIMS = 200
 
 # -------------------- Logging Setup --------------------
@@ -43,7 +43,6 @@ class ChessNet(nn.Module):
     def _init_weights(self):
         self.fc1.weight.data.normal_(0.0, 1e-3)
         self.fc1.bias.data.zero_()
-        # init first two nodes with material sums
         values = torch.tensor([1.0, 3.0, 3.0, 5.0, 9.0, 0.0])
         w0 = torch.zeros(12 * 64)
         for ch in range(6):
@@ -136,12 +135,6 @@ class MCTS:
         feat = state_to_tensor(board).to(self.device).unsqueeze(0)
         with torch.no_grad():
             raw_val = self.net(feat).cpu().item()
-
-        # convert to "white-perspective" eval: multiply by -1 if black to move
-        adj_val = raw_val if board.turn == chess.WHITE else -raw_val
-        logger.info(f"Evaluated position (white-perspective): {adj_val:.4f}")
-
-        # but for MCTS update we return raw_val (perspective of current player)
         return raw_val
 
 # -------------------- Training Helpers --------------------
@@ -171,49 +164,42 @@ def selfplay_train_loop():
         history = []
 
         while not board.is_game_over(claim_draw=True):
-            root = mcts.search(board)
+            # 1️⃣ eval & log once per move
+            feat = state_to_tensor(board).to(DEVICE).unsqueeze(0)
+            with torch.no_grad():
+                raw_val = model(feat).cpu().item()
+            adj_val = raw_val if board.turn == chess.WHITE else -raw_val
+            logger.info(f"Self-play eval after move {len(history)+1}: {adj_val:.4f}")
 
-            # ε-greedy: pick second-best 20% of the time
+            # 2️⃣ search + play
+            root = mcts.search(board)
             sorted_children = sorted(root.children.items(),
                                      key=lambda kv: kv[1].N,
                                      reverse=True)
             best_move = sorted_children[0][0]
             second_move = sorted_children[1][0] if len(sorted_children) > 1 else best_move
-            if random.random() < 0.20:
-                move = second_move
+            move = second_move if random.random() < 0.20 else best_move
+            if move == second_move:
                 logger.debug(f"Played second-best move: {move}")
-            else:
-                move = best_move
 
             history.append(board.fen())
             board.push(move)
 
         outcome = board.outcome(claim_draw=True)
         term = outcome.termination.name
-
-        # base_z is +1 if white won, -1 if black won, 0 on draw
         if outcome.termination == chess.Termination.CHECKMATE:
             base_z = 1.0 if outcome.winner else -1.0
         else:
             base_z = 0.0
-
-        result_str = ("win" if base_z == 1.0
-                      else "loss" if base_z == -1.0
-                      else "draw")
+        result_str = "win" if base_z == 1.0 else "loss" if base_z == -1.0 else "draw"
         logger.info(f"Game ended in {result_str} (base_z={base_z}), termination reason: {term}")
 
-        # build batch with alternating targets: [base_z, -base_z, base_z, …]
-        batch = []
-        for i, fen in enumerate(history):
-            z_i = base_z * ((-1) ** i)
-            batch.append((fen, z_i))
-
+        batch = [(fen, base_z * ((-1) ** i)) for i, fen in enumerate(history)]
         loss = train_on_batch(model, optimizer, batch)
         logger.info(f"Trained on {len(batch)} positions, loss={loss:.4f}")
 
         torch.save(model.state_dict(), 'best.pth')
         logger.info("Saved updated best.pth")
-
 
 
 if __name__ == '__main__':
