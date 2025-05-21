@@ -79,7 +79,7 @@ class ChessNet(nn.Module):
         h1 = torch.relu(self.fc1(x))
         h2 = torch.relu(self.fc2(h1))
         out = self.fc3(h2)
-        return out  # (...,1)
+        return torch.tanh(out)
 
 # -------------------- MCTS --------------------
 class MCTSNode:
@@ -168,20 +168,32 @@ def selfplay_train_loop():
         model.load_state_dict(torch.load('best.pth', map_location=DEVICE))
         logger.info("Loaded initial model from best.pth")
     optimizer = optim.Adam(model.parameters(), lr=LR, weight_decay=1e-4)
+
     while True:
         board = chess.Board()
         mcts = MCTS(model, sims=MCTS_SIMS, device=DEVICE)
         history = []
+
+        # play until terminal
         while not board.is_game_over(claim_draw=True):
             root = mcts.search(board)
             best_move = max(root.children.items(), key=lambda kv: kv[1].N)[0]
             history.append(board.fen())
             board.push(best_move)
+
+        # inspect outcome
         outcome = board.outcome(claim_draw=True)
+        term = outcome.termination.name  # e.g. CHECKMATE, STALEMATE, INSUFFICIENT_MATERIAL, etc.
         if outcome.termination == chess.Termination.CHECKMATE:
             z = 1.0 if outcome.winner else -1.0
         else:
             z = 0.0
+
+        # log result and reason
+        result_str = "win" if z == 1.0 else "loss" if z == -1.0 else "draw"
+        logger.info(f"Game ended in {result_str} (z={z}), termination reason: {term}")
+
+        # train and save
         batch = [(fen, z) for fen in history]
         loss = train_on_batch(model, optimizer, batch)
         logger.info(f"Trained on {len(batch)} positions, loss={loss:.4f}")

@@ -52,7 +52,7 @@ def handle_game(game_id: str):
         logging.error(f"No gameFull for {game_id}")
         return
 
-    raw_w = first['players'].get('white')
+    raw_w = first.get('white')
     our_white = (raw_w.get('user', {}).get('id') == MY_ID)
     logging.info(f"Game {game_id}: we are {'White' if our_white else 'Black'}")
 
