@@ -12,7 +12,7 @@ from collections import deque
 # -------------------- Constants --------------------
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 LR = 0.01
-MCTS_SIMS = 200
+MCTS_SIMS = 100
 
 # -------------------- Logging Setup --------------------
 logger = logging.getLogger(__name__)
@@ -21,12 +21,7 @@ logging.basicConfig(level=logging.INFO,
 
 # -------------------- Feature Extraction --------------------
 def state_to_tensor(board: chess.Board) -> torch.Tensor:
-    """
-    Mirror board if Black to move, then return flattened 12x64 binary representation.
-    """
     b = board.copy()
-    if b.turn == chess.BLACK:
-        b = b.mirror()
     arr = torch.zeros(12 * 64, dtype=torch.float32)
     for sq, piece in b.piece_map().items():
         ch = (piece.piece_type - 1) + (0 if piece.color == chess.WHITE else 6)
@@ -34,29 +29,59 @@ def state_to_tensor(board: chess.Board) -> torch.Tensor:
     return arr
 
 # -------------------- Neural Network --------------------
+
 class ChessNet(nn.Module):
+
+    PIECE_VALUES = torch.tensor([0.1, 0.3, 0.3, 0.5, 0.9, 0.0])
+
     def __init__(self):
         super().__init__()
-        self.fc = nn.Linear(12 * 64, 1)
+        self.fc1 = nn.Linear(12 * 64, 32)
+        self.fc2 = nn.Linear(32, 16)
+        self.fc3 = nn.Linear(16, 1)
         self._init_weights()
 
     def _init_weights(self):
+        # 1) fc1: tiny random, then override first two neurons with material priors
+        nn.init.normal_(self.fc1.weight, mean=0.0, std=1e-3)
+        nn.init.zeros_(self.fc1.bias)
+
+        # build two “material‐value” templates for white‐to‐move and black‐to‐move
+        base = self.PIECE_VALUES.repeat_interleave(64)              # length 6*64
+        mat_white = torch.cat([base, torch.zeros_like(base)])      # white pieces positive
+        mat_black = torch.cat([torch.zeros_like(base), base])      # black pieces positive
+        
+        # assign to the first two hidden neurons
         with torch.no_grad():
-            self.fc.weight.zero_()
-            self.fc.bias.zero_()
-            vals = torch.tensor([0.1, 0.3, 0.3, 0.5, 0.9, 0.0])
-            w = vals.repeat_interleave(64)
-            w_white = torch.cat([w, torch.zeros_like(w)])
-            w_black = torch.cat([torch.zeros_like(w), w])
-            prior = w_white - w_black
-            self.fc.weight[0].copy_(prior)
+            self.fc1.weight[0].copy_(mat_white)
+            self.fc1.weight[1].copy_(mat_black)
+            # their biases stay zero
+
+        # 2) fc2: tiny random, then force identity on first two dims
+        nn.init.normal_(self.fc2.weight, mean=0.0, std=1e-3)
+        nn.init.zeros_(self.fc2.bias)
+        with torch.no_grad():
+            self.fc2.weight[0, 0] = 1.0
+            self.fc2.weight[1, 1] = 1.0
+
+        # 3) fc3: tiny random, then set output = h2[0] − h2[1]
+        nn.init.normal_(self.fc3.weight, mean=0.0, std=1e-3)
+        nn.init.zeros_(self.fc3.bias)
+        with torch.no_grad():
+            # only two non-zero weights: +1 on neuron 0, −1 on neuron 1
+            self.fc3.weight[0, :2] = torch.tensor([1.0, -1.0])
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return torch.tanh(self.fc(x))
+        h1 = torch.relu(self.fc1(x))
+        h2 = torch.relu(self.fc2(h1))
+        out = self.fc3(h2)
+        return torch.tanh(out)
+
 
 # -------------------- MCTS --------------------
 class MCTSNode:
     def __init__(self, board, parent=None):
+
         self.board = board
         self.parent = parent
         self.children = {}
@@ -74,7 +99,7 @@ class MCTSNode:
             self.children[mv] = MCTSNode(nb, self)
 
 def uct_score(parent: MCTSNode, child: MCTSNode, c_puct):
-    return child.Q + c_puct * math.sqrt(parent.N) / (1 + child.N)
+    return child.Q + c_puct * math.sqrt(math.log(parent.N + 1)) / (1 + child.N)
 
 def _get_path(node: MCTSNode):
     path = []
@@ -106,21 +131,30 @@ class MCTS:
                 nd.W += value
                 nd.Q = nd.W / nd.N
                 value = -value
+
+        # top = sorted(root.children.items(), key=lambda kv: kv[1].N, reverse=True)[:3]
+        # for mv, node in top:
+        #     logger.info(f"  candidate {mv.uci()}: N={node.N}, Q={node.Q:.3f}")
         return root
 
     def _evaluate_and_expand(self, node: MCTSNode) -> float:
         board = node.board
+        # terminal handling
         if board.is_game_over(claim_draw=True):
             outcome = board.outcome(claim_draw=True)
-            if outcome.termination == chess.Termination.CHECKMATE:
-                return 1.0 if outcome.winner else -1.0
-            return 0.0
+            if outcome.winner is None:
+                return 0.0
+            # +1 if the *current* player to move at this node won
+            return 1.0 if outcome.winner == board.turn else -1.0
+
+        # expand children
         node.expand()
+
+        # network raw from white-perspective
         feat = state_to_tensor(board).to(self.device).unsqueeze(0)
         with torch.no_grad():
             raw = self.net(feat).cpu().item()
-        # since state_to_tensor already mirrored, raw is always from to-move perspective
-        return raw
+        return raw if board.turn == chess.WHITE else -raw
 
 # -------------------- Training Helpers --------------------
 def train_on_batch(model, optimizer, batch):
@@ -186,10 +220,10 @@ def selfplay_train_loop():
 
         outcome = board.outcome(claim_draw=True)
         term = outcome.termination.name
-        base_z = 1.0 if (outcome.termination == chess.Termination.CHECKMATE and outcome.winner) else (-1.0 if outcome.termination == chess.Termination.CHECKMATE else 0.0)
-        logger.info(f"Game ended: {term}, base_z={base_z}")
+        z = 1.0 if (outcome.termination == chess.Termination.CHECKMATE and outcome.winner) else (-1.0 if outcome.termination == chess.Termination.CHECKMATE else 0.0)
+        logger.info(f"Game ended: {term}, base_z={z}")
 
-        batch = [(fen, base_z * ((-1) ** i)) for i, fen in enumerate(history)]
+        batch = [(fen, z) for i, fen in enumerate(history)]
         loss = train_on_batch(model, optimizer, batch)
         logger.info(f"Trained on {len(batch)} positions, loss={loss:.4f}")
 
@@ -197,7 +231,7 @@ def selfplay_train_loop():
         feat0 = state_to_tensor(init_board).to(DEVICE).unsqueeze(0)
         with torch.no_grad(): raw0 = model(feat0).cpu().item()
         pre_act = torch.atanh(torch.tensor(raw0, device=DEVICE))
-        model.fc.bias.data -= pre_act
+        model.fc3.bias.data -= pre_act
         torch.save(model.state_dict(), 'best.pth')
         logger.info("Saved updated best.pth")
 

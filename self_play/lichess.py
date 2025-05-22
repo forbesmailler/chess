@@ -71,11 +71,12 @@ def handle_game(game_id: str):
     root = None
     examples = []
 
-    # Initial move if it's our turn
+    # Initial evaluation & move
     if (board.turn == chess.WHITE and our_white) or (board.turn == chess.BLACK and not our_white):
         feat = state_to_tensor(board).to(DEVICE).unsqueeze(0)
-        with torch.no_grad(): raw_val = model(feat).cpu().item()
-        logger.info(f"Eval after ply {ply_count} (to-move-persp): {raw_val:.4f}")
+        with torch.no_grad():
+            raw_val = model(feat).cpu().item()
+        logger.info(f"Eval after ply {ply_count} (white-persp): {raw_val:.4f}")
 
         sims = max(50, int(MCTS_SIMS * (1 - ply_count / 200)))
         mcts.sims = sims
@@ -92,7 +93,8 @@ def handle_game(game_id: str):
 
     result = None
     for event in stream:
-        if event.get('type') != 'gameState': continue
+        if event.get('type') != 'gameState':
+            continue
         if event.get('status') != 'started':
             result = event.get('winner')
             break
@@ -111,35 +113,36 @@ def handle_game(game_id: str):
             ply_count += 1
 
         feat = state_to_tensor(board).to(DEVICE).unsqueeze(0)
-        with torch.no_grad(): raw_val = model(feat).cpu().item()
-        logger.info(f"Eval after ply {ply_count} (to-move-persp): {raw_val:.4f}")
+        with torch.no_grad():
+            raw_val = model(feat).cpu().item()
+        logger.info(f"Eval after ply {ply_count} (white-persp): {raw_val:.4f}")
 
         if (board.turn == chess.WHITE and our_white) or (board.turn == chess.BLACK and not our_white):
-            sims = max(50, int(MCTS_SIMS * (1 - ply_count / 200)))
-            mcts.sims = sims
+            mcts.sims = MCTS_SIMS
             root = mcts.search(board, root)
             examples.append(board.fen())
 
             best_move = max(root.children.items(), key=lambda kv: kv[1].N)[0]
-            if not _try_make_move(game_id, best_move.uci()): break
+            if not _try_make_move(game_id, best_move.uci()):
+                break
             board.push(best_move)
             ply_count += 1
             root = root.children.get(best_move)
             if root: root.parent = None
 
-    # Training phase
-    base_z = 1.0 if result == 'white' else -1.0 if result == 'black' else 0.0
-    batch = [(fen, base_z * ((-1) ** i)) for i, fen in enumerate(examples)]
+    # Training
+    z = 1.0 if result == 'white' else -1.0 if result == 'black' else 0.0
+    batch = [(fen, z) for i, fen in enumerate(examples)]
     if batch:
         loss = train_on_batch(model, optimizer, batch)
         logger.info(f"Training on {len(batch)} examples: loss={loss:.4f}")
 
-        # recalibrate bias
         init_board = chess.Board()
         feat0 = state_to_tensor(init_board).to(DEVICE).unsqueeze(0)
-        with torch.no_grad(): raw0 = model(feat0).cpu().item()
+        with torch.no_grad():
+            raw0 = model(feat0).cpu().item()
         pre_act = torch.atanh(torch.tensor(raw0, device=DEVICE))
-        model.fc.bias.data -= pre_act
+        model.fc3.bias.data -= pre_act
         torch.save(model.state_dict(), 'best.pth')
         logger.info("Saved best.pth")
 
