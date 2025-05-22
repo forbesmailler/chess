@@ -22,47 +22,37 @@ logging.basicConfig(level=logging.INFO,
 # -------------------- Feature Extraction --------------------
 def state_to_tensor(board: chess.Board) -> torch.Tensor:
     """
-    Returns flattened 12x64 binary representation.
+    Mirror board if Black to move, then return flattened 12x64 binary representation.
     """
+    b = board.copy()
+    if b.turn == chess.BLACK:
+        b = b.mirror()
     arr = torch.zeros(12 * 64, dtype=torch.float32)
-    for sq, piece in board.piece_map().items():
+    for sq, piece in b.piece_map().items():
         ch = (piece.piece_type - 1) + (0 if piece.color == chess.WHITE else 6)
         arr[ch * 64 + sq] = 1.0
     return arr
 
 # -------------------- Neural Network --------------------
-
 class ChessNet(nn.Module):
     def __init__(self):
         super().__init__()
-        # single linear mapping from 12*64 board channels to 1 output
         self.fc = nn.Linear(12 * 64, 1)
         self._init_weights()
 
     def _init_weights(self):
-        # zero everything first
         with torch.no_grad():
             self.fc.weight.zero_()
             self.fc.bias.zero_()
-
-            # material values: pawn=1, knight=3, bishop=3, rook=5, queen=9, king=0
             vals = torch.tensor([0.1, 0.3, 0.3, 0.5, 0.9, 0.0])
-            # build per‐channel weights
-            w = vals.repeat_interleave(64)  # [6*64]
-            w_white = torch.cat([w, torch.zeros_like(w)])  # white channels then black zeros
-            w_black = torch.cat([torch.zeros_like(w), w])  # black channels then white zeros
-
-            # prior = white material minus black material
-            prior = w_white - w_black  # [12*64]
-
-            # set as the single row of the weight matrix
+            w = vals.repeat_interleave(64)
+            w_white = torch.cat([w, torch.zeros_like(w)])
+            w_black = torch.cat([torch.zeros_like(w), w])
+            prior = w_white - w_black
             self.fc.weight[0].copy_(prior)
-            # bias remains 0.0
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # no hidden layers; just linear + tanh
         return torch.tanh(self.fc(x))
-
 
 # -------------------- MCTS --------------------
 class MCTSNode:
@@ -83,10 +73,8 @@ class MCTSNode:
             nb.push(mv)
             self.children[mv] = MCTSNode(nb, self)
 
-
 def uct_score(parent: MCTSNode, child: MCTSNode, c_puct):
     return child.Q + c_puct * math.sqrt(parent.N) / (1 + child.N)
-
 
 def _get_path(node: MCTSNode):
     path = []
@@ -110,8 +98,8 @@ class MCTS:
         for _ in range(self.sims):
             node = root
             while not node.is_leaf():
-                mv, node = max(node.children.items(),
-                               key=lambda kv: uct_score(node, kv[1], self.c_puct))
+                _, node = max(node.children.items(),
+                              key=lambda kv: uct_score(node, kv[1], self.c_puct))
             value = self._evaluate_and_expand(node)
             for nd in reversed(_get_path(node)):
                 nd.N += 1
@@ -131,8 +119,8 @@ class MCTS:
         feat = state_to_tensor(board).to(self.device).unsqueeze(0)
         with torch.no_grad():
             raw = self.net(feat).cpu().item()
-        # flip only if turn != MCTS player's color
-        return raw if board.turn == self.player_color else -raw
+        # since state_to_tensor already mirrored, raw is always from to-move perspective
+        return raw
 
 # -------------------- Training Helpers --------------------
 def train_on_batch(model, optimizer, batch):
@@ -167,19 +155,16 @@ def selfplay_train_loop():
         while not board.is_game_over(claim_draw=True):
             feat = state_to_tensor(board).to(DEVICE).unsqueeze(0)
             with torch.no_grad(): raw_val = model(feat).cpu().item()
-            adj = raw_val if board.turn == chess.WHITE else -raw_val
-            logger.info(f"Self-play eval after move {ply+1}: {adj:.4f}")
+            logger.info(f"Self-play eval after move {ply+1}: {raw_val:.4f}")
 
             sims = max(50, int(MCTS_SIMS * (1 - ply / 200)))
             if board.turn == chess.WHITE:
-                mcts = white_mcts
                 white_mcts.sims = sims
-                white_root = mcts.search(board, white_root)
+                white_root = white_mcts.search(board, white_root)
                 root = white_root
             else:
-                mcts = black_mcts
                 black_mcts.sims = sims
-                black_root = mcts.search(board, black_root)
+                black_root = black_mcts.search(board, black_root)
                 root = black_root
 
             children = sorted(root.children.items(), key=lambda kv: kv[1].N, reverse=True)
