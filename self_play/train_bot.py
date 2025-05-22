@@ -22,8 +22,7 @@ logging.basicConfig(level=logging.INFO,
 # -------------------- Feature Extraction --------------------
 def state_to_tensor(board: chess.Board) -> torch.Tensor:
     """
-    Returns flattened 12x64 binary representation (no mirroring);
-    evaluation sign handled in MCTS based on player_color.
+    Returns flattened 12x64 binary representation.
     """
     arr = torch.zeros(12 * 64, dtype=torch.float32)
     for sq, piece in board.piece_map().items():
@@ -32,40 +31,38 @@ def state_to_tensor(board: chess.Board) -> torch.Tensor:
     return arr
 
 # -------------------- Neural Network --------------------
+
 class ChessNet(nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc1 = nn.Linear(12 * 64, 32)
-        self.fc2 = nn.Linear(32, 16)
-        self.fc3 = nn.Linear(16, 1)
+        # single linear mapping from 12*64 board channels to 1 output
+        self.fc = nn.Linear(12 * 64, 1)
         self._init_weights()
 
     def _init_weights(self):
-        self.fc1.weight.data.normal_(0.0, 1e-3)
-        self.fc1.bias.data.zero_()
-        vals = torch.tensor([1.0,3.0,3.0,5.0,9.0,0.0])
-        w0 = vals.repeat_interleave(64)
-        w1 = vals.repeat_interleave(64)
-        w1 = torch.cat([torch.zeros(64*6), w1])
-        self.fc1.weight.data[0] = w0
-        self.fc1.bias.data[0] = 0.0
-        self.fc1.weight.data[1] = w1
-        self.fc1.bias.data[1] = 0.0
+        # zero everything first
+        with torch.no_grad():
+            self.fc.weight.zero_()
+            self.fc.bias.zero_()
 
-        self.fc2.weight.data.normal_(0.0, 1e-3)
-        self.fc2.bias.data.zero_()
-        self.fc2.weight.data[0,0] = 1.0
-        self.fc2.weight.data[1,1] = 1.0
+            # material values: pawn=1, knight=3, bishop=3, rook=5, queen=9, king=0
+            vals = torch.tensor([0.1, 0.3, 0.3, 0.5, 0.9, 0.0])
+            # build per‐channel weights
+            w = vals.repeat_interleave(64)  # [6*64]
+            w_white = torch.cat([w, torch.zeros_like(w)])  # white channels then black zeros
+            w_black = torch.cat([torch.zeros_like(w), w])  # black channels then white zeros
 
-        self.fc3.weight.data.normal_(0.0, 1e-3)
-        self.fc3.bias.data.zero_()
-        self.fc3.weight.data[0,0] = 1.0
-        self.fc3.weight.data[0,1] = -1.0
+            # prior = white material minus black material
+            prior = w_white - w_black  # [12*64]
+
+            # set as the single row of the weight matrix
+            self.fc.weight[0].copy_(prior)
+            # bias remains 0.0
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        h1 = torch.relu(self.fc1(x))
-        h2 = torch.relu(self.fc2(h1))
-        return torch.tanh(self.fc3(h2))
+        # no hidden layers; just linear + tanh
+        return torch.tanh(self.fc(x))
+
 
 # -------------------- MCTS --------------------
 class MCTSNode:
@@ -134,7 +131,7 @@ class MCTS:
         feat = state_to_tensor(board).to(self.device).unsqueeze(0)
         with torch.no_grad():
             raw = self.net(feat).cpu().item()
-        # Flip sign if side to move != mcts player
+        # flip only if turn != MCTS player's color
         return raw if board.turn == self.player_color else -raw
 
 # -------------------- Training Helpers --------------------
@@ -158,7 +155,6 @@ def selfplay_train_loop():
         logger.info("Loaded initial model from best.pth")
     optimizer = optim.Adam(model.parameters(), lr=LR, weight_decay=1e-4)
 
-    # Two MCTS instances, one per color
     white_mcts = MCTS(model, player_color=chess.WHITE, sims=MCTS_SIMS, c_puct=math.sqrt(2), device=DEVICE)
     black_mcts = MCTS(model, player_color=chess.BLACK, sims=MCTS_SIMS, c_puct=math.sqrt(2), device=DEVICE)
     white_root = None
@@ -169,7 +165,6 @@ def selfplay_train_loop():
         history = []
         ply = 0
         while not board.is_game_over(claim_draw=True):
-            # Log current eval (white perspective)
             feat = state_to_tensor(board).to(DEVICE).unsqueeze(0)
             with torch.no_grad(): raw_val = model(feat).cpu().item()
             adj = raw_val if board.turn == chess.WHITE else -raw_val
@@ -187,7 +182,6 @@ def selfplay_train_loop():
                 black_root = mcts.search(board, black_root)
                 root = black_root
 
-            # Choose move
             children = sorted(root.children.items(), key=lambda kv: kv[1].N, reverse=True)
             best_move = children[0][0]
             second_move = children[1][0] if len(children) > 1 else best_move
@@ -198,7 +192,6 @@ def selfplay_train_loop():
             history.append(board.fen())
             board.push(move)
             ply += 1
-            # Advance the corresponding root
             if board.turn == chess.BLACK:
                 white_root = white_root.children.get(move)
                 if white_root: white_root.parent = None
@@ -215,12 +208,11 @@ def selfplay_train_loop():
         loss = train_on_batch(model, optimizer, batch)
         logger.info(f"Trained on {len(batch)} positions, loss={loss:.4f}")
 
-        # Calibrate final bias
         init_board = chess.Board()
         feat0 = state_to_tensor(init_board).to(DEVICE).unsqueeze(0)
         with torch.no_grad(): raw0 = model(feat0).cpu().item()
         pre_act = torch.atanh(torch.tensor(raw0, device=DEVICE))
-        model.fc3.bias.data -= pre_act
+        model.fc.bias.data -= pre_act
         torch.save(model.state_dict(), 'best.pth')
         logger.info("Saved updated best.pth")
 

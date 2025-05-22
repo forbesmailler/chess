@@ -78,7 +78,6 @@ def handle_game(game_id: str):
         feat = state_to_tensor(board).to(DEVICE).unsqueeze(0)
         with torch.no_grad():
             raw_val = model(feat).cpu().item()
-        # always log white-perspective
         adj_val = raw_val if board.turn == chess.WHITE else -raw_val
         logger.info(f"Eval after ply {ply_count} (white-persp): {adj_val:.4f}")
 
@@ -92,12 +91,10 @@ def handle_game(game_id: str):
         board.push(best_move)
         ply_count += 1
 
-        # reuse subtree
         root = root.children.get(best_move)
         if root:
             root.parent = None
 
-    # process incoming moves
     result = None
     for event in stream:
         if event.get('type') != 'gameState':
@@ -120,8 +117,7 @@ def handle_game(game_id: str):
             ply_count += 1
 
         feat = state_to_tensor(board).to(DEVICE).unsqueeze(0)
-        with torch.no_grad():
-            raw_val = model(feat).cpu().item()
+        with torch.no_grad(): raw_val = model(feat).cpu().item()
         adj_val = raw_val if board.turn == chess.WHITE else -raw_val
         logger.info(f"Eval after ply {ply_count} (white-persp): {adj_val:.4f}")
 
@@ -147,13 +143,12 @@ def handle_game(game_id: str):
         loss = train_on_batch(model, optimizer, batch)
         logger.info(f"Training on {len(batch)} examples: loss={loss:.4f}")
 
-        # Calibrate final bias so initial position evaluates to zero
         init_board = chess.Board()
         feat0 = state_to_tensor(init_board).to(DEVICE).unsqueeze(0)
         with torch.no_grad():
             raw0 = model(feat0).cpu().item()
         pre_act = torch.atanh(torch.tensor(raw0, device=DEVICE))
-        model.fc3.bias.data -= pre_act
+        model.fc.bias.data -= pre_act
         torch.save(model.state_dict(), 'best.pth')
         logger.info("Saved best.pth")
 

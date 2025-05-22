@@ -20,10 +20,12 @@ with torch.no_grad():
 pre_act = torch.atanh(torch.tensor(raw_out))
 
 # Adjust final layer bias so that eval becomes 0
+print(torch.tensor(raw_out))
+print(pre_act)
 model.fc3.bias.data -= pre_act
 
 # Save calibrated model
-torch.save(model.state_dict(), 'best_calibrated.pth')
+torch.save(model.state_dict(), 'best.pth')
 print(f"Adjusted final bias by {pre_act.item():.6f}")
 # Verify new evaluation
 with torch.no_grad():
