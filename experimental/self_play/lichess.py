@@ -12,9 +12,10 @@ from train_bot import (
     state_to_tensor,
     DEVICE,
     LR,
-    MCTS_SIMS,
     train_on_batch
 )
+
+MCTS_SIMS = 1000
 
 # ------------------------- Setup -------------------------
 logging.basicConfig(level=logging.INFO)
@@ -137,12 +138,12 @@ def handle_game(game_id: str):
         loss = train_on_batch(model, optimizer, batch)
         logger.info(f"Training on {len(batch)} examples: loss={loss:.4f}")
 
-        init_board = chess.Board()
-        feat0 = state_to_tensor(init_board).to(DEVICE).unsqueeze(0)
-        with torch.no_grad():
-            raw0 = model(feat0).cpu().item()
-        pre_act = torch.atanh(torch.tensor(raw0, device=DEVICE))
-        model.fc3.bias.data -= pre_act
+        # init_board = chess.Board()
+        # feat0 = state_to_tensor(init_board).to(DEVICE).unsqueeze(0)
+        # with torch.no_grad():
+        #     raw0 = model(feat0).cpu().item()
+        # pre_act = torch.atanh(torch.tensor(raw0, device=DEVICE))
+        # model.fc3.bias.data -= pre_act
         torch.save(model.state_dict(), 'best.pth')
         logger.info("Saved best.pth")
 

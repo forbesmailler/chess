@@ -11,8 +11,12 @@ from collections import deque
 
 # -------------------- Constants --------------------
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-LR = 0.01
+LR = 0.001
 MCTS_SIMS = 100
+# Probability of choosing a completely random move (instead of MCTS selection)
+RANDOM_MOVE_PROB = 0.1
+# Probability of playing second-best move
+SECOND_BEST_PROB = 0.3
 
 # -------------------- Logging Setup --------------------
 logger = logging.getLogger(__name__)
@@ -29,47 +33,13 @@ def state_to_tensor(board: chess.Board) -> torch.Tensor:
     return arr
 
 # -------------------- Neural Network --------------------
-
 class ChessNet(nn.Module):
-
-    PIECE_VALUES = torch.tensor([0.1, 0.3, 0.3, 0.5, 0.9, 0.0])
 
     def __init__(self):
         super().__init__()
-        self.fc1 = nn.Linear(12 * 64, 32)
-        self.fc2 = nn.Linear(32, 16)
-        self.fc3 = nn.Linear(16, 1)
-        self._init_weights()
-
-    def _init_weights(self):
-        # 1) fc1: tiny random, then override first two neurons with material priors
-        nn.init.normal_(self.fc1.weight, mean=0.0, std=1e-3)
-        nn.init.zeros_(self.fc1.bias)
-
-        # build two “material‐value” templates for white‐to‐move and black‐to‐move
-        base = self.PIECE_VALUES.repeat_interleave(64)              # length 6*64
-        mat_white = torch.cat([base, torch.zeros_like(base)])      # white pieces positive
-        mat_black = torch.cat([torch.zeros_like(base), base])      # black pieces positive
-        
-        # assign to the first two hidden neurons
-        with torch.no_grad():
-            self.fc1.weight[0].copy_(mat_white)
-            self.fc1.weight[1].copy_(mat_black)
-            # their biases stay zero
-
-        # 2) fc2: tiny random, then force identity on first two dims
-        nn.init.normal_(self.fc2.weight, mean=0.0, std=1e-3)
-        nn.init.zeros_(self.fc2.bias)
-        with torch.no_grad():
-            self.fc2.weight[0, 0] = 1.0
-            self.fc2.weight[1, 1] = 1.0
-
-        # 3) fc3: tiny random, then set output = h2[0] − h2[1]
-        nn.init.normal_(self.fc3.weight, mean=0.0, std=1e-3)
-        nn.init.zeros_(self.fc3.bias)
-        with torch.no_grad():
-            # only two non-zero weights: +1 on neuron 0, −1 on neuron 1
-            self.fc3.weight[0, :2] = torch.tensor([1.0, -1.0])
+        self.fc1 = nn.Linear(12 * 64, 256)
+        self.fc2 = nn.Linear(256, 128)
+        self.fc3 = nn.Linear(128, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         h1 = torch.relu(self.fc1(x))
@@ -77,11 +47,9 @@ class ChessNet(nn.Module):
         out = self.fc3(h2)
         return torch.tanh(out)
 
-
 # -------------------- MCTS --------------------
 class MCTSNode:
     def __init__(self, board, parent=None):
-
         self.board = board
         self.parent = parent
         self.children = {}
@@ -131,26 +99,17 @@ class MCTS:
                 nd.W += value
                 nd.Q = nd.W / nd.N
                 value = -value
-
-        # top = sorted(root.children.items(), key=lambda kv: kv[1].N, reverse=True)[:3]
-        # for mv, node in top:
-        #     logger.info(f"  candidate {mv.uci()}: N={node.N}, Q={node.Q:.3f}")
         return root
 
     def _evaluate_and_expand(self, node: MCTSNode) -> float:
         board = node.board
-        # terminal handling
         if board.is_game_over(claim_draw=True):
             outcome = board.outcome(claim_draw=True)
             if outcome.winner is None:
                 return 0.0
-            # +1 if the *current* player to move at this node won
             return 1.0 if outcome.winner == board.turn else -1.0
 
-        # expand children
         node.expand()
-
-        # network raw from white-perspective
         feat = state_to_tensor(board).to(self.device).unsqueeze(0)
         with torch.no_grad():
             raw = self.net(feat).cpu().item()
@@ -201,16 +160,23 @@ def selfplay_train_loop():
                 black_root = black_mcts.search(board, black_root)
                 root = black_root
 
-            children = sorted(root.children.items(), key=lambda kv: kv[1].N, reverse=True)
-            best_move = children[0][0]
-            second_move = children[1][0] if len(children) > 1 else best_move
-            move = second_move if random.random() < 0.40 else best_move
-            if move == second_move:
-                logger.debug(f"Played second-best move: {move}")
+            # decide on move selection
+            if random.random() < RANDOM_MOVE_PROB:
+                move = random.choice(list(root.children.keys()))
+                logger.debug(f"Played random move: {move}")
+            else:
+                children = sorted(root.children.items(), key=lambda kv: kv[1].N, reverse=True)
+                best_move = children[0][0]
+                second_move = children[1][0] if len(children) > 1 else best_move
+                move = second_move if random.random() < SECOND_BEST_PROB else best_move
+                if move == second_move:
+                    logger.debug(f"Played second-best move: {move}")
 
             history.append(board.fen())
             board.push(move)
             ply += 1
+
+            # maintain tree for next move
             if board.turn == chess.BLACK:
                 white_root = white_root.children.get(move)
                 if white_root: white_root.parent = None
@@ -227,11 +193,11 @@ def selfplay_train_loop():
         loss = train_on_batch(model, optimizer, batch)
         logger.info(f"Trained on {len(batch)} positions, loss={loss:.4f}")
 
-        init_board = chess.Board()
-        feat0 = state_to_tensor(init_board).to(DEVICE).unsqueeze(0)
-        with torch.no_grad(): raw0 = model(feat0).cpu().item()
-        pre_act = torch.atanh(torch.tensor(raw0, device=DEVICE))
-        model.fc3.bias.data -= pre_act
+        # init_board = chess.Board()
+        # feat0 = state_to_tensor(init_board).to(DEVICE).unsqueeze(0)
+        # with torch.no_grad(): raw0 = model(feat0).cpu().item()
+        # pre_act = torch.atanh(torch.tensor(raw0, device=DEVICE))
+        # model.fc3.bias.data -= pre_act
         torch.save(model.state_dict(), 'best.pth')
         logger.info("Saved updated best.pth")
 
