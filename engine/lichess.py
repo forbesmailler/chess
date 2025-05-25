@@ -7,6 +7,7 @@ import chess
 import berserk
 import joblib
 from functools import lru_cache
+import time
 from berserk.exceptions import ResponseError, ApiError
 
 # Constants
@@ -65,7 +66,7 @@ class SimpleEngine:
     def get_best_move(self, board: chess.Board) -> chess.Move:
         # Dynamic search depth based on material
         n_pieces = len(board.piece_map())
-        depth = max(1, int(math.log(700 / (n_pieces + 1))))
+        depth = max(1, int(np.log(32**3) / np.log(n_pieces)))
 
         best_move = None
         best_score = -float('inf')
@@ -90,13 +91,19 @@ def setup_client(token: str) -> berserk.Client:
 # Attempt a move
 
 def _try_make_move(game_id: str, uci: str) -> bool:
-    try:
-        client.bots.make_move(game_id, uci)
-        return True
-    except (ResponseError, ApiError) as e:
-        logger.warning(f"Game {game_id}: could not play move {uci}: {e}")
-    except Exception as e:
-        logger.error(f"Game {game_id}: unexpected error on move {uci}: {e}")
+    max_attempts = 5
+    for attempt in range(1, max_attempts + 1):
+        try:
+            client.bots.make_move(game_id, uci)
+            if attempt > 1:
+                logger.info(f"Game {game_id}: succeeded on attempt {attempt}")
+            return True
+        except (ResponseError, ApiError) as e:
+            logger.warning(f"Attempt {attempt}/{max_attempts} – Game {game_id}: could not play move {uci}: {e}")
+        except Exception as e:
+            logger.error(f"Attempt {attempt}/{max_attempts} – Game {game_id}: unexpected error on move {uci}: {e}")
+        time.sleep(1)  # wait a second before retrying
+    logger.error(f"Game {game_id}: failed to play move {uci} after {max_attempts} attempts")
     return False
 
 # Helper to play best move
