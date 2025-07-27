@@ -17,16 +17,29 @@ LOGISTIC_MODEL_PATH = 'chess_lr.joblib'
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Feature extraction
 def extract_features(fen: str) -> np.ndarray:
     board = chess.Board(fen)
-    arr = np.zeros(12 * 64, dtype=np.float32)
+    piece_arr = np.zeros(12 * 64, dtype=np.float32)
     for sq, piece in board.piece_map().items():
-        ch = (piece.piece_type - 1) + (0 if piece.color == chess.WHITE else 6)
-        arr[ch * 64 + sq] = 1.0
+        idx = (piece.piece_type - 1) + (0 if piece.color == chess.WHITE else 6)
+        piece_arr[idx * 64 + sq] = 1.0
+
+    # Castling rights features (4)
+    castling = np.array([
+        board.has_kingside_castling_rights(chess.WHITE),
+        board.has_queenside_castling_rights(chess.WHITE),
+        board.has_kingside_castling_rights(chess.BLACK),
+        board.has_queenside_castling_rights(chess.BLACK)
+    ], dtype=np.float32)
+
+    base = np.concatenate([piece_arr, castling])  # length = 768 + 4 = 772
+
     n_pieces = len(board.piece_map())
     factor = (n_pieces - 2) / 30
-    return np.concatenate([arr * factor, arr * (1 - factor)], axis=0)
+
+    # Multiply at the end
+    return np.concatenate([base * factor, base * (1.0 - factor)])
+
 
 class SimpleEngine:
     def __init__(self, model):
@@ -64,10 +77,7 @@ class SimpleEngine:
         return value
 
     def get_best_move(self, board: chess.Board) -> chess.Move:
-        # Dynamic search depth based on material
-        n_pieces = len(board.piece_map())
-        depth = max(1, int(np.log(32**3) / np.log(n_pieces)))
-
+        depth = 3
         best_move = None
         best_score = -float('inf')
         alpha = -float('inf')

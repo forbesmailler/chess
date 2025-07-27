@@ -1,4 +1,6 @@
 __pycache__/
+build/
 *.txt
 *.csv
 *.parquet
+*.joblib
