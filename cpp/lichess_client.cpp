@@ -45,15 +45,32 @@ bool LichessClient::get_account_info(AccountInfo& info) {
 
 bool LichessClient::accept_challenge(const std::string& challenge_id) {
     auto response = make_request(base_url + "/challenge/" + challenge_id + "/accept", "POST");
-    std::cout << "Challenge accept response: " << response.status_code << std::endl;
     if (response.status_code != 200) {
-        std::cout << "Challenge accept failed: " << response.data << std::endl;
+        std::cout << "Challenge accept failed with status " << response.status_code << ": " << response.data << std::endl;
     }
     return response.status_code == 200;
 }
 
 bool LichessClient::make_move(const std::string& game_id, const std::string& uci_move) {
     auto response = make_request(base_url + "/bot/game/" + game_id + "/move/" + uci_move, "POST");
+    if (response.status_code != 200) {
+        std::cout << "Make move failed with status " << response.status_code << ": " << response.data << std::endl;
+    }
+    return response.status_code == 200;
+}
+
+bool LichessClient::accept_draw(const std::string& game_id) {
+    auto response = make_request(base_url + "/bot/game/" + game_id + "/draw/yes", "POST");
+    return response.status_code == 200;
+}
+
+bool LichessClient::decline_draw(const std::string& game_id) {
+    auto response = make_request(base_url + "/bot/game/" + game_id + "/draw/no", "POST");
+    return response.status_code == 200;
+}
+
+bool LichessClient::offer_draw(const std::string& game_id) {
+    auto response = make_request(base_url + "/bot/game/" + game_id + "/draw/yes", "POST");
     return response.status_code == 200;
 }
 
@@ -90,6 +107,8 @@ void LichessClient::stream_game(const std::string& game_id, std::function<void(c
             
             if (event.type == "gameState") {
                 event.moves = j.value("moves", "");
+                event.status = j.value("status", "started");
+                event.draw_offer = j.value("wdraw", false) || j.value("bdraw", false);
                 event.wtime = j.value("wtime", 0);
                 event.btime = j.value("btime", 0);
                 event.winc = j.value("winc", 0);
@@ -97,6 +116,8 @@ void LichessClient::stream_game(const std::string& game_id, std::function<void(c
             } else if (event.type == "gameFull") {
                 if (j.contains("state")) {
                     event.moves = j["state"].value("moves", "");
+                    event.status = j["state"].value("status", "started");
+                    event.draw_offer = j["state"].value("wdraw", false) || j["state"].value("bdraw", false);
                     event.wtime = j["state"].value("wtime", 0);
                     event.btime = j["state"].value("btime", 0);
                     event.winc = j["state"].value("winc", 0);
@@ -158,8 +179,6 @@ LichessClient::HttpResponse LichessClient::make_request(const std::string& url, 
     std::string response_data;
     long response_code = 0;
     
-    std::cout << "Making " << method << " request to: " << url << std::endl;
-    
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_data);
@@ -167,9 +186,6 @@ LichessClient::HttpResponse LichessClient::make_request(const std::string& url, 
     // Add timeouts
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);  // Reduced from 30 to 10 seconds
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);  // Reduced from 10 to 5 seconds
-    
-    // Add verbose output for debugging
-    curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
     
     // Disable SSL verification for debugging (remove this in production)
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
@@ -199,13 +215,10 @@ LichessClient::HttpResponse LichessClient::make_request(const std::string& url, 
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     
     // Perform the request
-    std::cout << "Performing CURL request..." << std::endl;
     CURLcode res = curl_easy_perform(curl);
-    std::cout << "CURL request completed with code: " << res << " (" << curl_easy_strerror(res) << ")" << std::endl;
     
     if (res == CURLE_OK) {
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
-        std::cout << "HTTP response code: " << response_code << std::endl;
     } else {
         std::cout << "CURL error: " << curl_easy_strerror(res) << std::endl;
         response_code = 0;  // Set response code to 0 on error

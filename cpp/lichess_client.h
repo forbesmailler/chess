@@ -22,6 +22,7 @@ public:
         std::string moves;
         std::string status;
         bool is_white = false;
+        bool draw_offer = false;
         int wtime = 0;
         int btime = 0;
         int winc = 0;
@@ -33,6 +34,9 @@ public:
     bool get_account_info(AccountInfo& info);
     bool accept_challenge(const std::string& challenge_id);
     bool make_move(const std::string& game_id, const std::string& uci_move);
+    bool accept_draw(const std::string& game_id);
+    bool decline_draw(const std::string& game_id);
+    bool offer_draw(const std::string& game_id);
     
     void stream_events(std::function<void(const GameEvent&)> callback);
     void stream_game(const std::string& game_id, std::function<void(const GameEvent&)> callback);

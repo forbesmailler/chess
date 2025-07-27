@@ -13,7 +13,7 @@ public:
     
 private:
     static constexpr float WIN_VALUE = 1.0f;
-    static constexpr int DEFAULT_DEPTH = 3;
+    static constexpr int DEFAULT_DEPTH = 4;
     static constexpr size_t CACHE_SIZE = 100000;
     
     std::shared_ptr<LogisticModel> model;

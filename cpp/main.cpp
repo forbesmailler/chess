@@ -55,8 +55,6 @@ private:
     
     void handle_event(const LichessClient::GameEvent& event) {
         if (event.type == "challenge") {
-            Utils::log_info("Received challenge: " + event.challenge_id);
-            std::cout << "Attempting to accept challenge..." << std::endl;
             if (client.accept_challenge(event.challenge_id)) {
                 Utils::log_info("Accepted challenge: " + event.challenge_id);
             } else {
@@ -80,8 +78,11 @@ private:
         client.stream_game(game_id, [&](const LichessClient::GameEvent& event) {
             if (event.type == "gameFull" && first_event) {
                 first_event = false;
-                our_white = event.is_white;
+                
+                // Determine our color by comparing account IDs
+                our_white = (event.white_id == account_info.id);
                 Utils::log_info("Game " + game_id + ": we are " + (our_white ? "White" : "Black"));
+                Utils::log_info("White player: " + event.white_id + ", Black player: " + event.black_id);
                 
                 // Parse initial moves
                 auto moves = Utils::split_string(event.moves, ' ');
@@ -97,10 +98,6 @@ private:
                 if ((board.turn() == ChessBoard::WHITE && our_white) || 
                     (board.turn() == ChessBoard::BLACK && !our_white)) {
                     
-                    float eval = engine->evaluate(board);
-                    Utils::log_info("Eval after ply " + std::to_string(ply_count) + 
-                                   " (white-persp): " + std::to_string(eval));
-                    
                     if (play_best_move(game_id, board)) {
                         ply_count++;
                     }
@@ -111,24 +108,21 @@ private:
                     return;
                 }
                 
+                // Handle draw offers
+                if (event.draw_offer) {
+                    handle_draw_offer(game_id, board);
+                }
+                
                 // Parse new moves
                 auto moves = Utils::split_string(event.moves, ' ');
                 for (size_t i = ply_count; i < moves.size(); i++) {
                     const auto& uci = moves[i];
                     if (!uci.empty()) {
-                        std::string actor = ((ply_count % 2 == 0 && our_white) || 
-                                           (ply_count % 2 == 1 && !our_white)) ? "Bot" : "Opponent";
-                        Utils::log_info("Game " + game_id + ": " + actor + " played move " + uci);
-                        
                         auto move = ChessBoard::Move::from_uci(uci);
                         board.make_move(move);
                         ply_count++;
                     }
                 }
-                
-                float eval = engine->evaluate(board);
-                Utils::log_info("Eval after ply " + std::to_string(ply_count) + 
-                               " (white-persp): " + std::to_string(eval));
                 
                 // Make our move if it's our turn
                 if ((board.turn() == ChessBoard::WHITE && our_white) || 
@@ -146,11 +140,28 @@ private:
         auto move = engine->get_best_move(board);
         if (!move.uci_string.empty()) { // Valid move check
             if (client.make_move(game_id, move.uci())) {
+                Utils::log_info("Move sent successfully: " + move.uci());
                 board.make_move(move);
                 return true;
+            } else {
+                Utils::log_error("Failed to send move: " + move.uci());
             }
+        } else {
+            Utils::log_error("No valid move found!");
         }
         return false;
+    }
+    
+    void handle_draw_offer(const std::string& game_id, const ChessBoard& board) {
+        float eval = engine->evaluate(board);
+
+        if (eval < 0.0f) {
+            Utils::log_info("Accepting draw offer (eval: " + std::to_string(eval) + ")");
+            client.accept_draw(game_id);
+        } else if (eval > 0.0f) {
+            Utils::log_info("Declining draw offer (eval: " + std::to_string(eval) + ")");
+            client.decline_draw(game_id);
+        }
     }
 };
 
