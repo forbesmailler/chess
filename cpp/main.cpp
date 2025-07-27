@@ -53,6 +53,7 @@ private:
     std::unique_ptr<ChessEngine> engine;
     LichessClient::AccountInfo account_info;
     std::string model_path;
+    bool our_white = false;
     
     void handle_event(const LichessClient::GameEvent& event) {
         if (event.type == "challenge") {
@@ -69,7 +70,6 @@ private:
     
     void handle_game(const std::string& game_id) {
         bool first_event = true;
-        bool our_white = false;
         ChessBoard board;
         int ply_count = 0;
         
@@ -162,13 +162,20 @@ private:
     
     void handle_draw_offer(const std::string& game_id, const ChessBoard& board) {
         float eval = engine->evaluate(board);
+        
+        // Adjust evaluation based on our color (eval is always from White's perspective)
+        float our_eval = our_white ? eval : -eval;
 
-        if (eval < 0.0f) {
-            Utils::log_info("Accepting draw offer (eval: " + std::to_string(eval) + ")");
-            client.accept_draw(game_id);
-        } else if (eval > 0.0f) {
-            Utils::log_info("Declining draw offer (eval: " + std::to_string(eval) + ")");
+        // Use evaluation thresholds for the -1 to 1 range
+        if (our_eval > 0.0f) { // Winning position - reject draw
+            Utils::log_info("Declining draw offer (our eval: " + std::to_string(our_eval) + 
+                           ", white eval: " + std::to_string(eval) + ")");
             client.decline_draw(game_id);
+        } else {
+            // Not winning - accept draw
+            Utils::log_info("Accepting draw offer (our eval: " + std::to_string(our_eval) + 
+                           ", white eval: " + std::to_string(eval) + ")");
+            client.accept_draw(game_id);
         }
     }
 };
