@@ -57,25 +57,29 @@ void ChessBoard::unmake_move(const Move& move) {
 }
 
 bool ChessBoard::is_checkmate() const {
-    return board.isGameOver() && board.isCheck();
+    auto [reason, result] = board.isGameOver();
+    return reason == chess::GameResultReason::CHECKMATE;
 }
 
 bool ChessBoard::is_stalemate() const {
-    return board.isGameOver() && !board.isCheck();
+    auto [reason, result] = board.isGameOver();
+    return reason == chess::GameResultReason::STALEMATE;
 }
 
 bool ChessBoard::is_draw() const {
-    return board.isGameOver() && !board.isCheck();
+    auto [reason, result] = board.isGameOver();
+    return result == chess::GameResult::DRAW;
 }
 
 bool ChessBoard::is_game_over() const {
-    return board.isGameOver();
+    auto [reason, result] = board.isGameOver();
+    return result != chess::GameResult::NONE;
 }
 
 bool ChessBoard::is_in_check(Color color) const {
     if ((color == WHITE && board.sideToMove() == chess::Color::WHITE) ||
         (color == BLACK && board.sideToMove() == chess::Color::BLACK)) {
-        return board.isCheck();
+        return board.inCheck();
     }
     
     // For checking if the other side is in check, we need to temporarily switch

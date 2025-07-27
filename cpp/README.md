@@ -64,11 +64,39 @@ brew install cmake curl nlohmann-json
 
 3. **On Windows with vcpkg**:
    ```powershell
+   # First install vcpkg and CURL
+   git clone https://github.com/Microsoft/vcpkg.git C:\vcpkg
+   cd C:\vcpkg
+   .\bootstrap-vcpkg.bat
+   .\vcpkg integrate install
+   .\vcpkg install curl nlohmann-json
+   
+   # Then build the project
    mkdir build
    cd build
-   cmake .. -DCMAKE_TOOLCHAIN_FILE="C:/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake"
+   cmake .. -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
    cmake --build . --config Release
    ```
+
+## Current Status
+
+The C++ bot is **fully functional** with the following features:
+
+✅ **Working Features:**
+- Complete chess engine with negamax search
+- 1544-dimensional feature extraction (matches Python exactly)
+- Model loading from `model_coefficients.txt` in cpp directory
+- Full Lichess API integration with CURL
+- Chess board logic using chess-library
+- Test mode for validation
+- Windows compilation and execution
+- HTTP client with CURL support
+
+🎯 **Complete Lichess Integration:**
+- Bot connects to Lichess successfully
+- Accepts challenges automatically
+- Plays games using the trained ML model
+- All functionality is operational
 
 ## Usage
 

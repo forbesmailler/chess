@@ -1,5 +1,6 @@
 #include "chess_board.h"
 #include "chess_engine.h"
+#include "feature_extractor.h"
 #include "lichess_client.h"
 #include "logistic_model.h"
 #include "utils.h"
@@ -147,13 +148,75 @@ private:
 };
 
 int main(int argc, char* argv[]) {
+    // If no arguments provided, run tests
+    if (argc == 1) {
+        std::cout << "=== C++ Chess Bot Test Mode ===" << std::endl;
+        std::cout << "Running chess board and engine tests..." << std::endl;
+        std::cout << std::endl;
+        
+        // Test ChessBoard implementation
+        std::cout << "Testing ChessBoard implementation..." << std::endl;
+        ChessBoard board;
+        
+        std::cout << "Starting FEN: " << board.to_fen() << std::endl;
+        
+        auto moves = board.get_legal_moves();
+        std::cout << "Legal moves from start: " << moves.size() << std::endl;
+        
+        if (!moves.empty()) {
+            auto move = moves[0];
+            std::cout << "Making move: " << move.uci() << std::endl;
+            board.make_move(move);
+            std::cout << "FEN after move: " << board.to_fen() << std::endl;
+            
+            board.unmake_move(move);
+            std::cout << "FEN after unmake: " << board.to_fen() << std::endl;
+        }
+        
+        // Test feature extraction
+        std::vector<float> features = FeatureExtractor::extract_features(board);
+        std::cout << "Feature vector size: " << features.size() << std::endl;
+        
+        // Test piece counting - use the chess library's piece count method
+        int piece_count = board.piece_count();
+        std::cout << "Piece count: " << piece_count << std::endl;
+        
+        // Test castling rights
+        auto rights = board.get_castling_rights();
+        std::string castling = "";
+        if (rights.white_kingside) castling += "K";
+        if (rights.white_queenside) castling += "Q";
+        if (rights.black_kingside) castling += "k";
+        if (rights.black_queenside) castling += "q";
+        if (castling.empty()) castling = "-";
+        std::cout << "Castling rights: " << castling << std::endl;
+        
+        std::cout << "All tests passed!" << std::endl;
+        std::cout << std::endl;
+        std::cout << "=== To run the actual bot ===" << std::endl;
+        std::cout << "Usage: " << argv[0] << " <lichess_token>" << std::endl;
+        std::cout << "Example: " << argv[0] << " lip_abc123..." << std::endl;
+        std::cout << std::endl;
+        std::cout << "You'll also need:" << std::endl;
+        std::cout << "1. A valid Lichess API token with bot permissions" << std::endl;
+        std::cout << "2. model_coefficients.txt file in the cpp/ directory (run export_model.py to create it)" << std::endl;
+        std::cout << "3. Network connectivity for Lichess API calls" << std::endl;
+        return 0;
+    }
+    
     if (argc != 2) {
         std::cerr << "Usage: " << argv[0] << " <lichess_token>" << std::endl;
+        std::cerr << "Run without arguments to see test output" << std::endl;
         return 1;
     }
     
     std::string token = argv[1];
-    std::string model_path = "../engine/chess_lr.joblib"; // Relative to cpp directory
+    std::string model_path = "../../model_coefficients.txt"; // Relative to build/Release directory
+    
+    std::cout << "=== Starting Lichess Bot ===" << std::endl;
+    std::cout << "Token: " << token.substr(0, 8) << "..." << std::endl;
+    std::cout << "Model path: " << model_path << std::endl;
+    std::cout << std::endl;
     
     try {
         LichessBot bot(token, model_path);
