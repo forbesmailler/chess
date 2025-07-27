@@ -56,20 +56,17 @@ private:
     void handle_event(const LichessClient::GameEvent& event) {
         if (event.type == "challenge") {
             if (client.accept_challenge(event.challenge_id)) {
-                Utils::log_info("Accepted challenge: " + event.challenge_id);
+                // Silently accept challenge
             } else {
                 Utils::log_error("Failed to accept challenge: " + event.challenge_id);
             }
         } else if (event.type == "gameStart") {
-            Utils::log_info("Game started: " + event.game_id);
             std::thread game_thread(&LichessBot::handle_game, this, event.game_id);
             game_thread.detach();
         }
     }
     
     void handle_game(const std::string& game_id) {
-        Utils::log_info("Handling game: " + game_id);
-        
         bool first_event = true;
         bool our_white = false;
         ChessBoard board;
@@ -93,6 +90,11 @@ private:
                         ply_count++;
                     }
                 }
+                
+                // Log initial position evaluation
+                float eval = engine->evaluate(board);
+                Utils::log_info("Eval after ply " + std::to_string(ply_count) + 
+                               " (white-persp): " + std::to_string(eval));
                 
                 // Make initial move if it's our turn
                 if ((board.turn() == ChessBoard::WHITE && our_white) || 
@@ -123,6 +125,11 @@ private:
                         ply_count++;
                     }
                 }
+                
+                // Log position evaluation after moves are processed
+                float eval = engine->evaluate(board);
+                Utils::log_info("Eval after ply " + std::to_string(ply_count) + 
+                               " (white-persp): " + std::to_string(eval));
                 
                 // Make our move if it's our turn
                 if ((board.turn() == ChessBoard::WHITE && our_white) || 
