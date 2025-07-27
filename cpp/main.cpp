@@ -225,7 +225,7 @@ int main(int argc, char* argv[]) {
         std::cout << std::endl;
         std::cout << "You'll also need:" << std::endl;
         std::cout << "1. A valid Lichess API token with bot permissions" << std::endl;
-        std::cout << "2. model_coefficients.txt file in the cpp/ directory (run export_model.py to create it)" << std::endl;
+        std::cout << "2. model_coefficients.txt file in the cpp/train/ directory (run export_model.py to create it)" << std::endl;
         std::cout << "3. Network connectivity for Lichess API calls" << std::endl;
         std::cout << std::endl;
         std::cout << "Optional depth parameter (default: 4, recommended: 3-6)" << std::endl;
@@ -254,7 +254,7 @@ int main(int argc, char* argv[]) {
         }
     }
     
-    std::string model_path = "../../model_coefficients.txt"; // Relative to build/Release directory
+    std::string model_path = "../../train/model_coefficients.txt"; // Relative to build/Release directory
     
     std::cout << "=== Starting Lichess Bot ===" << std::endl;
     std::cout << "Token: " << token.substr(0, 8) << "..." << std::endl;

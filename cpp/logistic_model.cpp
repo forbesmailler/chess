@@ -23,7 +23,7 @@ bool LogisticModel::load_model(const std::string& model_path) {
         file.open(model_path);
         if (!file.is_open()) {
             std::cerr << "Could not open model file: " << model_path << " or " << txt_path << std::endl;
-            std::cerr << "Please run export_model.py to convert your .joblib model to text format" << std::endl;
+            std::cerr << "Please run export_model.py in the cpp/train/ directory to convert your .joblib model to text format" << std::endl;
             
             // Create a dummy model for testing
             weights.resize(n_features * n_classes, 0.001f);

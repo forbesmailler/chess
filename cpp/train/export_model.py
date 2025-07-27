@@ -60,7 +60,7 @@ def export_logistic_model(joblib_path, output_path):
 if __name__ == "__main__":
     # Determine paths
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    joblib_path = os.path.join(script_dir, "../engine/chess_lr.joblib")
+    joblib_path = os.path.join(script_dir, "chess_lr.joblib")
     output_path = os.path.join(script_dir, "model_coefficients.txt")
     
     if len(sys.argv) > 1:

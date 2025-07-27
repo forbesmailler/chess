@@ -44,11 +44,11 @@ brew install cmake curl nlohmann-json
 The C++ bot can't read Python's `.joblib` files directly, so export your model:
 
 ```bash
-cd cpp
+cd cpp/train
 python export_model.py
 ```
 
-This creates `model_coefficients.txt` in the cpp directory.
+This creates `model_coefficients.txt` in the cpp/train directory.
 
 ### 3. Build the Bot
 
@@ -126,8 +126,8 @@ On Windows:
 ## Troubleshooting
 
 **Model not loading?**
-- Make sure you ran `python export_model.py` in the cpp directory
-- Check that `model_coefficients.txt` exists in the cpp folder
+- Make sure you ran `python export_model.py` in the cpp/train directory
+- Check that `model_coefficients.txt` exists in the cpp/train folder
 
 **Build errors?**
 - Verify all dependencies are installed
@@ -145,5 +145,5 @@ On Windows:
 - `feature_extractor.h/cpp` - Feature extraction (matches Python)
 - `logistic_model.h/cpp` - ML model loader
 - `lichess_client.h/cpp` - Lichess API integration
-- `export_model.py` - Converts .joblib to text format
-- `model_coefficients.txt` - Exported model data (created by export script)
+- `train/export_model.py` - Converts .joblib to text format
+- `train/model_coefficients.txt` - Exported model data (created by export script)
