@@ -2,6 +2,14 @@
 
 This is a high-performance C++ port of your Python Lichess bot, designed for improved speed while preserving all functionality.
 
+## Features
+
+- **Configurable Search Depth**: Command-line depth parameter (default: 4, recommended: 3-6)
+- **Performance Optimizations**: 5x larger cache, optimized negamax algorithm, compiler optimizations
+- **Intelligent Draw Handling**: Accepts draws when losing, declines when winning
+- **Clean Logging**: Focused on position evaluations and important events
+- **Cross-Platform**: Works on Windows, Linux, and macOS
+
 ## Quick Setup Guide
 
 Follow these steps to get the bot running:
@@ -68,9 +76,21 @@ cmake --build . --config Release
 # Test mode (verify everything works)
 ./lichess_bot
 
-# Bot mode (connect to Lichess)
+# Bot mode with default depth (4)
 ./lichess_bot <your_lichess_api_token>
+
+# Bot mode with custom depth (recommended: 3-6)
+./lichess_bot <your_lichess_api_token> 5
 ```
+
+## Performance Tips
+
+- **Depth 3**: Fast responses (~1-2 seconds per move)
+- **Depth 4**: Balanced performance (default, ~3-5 seconds per move)  
+- **Depth 5**: Strong play (~8-15 seconds per move)
+- **Depth 6**: Very strong but slow (~20-40 seconds per move)
+
+Higher depths provide stronger play but slower response times. For online play, depths 3-5 are recommended.
 
 On Windows:
 ```powershell

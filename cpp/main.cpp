@@ -12,7 +12,7 @@
 
 class LichessBot {
 public:
-    LichessBot(const std::string& token, const std::string& model_path)
+    LichessBot(const std::string& token, const std::string& model_path, int depth = 4)
         : client(token), model_path(model_path) {
         
         // Load the model
@@ -21,14 +21,15 @@ public:
             Utils::log_warning("Failed to load model from " + model_path + ", using dummy model");
         }
         
-        // Create the engine
-        engine = std::make_unique<ChessEngine>(model);
+        // Create the engine with specified depth
+        engine = std::make_unique<ChessEngine>(model, depth);
         
         // Get account info
         if (!client.get_account_info(account_info)) {
             Utils::log_error("Failed to get account information");
         } else {
             Utils::log_info("Bot started as user: " + account_info.username + " (" + account_info.id + ")");
+            Utils::log_info("Search depth: " + std::to_string(depth));
             if (account_info.is_bot) {
                 Utils::log_info("Account is properly configured as a bot");
             } else {
@@ -219,32 +220,50 @@ int main(int argc, char* argv[]) {
         std::cout << "All tests passed!" << std::endl;
         std::cout << std::endl;
         std::cout << "=== To run the actual bot ===" << std::endl;
-        std::cout << "Usage: " << argv[0] << " <lichess_token>" << std::endl;
-        std::cout << "Example: " << argv[0] << " lip_abc123..." << std::endl;
+        std::cout << "Usage: " << argv[0] << " <lichess_token> [depth]" << std::endl;
+        std::cout << "Example: " << argv[0] << " lip_abc123... 5" << std::endl;
         std::cout << std::endl;
         std::cout << "You'll also need:" << std::endl;
         std::cout << "1. A valid Lichess API token with bot permissions" << std::endl;
         std::cout << "2. model_coefficients.txt file in the cpp/ directory (run export_model.py to create it)" << std::endl;
         std::cout << "3. Network connectivity for Lichess API calls" << std::endl;
+        std::cout << std::endl;
+        std::cout << "Optional depth parameter (default: 4, recommended: 3-6)" << std::endl;
         return 0;
     }
     
-    if (argc != 2) {
-        std::cerr << "Usage: " << argv[0] << " <lichess_token>" << std::endl;
+    if (argc < 2 || argc > 3) {
+        std::cerr << "Usage: " << argv[0] << " <lichess_token> [depth]" << std::endl;
         std::cerr << "Run without arguments to see test output" << std::endl;
+        std::cerr << "Depth parameter is optional (default: 4)" << std::endl;
         return 1;
     }
     
     std::string token = argv[1];
+    int depth = 4; // Default depth
+    
+    if (argc == 3) {
+        try {
+            depth = std::stoi(argv[2]);
+            if (depth < 1 || depth > 10) {
+                std::cerr << "Warning: Depth should be between 1-10. Using depth " << depth << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Invalid depth parameter, using default depth 4" << std::endl;
+            depth = 4;
+        }
+    }
+    
     std::string model_path = "../../model_coefficients.txt"; // Relative to build/Release directory
     
     std::cout << "=== Starting Lichess Bot ===" << std::endl;
     std::cout << "Token: " << token.substr(0, 8) << "..." << std::endl;
     std::cout << "Model path: " << model_path << std::endl;
+    std::cout << "Search depth: " << depth << std::endl;
     std::cout << std::endl;
     
     try {
-        LichessBot bot(token, model_path);
+        LichessBot bot(token, model_path, depth);
         bot.start();
     } catch (const std::exception& e) {
         Utils::log_error("Bot crashed with exception: " + std::string(e.what()));

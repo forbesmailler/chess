@@ -3,7 +3,10 @@
 #include <algorithm>
 #include <limits>
 
-ChessEngine::ChessEngine(std::shared_ptr<LogisticModel> model) : model(model) {}
+ChessEngine::ChessEngine(std::shared_ptr<LogisticModel> model, int search_depth) 
+    : model(model), search_depth(search_depth) {
+    eval_cache.reserve(CACHE_SIZE); // Pre-allocate cache
+}
 
 float ChessEngine::evaluate(const ChessBoard& board) {
     // Terminal position detection
@@ -44,6 +47,11 @@ ChessBoard::Move ChessEngine::get_best_move(const ChessBoard& board) {
         return ChessBoard::Move{}; // No legal moves
     }
     
+    // Single move optimization
+    if (legal_moves.size() == 1) {
+        return legal_moves[0];
+    }
+    
     ChessBoard::Move best_move = legal_moves[0];
     float best_score = -std::numeric_limits<float>::infinity();
     float alpha = -std::numeric_limits<float>::infinity();
@@ -53,7 +61,7 @@ ChessBoard::Move ChessEngine::get_best_move(const ChessBoard& board) {
     
     for (const auto& move : legal_moves) {
         if (temp_board.make_move(move)) {
-            float score = -negamax(temp_board, DEFAULT_DEPTH - 1, -beta, -alpha);
+            float score = -negamax(temp_board, search_depth - 1, -beta, -alpha);
             temp_board.unmake_move(move);
             
             if (score > best_score) {
@@ -72,20 +80,35 @@ ChessBoard::Move ChessEngine::get_best_move(const ChessBoard& board) {
 }
 
 float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, float beta) {
-    if (depth == 0 || board.is_game_over()) {
+    // Terminal position check first (fastest)
+    if (board.is_checkmate()) {
+        return -WIN_VALUE * (depth + 1); // Prefer faster mate
+    }
+    
+    if (board.is_stalemate() || board.is_draw()) {
+        return 0.0f;
+    }
+    
+    if (depth == 0) {
         float val = evaluate(board);
         return board.turn() == ChessBoard::WHITE ? val : -val;
     }
     
-    // Check cache
-    std::string fen = board.to_fen() + "_" + std::to_string(depth);
-    auto cache_it = eval_cache.find(fen);
+    // Check cache with simplified key
+    std::string cache_key = board.to_fen().substr(0, board.to_fen().find(' ', 50)) + std::to_string(depth);
+    auto cache_it = eval_cache.find(cache_key);
     if (cache_it != eval_cache.end()) {
         return cache_it->second;
     }
     
     float value = -std::numeric_limits<float>::infinity();
     auto legal_moves = board.get_legal_moves();
+    
+    // Early termination if no moves
+    if (legal_moves.empty()) {
+        return board.is_in_check(board.turn()) ? -WIN_VALUE * (depth + 1) : 0.0f;
+    }
+    
     ChessBoard temp_board = board;
     
     for (const auto& move : legal_moves) {
@@ -102,9 +125,11 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, floa
         }
     }
     
-    // Cache the result
+    // Cache the result with size check
     if (eval_cache.size() < CACHE_SIZE) {
-        eval_cache[fen] = value;
+        eval_cache[cache_key] = value;
+    } else {
+        clear_cache_if_needed();
     }
     
     return value;

@@ -1,6 +1,6 @@
 __pycache__/
 build/
-*.txt
+token.txt
 *.csv
 *.parquet
 *.joblib
