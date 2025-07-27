@@ -29,6 +29,12 @@ public:
             Utils::log_error("Failed to get account information");
         } else {
             Utils::log_info("Bot started as user: " + account_info.username + " (" + account_info.id + ")");
+            if (account_info.is_bot) {
+                Utils::log_info("Account is properly configured as a bot");
+            } else {
+                Utils::log_error("WARNING: Account is NOT configured as a bot! Title: " + account_info.title);
+                Utils::log_error("Please upgrade your account to a bot account on Lichess");
+            }
         }
     }
     
@@ -50,6 +56,7 @@ private:
     void handle_event(const LichessClient::GameEvent& event) {
         if (event.type == "challenge") {
             Utils::log_info("Received challenge: " + event.challenge_id);
+            std::cout << "Attempting to accept challenge..." << std::endl;
             if (client.accept_challenge(event.challenge_id)) {
                 Utils::log_info("Accepted challenge: " + event.challenge_id);
             } else {

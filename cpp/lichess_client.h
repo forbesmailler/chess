@@ -11,6 +11,8 @@ public:
     struct AccountInfo {
         std::string id;
         std::string username;
+        bool is_bot = false;
+        std::string title;
     };
     
     struct GameEvent {

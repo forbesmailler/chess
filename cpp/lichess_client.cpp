@@ -34,6 +34,8 @@ bool LichessClient::get_account_info(AccountInfo& info) {
         auto j = json::parse(response.data);
         info.id = j["id"];
         info.username = j["username"];
+        info.is_bot = j.value("title", "") == "BOT";
+        info.title = j.value("title", "");
         return true;
     } catch (const std::exception& e) {
         std::cerr << "Error parsing account info: " << e.what() << std::endl;
@@ -43,6 +45,10 @@ bool LichessClient::get_account_info(AccountInfo& info) {
 
 bool LichessClient::accept_challenge(const std::string& challenge_id) {
     auto response = make_request(base_url + "/challenge/" + challenge_id + "/accept", "POST");
+    std::cout << "Challenge accept response: " << response.status_code << std::endl;
+    if (response.status_code != 200) {
+        std::cout << "Challenge accept failed: " << response.data << std::endl;
+    }
     return response.status_code == 200;
 }
 
@@ -145,15 +151,29 @@ LichessClient::HttpResponse LichessClient::make_request(const std::string& url, 
                                                        const std::string& data, bool stream) {
     CURL* curl = curl_easy_init();
     if (!curl) {
+        std::cout << "CURL init failed" << std::endl;
         return {"", 0};
     }
     
     std::string response_data;
     long response_code = 0;
     
+    std::cout << "Making " << method << " request to: " << url << std::endl;
+    
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_data);
+    
+    // Add timeouts
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);  // Reduced from 30 to 10 seconds
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);  // Reduced from 10 to 5 seconds
+    
+    // Add verbose output for debugging
+    curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+    
+    // Disable SSL verification for debugging (remove this in production)
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
     
     // Set headers
     struct curl_slist* headers = nullptr;
@@ -166,6 +186,10 @@ LichessClient::HttpResponse LichessClient::make_request(const std::string& url, 
         if (!data.empty()) {
             headers = curl_slist_append(headers, "Content-Type: application/json");
             curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data.c_str());
+        } else {
+            // For empty POST requests, set content length to 0
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "");
+            curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, 0L);
         }
     }
     
@@ -175,10 +199,16 @@ LichessClient::HttpResponse LichessClient::make_request(const std::string& url, 
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     
     // Perform the request
+    std::cout << "Performing CURL request..." << std::endl;
     CURLcode res = curl_easy_perform(curl);
+    std::cout << "CURL request completed with code: " << res << " (" << curl_easy_strerror(res) << ")" << std::endl;
     
     if (res == CURLE_OK) {
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
+        std::cout << "HTTP response code: " << response_code << std::endl;
+    } else {
+        std::cout << "CURL error: " << curl_easy_strerror(res) << std::endl;
+        response_code = 0;  // Set response code to 0 on error
     }
     
     curl_slist_free_all(headers);

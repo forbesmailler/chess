@@ -1,36 +1,22 @@
 # C++ Lichess Bot
 
-This is a C++ port of your Python Lichess bot, designed for improved performance while preserving all functionality.
+This is a high-performance C++ port of your Python Lichess bot, designed for improved speed while preserving all functionality.
 
-## Features
+## Quick Setup Guide
 
-- **Complete Chess Engine**: Uses the chess-library for full chess move generation and validation
-- **Feature Extraction**: Matches the Python version's feature extraction exactly
-- **Logistic Regression Model**: Loads and uses your trained scikit-learn model
-- **Lichess API Integration**: Full integration with Lichess API for bot functionality
-- **Caching**: Implements position evaluation caching for better performance
-- **Logging**: Comprehensive logging system
+Follow these steps to get the bot running:
 
-## Dependencies
+### 1. Install Dependencies
 
-### Required Libraries
-
-1. **libcurl** - For HTTP requests to Lichess API
-2. **nlohmann/json** - For JSON parsing
-3. **chess-library** - For complete chess move generation and validation (automatically downloaded by CMake)
-4. **CMake** - For building the project
-
-### Installing Dependencies
-
-#### Windows (using vcpkg)
+#### Windows (Recommended)
 ```powershell
-# Install vcpkg if you haven't already
-git clone https://github.com/Microsoft/vcpkg.git
-cd vcpkg
+# Install vcpkg package manager
+git clone https://github.com/Microsoft/vcpkg.git C:\vcpkg
+cd C:\vcpkg
 .\bootstrap-vcpkg.bat
 .\vcpkg integrate install
 
-# Install dependencies
+# Install required libraries
 .\vcpkg install curl nlohmann-json
 ```
 
@@ -40,161 +26,104 @@ sudo apt update
 sudo apt install cmake libcurl4-openssl-dev nlohmann-json3-dev
 ```
 
-#### macOS (using Homebrew)
+#### macOS
 ```bash
 brew install cmake curl nlohmann-json
 ```
 
-## Building
+### 2. Export Your Trained Model
 
-1. **Export your trained model** (required first step):
-   ```bash
-   cd cpp
-   python export_model.py
-   ```
-   This will create `model_coefficients.txt` from your `chess_lr.joblib` file.
+The C++ bot can't read Python's `.joblib` files directly, so export your model:
 
-2. **Create build directory and compile**:
-   ```bash
-   mkdir build
-   cd build
-   cmake ..
-   cmake --build . --config Release
-   ```
+```bash
+cd cpp
+python export_model.py
+```
 
-3. **On Windows with vcpkg**:
-   ```powershell
-   # First install vcpkg and CURL
-   git clone https://github.com/Microsoft/vcpkg.git C:\vcpkg
-   cd C:\vcpkg
-   .\bootstrap-vcpkg.bat
-   .\vcpkg integrate install
-   .\vcpkg install curl nlohmann-json
-   
-   # Then build the project
-   mkdir build
-   cd build
-   cmake .. -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
-   cmake --build . --config Release
-   ```
+This creates `model_coefficients.txt` in the cpp directory.
 
-## Current Status
+### 3. Build the Bot
 
-The C++ bot is **fully functional** with the following features:
+#### Windows (with vcpkg)
+```powershell
+cd cpp
+mkdir build
+cd build
+cmake .. -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
+cmake --build . --config Release
+```
 
-✅ **Working Features:**
-- Complete chess engine with negamax search
-- 1544-dimensional feature extraction (matches Python exactly)
-- Model loading from `model_coefficients.txt` in cpp directory
-- Full Lichess API integration with CURL
-- Chess board logic using chess-library
-- Test mode for validation
-- Windows compilation and execution
-- HTTP client with CURL support
+#### Linux/macOS
+```bash
+cd cpp
+mkdir build
+cd build
+cmake ..
+cmake --build . --config Release
+```
 
-🎯 **Complete Lichess Integration:**
-- Bot connects to Lichess successfully
-- Accepts challenges automatically
-- Plays games using the trained ML model
-- All functionality is operational
+### 4. Run the Bot
 
-## Usage
+```bash
+# Test mode (verify everything works)
+./lichess_bot
 
-1. **Run the bot**:
-   ```bash
-   ./lichess_bot <your_lichess_api_token>
-   ```
+# Bot mode (connect to Lichess)
+./lichess_bot <your_lichess_api_token>
+```
 
-   On Windows:
-   ```powershell
-   .\lichess_bot.exe <your_lichess_api_token>
-   ```
+On Windows:
+```powershell
+# Test mode
+.\lichess_bot.exe
 
-2. **The bot will**:
-   - Connect to Lichess using your API token
-   - Accept challenges automatically
-   - Play games using the loaded ML model
-   - Log all activities to console
+# Bot mode  
+.\lichess_bot.exe <your_lichess_api_token>
+```
 
-## File Structure
+## What You Need
 
-- **main.cpp** - Main bot application and game handling logic
-- **chess_board.h/cpp** - Chess board representation and move generation
-- **chess_engine.h/cpp** - Chess engine with negamax search
-- **feature_extractor.h/cpp** - Feature extraction (matches Python version)
-- **logistic_model.h/cpp** - Logistic regression model loader/predictor
-- **lichess_client.h/cpp** - Lichess API client
-- **utils.h/cpp** - Utility functions and logging
-- **export_model.py** - Python script to export model coefficients
+1. **Lichess API Token**: Get one from [lichess.org/account/oauth/token](https://lichess.org/account/oauth/token) with bot permissions
+2. **Your Trained Model**: The `chess_lr.joblib` file from your Python training
+3. **C++ Build Tools**: Visual Studio 2022 (Windows) or GCC/Clang (Linux/macOS)
 
-## Model Export Process
+## Features
 
-The C++ version cannot directly read scikit-learn's .joblib files, so you need to export the model coefficients:
+✅ **Complete Functionality:**
+- Full chess engine with negamax search
+- 1544-dimensional feature extraction (identical to Python version)
+- Trained ML model integration
+- Lichess API connectivity
+- Automatic challenge acceptance
+- Real-time game playing
 
-1. Run the export script:
-   ```bash
-   python export_model.py
-   ```
-
-2. This creates `model_coefficients.txt` with the format:
-   ```
-   INTERCEPT
-   <intercept_values>
-   
-   COEFFICIENTS
-   <coefficient_values>
-   ```
-
-3. The C++ code automatically looks for this file when loading the model.
-
-## Performance Improvements
-
-The C++ version provides several performance benefits over the Python version:
-
-1. **Faster Execution**: Native compiled code vs interpreted Python
-2. **Better Memory Management**: More efficient memory usage
-3. **Optimized Search**: Compiled negamax with efficient pruning
-4. **Reduced Overhead**: No Python interpreter overhead
-5. **Parallel Compilation**: Can be optimized with compiler flags
-
-## Configuration
-
-You can modify performance settings in the source code:
-
-- **Search Depth**: Change `DEFAULT_DEPTH` in `chess_engine.h`
-- **Cache Size**: Modify `CACHE_SIZE` in `chess_engine.h`
-- **Model Path**: Update model path in `main.cpp`
+✅ **Performance Benefits:**
+- Native compiled code (much faster than Python)
+- Efficient memory management
+- Optimized search algorithms
+- Reduced overhead
 
 ## Troubleshooting
 
-### Common Issues
+**Model not loading?**
+- Make sure you ran `python export_model.py` in the cpp directory
+- Check that `model_coefficients.txt` exists in the cpp folder
 
-1. **Model not loading**: Make sure you've run `export_model.py` first
-2. **Build errors**: Check that all dependencies are installed
-3. **API errors**: Verify your Lichess API token is valid and has bot permissions
-4. **Missing moves**: The chess move generation is simplified - you may need to integrate a full chess library like `libchess` for complete functionality
+**Build errors?**
+- Verify all dependencies are installed
+- On Windows, ensure you're using the vcpkg toolchain file
 
-### Incomplete Chess Implementation
+**API connection issues?**
+- Verify your Lichess token is valid and has bot permissions
+- Check your internet connection
 
-**Note**: The chess implementation now uses the `chess-library` which provides complete chess functionality including:
+## File Structure
 
-✅ **Full move generation** - All legal moves including castling, en passant, promotion
-✅ **Game state validation** - Proper check, checkmate, and stalemate detection  
-✅ **Move making/unmaking** - Complete and correct position updates
-✅ **FEN parsing** - Full FEN string support
-
-The bot should now work correctly for production use!
-
-### Extending the Bot
-
-The code is modular and can be extended with:
-
-- Opening book integration
-- Endgame tablebase support
-- Time management
-- Pondering (thinking on opponent's time)
-- Multiple model support
-
-## License
-
-This C++ port maintains the same functionality as your original Python bot while providing the performance benefits of compiled code.
+- `main.cpp` - Bot application and game handling
+- `chess_board.h/cpp` - Chess board using chess-library
+- `chess_engine.h/cpp` - Negamax search engine  
+- `feature_extractor.h/cpp` - Feature extraction (matches Python)
+- `logistic_model.h/cpp` - ML model loader
+- `lichess_client.h/cpp` - Lichess API integration
+- `export_model.py` - Converts .joblib to text format
+- `model_coefficients.txt` - Exported model data (created by export script)
