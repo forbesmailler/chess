@@ -7,7 +7,29 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import accuracy_score, log_loss
 import os
 import joblib
-from lichess import extract_features
+
+def extract_features(fen: str) -> np.ndarray:
+    board = chess.Board(fen)
+    piece_arr = np.zeros(12 * 64, dtype=np.float32)
+    for sq, piece in board.piece_map().items():
+        idx = (piece.piece_type - 1) + (0 if piece.color == chess.WHITE else 6)
+        piece_arr[idx * 64 + sq] = 1.0
+
+    # Castling rights features (4)
+    castling = np.array([
+        board.has_kingside_castling_rights(chess.WHITE),
+        board.has_queenside_castling_rights(chess.WHITE),
+        board.has_kingside_castling_rights(chess.BLACK),
+        board.has_queenside_castling_rights(chess.BLACK)
+    ], dtype=np.float32)
+
+    base = np.concatenate([piece_arr, castling])  # length = 768 + 4 = 772
+
+    n_pieces = len(board.piece_map())
+    factor = (n_pieces - 2) / 30
+
+    # Multiply at the end
+    return np.concatenate([base * factor, base * (1.0 - factor)])
 
 def process_dataset(df: pd.DataFrame, size: int, desc: str):
     df = df.sample(frac=1, random_state=42).reset_index(drop=True).iloc[:size]
