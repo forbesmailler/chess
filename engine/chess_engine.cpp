@@ -23,7 +23,8 @@ float ChessEngine::get_piece_value(ChessBoard::PieceType piece) const {
 }
 
 float ChessEngine::evaluate(const ChessBoard& board) {
-    // Terminal position detection with better scoring
+    // NOTE: Evaluation is always from WHITE's perspective
+    // The caller is responsible for flipping the sign for Black
     if (board.is_checkmate()) {
         return board.turn() == ChessBoard::WHITE ? -MATE_VALUE : MATE_VALUE;
     }
@@ -46,8 +47,32 @@ float ChessEngine::evaluate(const ChessBoard& board) {
     float raw_eval = proba[2] - proba[0];  // Range: -1 to 1
     float eval = raw_eval * 10000.0f;  // Scale by 10,000
     
-    // NOTE: Evaluation is always from WHITE's perspective
-    // The caller is responsible for flipping the sign for Black
+    // Endgame detection and bonus for forcing checkmate
+    int piece_count = board.piece_count();
+    if (piece_count <= 10) {  // Endgame
+        // In endgame, add bonus for positions that restrict opponent's king
+        // This helps the bot play more forcing moves toward mate
+        auto legal_moves = board.get_legal_moves();
+        if (legal_moves.size() < 10) {  // Current player has few moves (being restricted)
+            float restriction_penalty = (10 - legal_moves.size()) * 50.0f;
+            // Apply penalty/bonus from WHITE's perspective
+            if (board.turn() == ChessBoard::WHITE) {
+                eval -= restriction_penalty; // White is restricted (bad for White)
+            } else {
+                eval += restriction_penalty; // Black is restricted (good for White)
+            }
+        }
+        
+        // Extra evaluation for checks in endgame
+        if (board.is_in_check(board.turn())) {
+            // Being in check is bad for the current player
+            if (board.turn() == ChessBoard::WHITE) {
+                eval -= 300.0f; // White in check (bad for White)
+            } else {
+                eval += 300.0f; // Black in check (good for White)
+            }
+        }
+    }
     
     // Cache the result
     if (eval_cache.size() >= CACHE_SIZE / 2) {
@@ -174,9 +199,9 @@ ChessBoard::Move ChessEngine::get_best_move(const ChessBoard& board) {
 }
 
 float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, float beta, bool is_pv) {
-    // Check for mate/draw
     if (board.is_checkmate()) {
-        return -MATE_VALUE + (search_depth - depth); // Prefer quicker mates
+        // Return mate score adjusted for distance (prefer quicker mates)
+        return -MATE_VALUE + (search_depth - depth);
     }
     
     if (board.is_stalemate() || board.is_draw()) {
@@ -220,7 +245,20 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, floa
     
     auto legal_moves = board.get_legal_moves();
     if (legal_moves.empty()) {
-        return board.is_in_check(board.turn()) ? -MATE_VALUE + (search_depth - depth) : 0.0f;
+        // No legal moves - check if it's mate or stalemate
+        if (board.is_in_check(board.turn())) {
+            return -MATE_VALUE + (search_depth - depth); // Mate (prefer quicker)
+        } else {
+            return 0.0f; // Stalemate
+        }
+    }
+    
+    // In endgame with few pieces, extend search depth to find mates
+    int piece_count = board.piece_count();
+    bool extend_search = false;
+    if (piece_count <= 10 && depth == 0) {
+        extend_search = true;
+        depth = 1; // Extend search by 1 ply in endgame
     }
     
     // Move ordering
@@ -255,8 +293,8 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, floa
         }
     }
     
-    // Store in transposition table
-    if (transposition_table.size() < CACHE_SIZE / 2) {
+    // Store in transposition table (don't store extended search results)
+    if (!extend_search && transposition_table.size() < CACHE_SIZE / 2) {
         TranspositionEntry entry;
         entry.score = best_score;
         entry.depth = depth;
