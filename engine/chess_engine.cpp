@@ -10,11 +10,6 @@ ChessEngine::ChessEngine(std::shared_ptr<LogisticModel> model, int search_depth)
     transposition_table.reserve(CACHE_SIZE / 2);
 }
 
-float ChessEngine::get_piece_value(ChessBoard::PieceType piece) const {
-    static const float values[] = {100.0f, 320.0f, 330.0f, 500.0f, 900.0f, 20000.0f, 0.0f};
-    return values[piece];
-}
-
 float ChessEngine::evaluate(const ChessBoard& board) {
     if (board.is_checkmate()) {
         return board.turn() == ChessBoard::WHITE ? -MATE_VALUE : MATE_VALUE;
@@ -31,15 +26,18 @@ float ChessEngine::evaluate(const ChessBoard& board) {
     float eval = (proba[2] - proba[0]) * 10000.0f;
     
     int piece_count = board.piece_count();
-    if (piece_count <= 10) {
+    float endgame_factor = get_endgame_factor(piece_count);
+    
+    if (endgame_factor > 0.0f) {
         auto legal_moves = board.get_legal_moves();
         if (legal_moves.size() < 10) {
-            float restriction_penalty = (10 - legal_moves.size()) * 50.0f;
+            float restriction_penalty = (10 - legal_moves.size()) * 50.0f * endgame_factor;
             eval += (board.turn() == ChessBoard::WHITE) ? -restriction_penalty : restriction_penalty;
         }
         
         if (board.is_in_check(board.turn())) {
-            eval += (board.turn() == ChessBoard::WHITE) ? -300.0f : 300.0f;
+            float check_penalty = 300.0f * endgame_factor;
+            eval += (board.turn() == ChessBoard::WHITE) ? -check_penalty : check_penalty;
         }
     }
     
@@ -159,7 +157,8 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, floa
         return board.is_in_check(board.turn()) ? -MATE_VALUE + (search_depth - depth) : 0.0f;
     }
     
-    bool extend_search = (board.piece_count() <= 10 && depth == 0);
+    float endgame_factor = get_endgame_factor(board.piece_count());
+    bool extend_search = (depth == 0 && endgame_factor > 0.5f);
     if (extend_search) depth = 1;
     
     auto ordered_moves = order_moves(board, legal_moves, tt_move);
@@ -248,6 +247,19 @@ std::string ChessEngine::get_position_key(const ChessBoard& board) const {
         }
     }
     return fen;
+}
+
+float ChessEngine::get_endgame_factor(int piece_count) const {
+    // Gradual transition from middlegame to endgame
+    // Starting piece count: 32 (full board)
+    // Pure endgame at: 6 pieces or fewer
+    // Transition zone: 7-16 pieces
+    
+    if (piece_count <= 6) return 1.0f;        // Pure endgame
+    if (piece_count >= 16) return 0.0f;       // Middlegame/opening
+    
+    // Linear interpolation between 6 and 16 pieces
+    return (16.0f - piece_count) / 10.0f;
 }
 
 void ChessEngine::clear_cache_if_needed() {
