@@ -18,6 +18,7 @@ struct GameState {
     int ply_count = 0;
     bool our_white = false;
     bool first_event = true;
+    std::unique_ptr<ChessEngine> engine;
 };
 
 class LichessBot {
@@ -62,7 +63,7 @@ private:
     std::string model_path;
     
     // Game state management
-    std::unordered_map<std::string, std::unique_ptr<GameState>> active_games;
+    std::unordered_map<std::string, std::shared_ptr<GameState>> active_games;
     std::mutex games_mutex;
     std::atomic<int> active_game_count{0};
     
@@ -76,7 +77,10 @@ private:
             }
         } else if (event.type == "gameStart") {
             std::lock_guard<std::mutex> lock(games_mutex);
-            active_games[event.game_id] = std::make_unique<GameState>();
+            auto game_state = std::make_shared<GameState>();
+            // Create a separate engine instance for this game
+            game_state->engine = std::make_unique<ChessEngine>(model, engine->get_depth());
+            active_games[event.game_id] = game_state;
             active_game_count++;
             Utils::log_info("Game started: " + event.game_id + 
                           " (Active games: " + std::to_string(active_game_count.load()) + ")");
@@ -87,7 +91,7 @@ private:
     }
     
     void handle_game(const std::string& game_id) {
-        GameState* game_state = nullptr;
+        std::shared_ptr<GameState> game_state;
         {
             std::lock_guard<std::mutex> lock(games_mutex);
             auto it = active_games.find(game_id);
@@ -95,10 +99,10 @@ private:
                 Utils::log_error("Game state not found for game: " + game_id);
                 return;
             }
-            game_state = it->second.get();
+            game_state = it->second; // Keep shared_ptr alive
         }
         
-        client.stream_game(game_id, [&](const LichessClient::GameEvent& event) {
+        client.stream_game(game_id, [this, game_state, game_id](const LichessClient::GameEvent& event) {
             if (event.type == "gameFull" && game_state->first_event) {
                 game_state->first_event = false;
                 
@@ -115,14 +119,14 @@ private:
                     }
                 }
                 
-                float eval = engine->evaluate(game_state->board);
+                float eval = game_state->engine->evaluate(game_state->board);
                 Utils::log_info("Game " + game_id + " - Eval after ply " + std::to_string(game_state->ply_count) + 
                                " (white-persp): " + std::to_string(eval));
                 
                 if ((game_state->board.turn() == ChessBoard::WHITE && game_state->our_white) || 
                     (game_state->board.turn() == ChessBoard::BLACK && !game_state->our_white)) {
                     
-                    if (play_best_move(game_id, game_state->board)) game_state->ply_count++;
+                    if (play_best_move(game_id, game_state)) game_state->ply_count++;
                 }
             } else if (event.type == "gameState") {
                 if (event.status != "started") {
@@ -131,7 +135,7 @@ private:
                     return;
                 }
                 
-                if (event.draw_offer) handle_draw_offer(game_id, game_state->board, game_state->our_white);
+                if (event.draw_offer) handle_draw_offer(game_id, game_state);
                 
                 auto moves = Utils::split_string(event.moves, ' ');
                 for (size_t i = game_state->ply_count; i < moves.size(); i++) {
@@ -143,14 +147,14 @@ private:
                     }
                 }
                 
-                float eval = engine->evaluate(game_state->board);
+                float eval = game_state->engine->evaluate(game_state->board);
                 Utils::log_info("Game " + game_id + " - Eval after ply " + std::to_string(game_state->ply_count) + 
                                " (white-persp): " + std::to_string(eval));
                 
                 if ((game_state->board.turn() == ChessBoard::WHITE && game_state->our_white) || 
                     (game_state->board.turn() == ChessBoard::BLACK && !game_state->our_white)) {
                     
-                    if (play_best_move(game_id, game_state->board)) game_state->ply_count++;
+                    if (play_best_move(game_id, game_state)) game_state->ply_count++;
                 }
             }
         });
@@ -159,12 +163,12 @@ private:
         cleanup_game(game_id);
     }
     
-    bool play_best_move(const std::string& game_id, ChessBoard& board) {
-        auto move = engine->get_best_move(board);
+    bool play_best_move(const std::string& game_id, std::shared_ptr<GameState> game_state) {
+        auto move = game_state->engine->get_best_move(game_state->board);
         if (!move.uci_string.empty()) {
             if (client.make_move(game_id, move.uci())) {
                 Utils::log_info("Move sent successfully: " + move.uci());
-                board.make_move(move);
+                game_state->board.make_move(move);
                 return true;
             } else {
                 Utils::log_error("Failed to send move: " + move.uci());
@@ -175,9 +179,9 @@ private:
         return false;
     }
     
-    void handle_draw_offer(const std::string& game_id, const ChessBoard& board, bool our_white) {
-        float eval = engine->evaluate(board);
-        float our_eval = our_white ? eval : -eval;
+    void handle_draw_offer(const std::string& game_id, std::shared_ptr<GameState> game_state) {
+        float eval = game_state->engine->evaluate(game_state->board);
+        float our_eval = game_state->our_white ? eval : -eval;
 
         if (our_eval > 0.0f) {
             Utils::log_info("Game " + game_id + " - Declining draw offer (our eval: " + std::to_string(our_eval) + 
