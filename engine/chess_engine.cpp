@@ -59,62 +59,26 @@ float ChessEngine::evaluate(const ChessBoard& board) {
 }
 
 int ChessEngine::score_move(const ChessBoard& board, const ChessBoard::Move& move) {
-    int score = 0;
+    // Use ML model to score moves by evaluating the resulting position
+    ChessBoard temp_board = board;
     
-    // Most Valuable Victim - Least Valuable Attacker (MVV-LVA)
-    if (board.is_capture_move(move)) {
-        auto captured = board.piece_at(move.to());
-        auto attacker = board.piece_at(move.from());
-        
-        if (captured != ChessBoard::NONE && attacker != ChessBoard::NONE) {
-            // Much higher bonus for captures
-            score += static_cast<int>(get_piece_value(static_cast<ChessBoard::PieceType>(captured & 7))) * 100;
-            score -= static_cast<int>(get_piece_value(static_cast<ChessBoard::PieceType>(attacker & 7))) / 10;
-        }
+    if (!temp_board.make_move(move)) {
+        return -MATE_VALUE; // Invalid move gets very low score
     }
     
-    // Higher promotion bonus
-    if (move.is_promotion()) {
-        score += 8000; // Very high bonus for promotion
-    }
+    // Get ML evaluation of the position after the move
+    float eval_after = evaluate(temp_board);
     
-    // Check bonus - but make it more efficient by not making/unmaking moves here
-    // We'll do a simpler positional evaluation instead
-    int to_square = move.to();
-    int from_square = move.from();
+    // Convert from White's perspective to current player's perspective
+    float score_for_current_player = board.turn() == ChessBoard::WHITE ? eval_after : -eval_after;
     
-    // Center control bonus
-    int to_file = to_square % 8;
-    int to_rank = to_square / 8;
+    temp_board.unmake_move(move);
     
-    // Bonus for moves to center squares
-    if ((to_file >= 2 && to_file <= 5) && (to_rank >= 2 && to_rank <= 5)) {
-        score += 50;
-        // Extra bonus for central squares
-        if ((to_file == 3 || to_file == 4) && (to_rank == 3 || to_rank == 4)) {
-            score += 30;
-        }
-    }
+    // Convert to int for move ordering (the function signature requires int)
+    // Scale down since this is just for ordering moves, not final evaluation
+    int move_score = static_cast<int>(score_for_current_player / 10.0f);
     
-    // Development bonus for knights and bishops in opening
-    auto piece = board.piece_at(from_square);
-    if (piece == ChessBoard::KNIGHT || piece == ChessBoard::BISHOP) {
-        // Check if moving from back rank (development)
-        int from_rank = from_square / 8;
-        if ((board.turn() == ChessBoard::WHITE && from_rank == 0) ||
-            (board.turn() == ChessBoard::BLACK && from_rank == 7)) {
-            score += 100; // Development bonus
-        }
-    }
-    
-    // King safety - penalize king moves in opening/middlegame
-    if (piece == ChessBoard::KING) {
-        if (board.piece_count() > 20) { // Still in opening/middlegame
-            score -= 200; // Discourage king moves when not necessary
-        }
-    }
-    
-    return score;
+    return move_score;
 }
 
 std::vector<ChessBoard::Move> ChessEngine::order_moves(const ChessBoard& board, 
