@@ -23,7 +23,7 @@ float ChessEngine::evaluate(const ChessBoard& board) {
     
     auto features = FeatureExtractor::extract_features(board);
     auto proba = model->predict_proba(features);
-    float eval = (proba[2] - proba[0]) * 10000.0f;
+    float eval = (proba[2] - proba[0]) * 9000.0f;
     
     int piece_count = board.piece_count();
     float endgame_factor = get_endgame_factor(piece_count);
@@ -249,16 +249,9 @@ std::string ChessEngine::get_position_key(const ChessBoard& board) const {
     return fen;
 }
 
-float ChessEngine::get_endgame_factor(int piece_count) const {
-    // Gradual transition from middlegame to endgame
-    // Starting piece count: 32 (full board)
-    // Pure endgame at: 6 pieces or fewer
-    // Transition zone: 7-16 pieces
-    
-    if (piece_count <= 6) return 1.0f;        // Pure endgame
-    if (piece_count >= 16) return 0.0f;       // Middlegame/opening
-    
-    // Linear interpolation between 6 and 16 pieces
+float ChessEngine::get_endgame_factor(int piece_count) const {    
+    if (piece_count <= 6) return 1.0f;
+    if (piece_count >= 16) return 0.0f;
     return (16.0f - piece_count) / 10.0f;
 }
 
