@@ -1,10 +1,7 @@
 #include "chess_board.h"
 #include <sstream>
 
-ChessBoard::ChessBoard() {
-    // Default starting position
-    board = chess::Board();
-}
+ChessBoard::ChessBoard() : board() {}
 
 ChessBoard::ChessBoard(const std::string& fen) {
     load_fen(fen);
@@ -36,13 +33,9 @@ std::vector<ChessBoard::Move> ChessBoard::get_legal_moves() const {
 bool ChessBoard::make_move(const Move& move) {
     try {
         chess::Move chess_move = chess::uci::uciToMove(board, move.uci_string);
-        if (chess_move == chess::Move::NO_MOVE) {
-            return false;
-        }
+        if (chess_move == chess::Move::NO_MOVE) return false;
         
-        // Store the move for unmake_move
         move_history.push_back(chess_move);
-        
         board.makeMove(chess_move);
         return true;
     } catch (...) {
@@ -78,14 +71,8 @@ bool ChessBoard::is_game_over() const {
 }
 
 bool ChessBoard::is_in_check(Color color) const {
-    if ((color == WHITE && board.sideToMove() == chess::Color::WHITE) ||
-        (color == BLACK && board.sideToMove() == chess::Color::BLACK)) {
-        return board.inCheck();
-    }
-    
-    // For checking if the other side is in check, we need to temporarily switch
-    // This is a limitation - the library doesn't easily allow checking other side
-    return false;
+    return ((color == WHITE && board.sideToMove() == chess::Color::WHITE) ||
+            (color == BLACK && board.sideToMove() == chess::Color::BLACK)) && board.inCheck();
 }
 
 ChessBoard::Color ChessBoard::turn() const {
@@ -94,8 +81,6 @@ ChessBoard::Color ChessBoard::turn() const {
 
 ChessBoard::CastlingRights ChessBoard::get_castling_rights() const {
     CastlingRights rights;
-    
-    // Extract castling rights from the FEN string
     std::string fen = board.getFen();
     std::istringstream iss(fen);
     std::string board_str, turn_str, castling_str;
@@ -110,7 +95,6 @@ ChessBoard::CastlingRights ChessBoard::get_castling_rights() const {
 }
 
 int ChessBoard::piece_count() const {
-    // Count non-empty squares by parsing the FEN
     std::string fen = board.getFen();
     std::istringstream iss(fen);
     std::string board_str;
@@ -118,9 +102,7 @@ int ChessBoard::piece_count() const {
     
     int count = 0;
     for (char c : board_str) {
-        if (c != '/' && !std::isdigit(c)) {
-            count++;
-        }
+        if (c != '/' && !std::isdigit(c)) count++;
     }
     
     return count;
@@ -130,15 +112,12 @@ int ChessBoard::square_from_string(const std::string& sq) {
     if (sq.length() != 2) return -1;
     int file = sq[0] - 'a';
     int rank = sq[1] - '1';
-    if (file < 0 || file > 7 || rank < 0 || rank > 7) return -1;
-    return rank * 8 + file;
+    return (file < 0 || file > 7 || rank < 0 || rank > 7) ? -1 : rank * 8 + file;
 }
 
 std::string ChessBoard::square_to_string(int square) {
     if (square < 0 || square > 63) return "";
-    char file = 'a' + (square % 8);
-    char rank = '1' + (square / 8);
-    return std::string(1, file) + std::string(1, rank);
+    return std::string(1, 'a' + (square % 8)) + std::string(1, '1' + (square / 8));
 }
 
 ChessBoard::PieceType ChessBoard::piece_type_at(int square) const {
@@ -146,28 +125,18 @@ ChessBoard::PieceType ChessBoard::piece_type_at(int square) const {
     
     chess::Square sq = static_cast<chess::Square>(square);
     chess::Piece piece = board.at(sq);
-    
     if (piece == chess::Piece::NONE) return NONE;
     
     chess::PieceType pt = piece.type();
-    
-    if (pt == chess::PieceType::PAWN) return PAWN;
-    if (pt == chess::PieceType::KNIGHT) return KNIGHT;
-    if (pt == chess::PieceType::BISHOP) return BISHOP;
-    if (pt == chess::PieceType::ROOK) return ROOK;
-    if (pt == chess::PieceType::QUEEN) return QUEEN;
-    if (pt == chess::PieceType::KING) return KING;
-    
-    return NONE;
+    static const PieceType piece_map[] = {NONE, PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING};
+    return piece_map[static_cast<int>(pt)];
 }
 
 ChessBoard::PieceType ChessBoard::piece_type_at(const std::string& square_str) const {
-    int square = square_from_string(square_str);
-    return piece_type_at(square);
+    return piece_type_at(square_from_string(square_str));
 }
 
 bool ChessBoard::Move::is_capture() const {
-    // For now, return false - the engine will use board.is_capture_move() instead
     return false;
 }
 
@@ -184,15 +153,8 @@ int ChessBoard::Move::to() const {
 }
 
 bool ChessBoard::is_capture_move(const Move& move) const {
-    if (move.internal_move.typeOf() == chess::Move::ENPASSANT) {
-        return true;
-    }
-    
-    // Check if there's a piece on the target square
-    chess::Square target = move.internal_move.to();
-    chess::Piece piece = board.at(target);
-    
-    return piece != chess::Piece::NONE;
+    return move.internal_move.typeOf() == chess::Move::ENPASSANT || 
+           board.at(move.internal_move.to()) != chess::Piece::NONE;
 }
 
 ChessBoard::PieceType ChessBoard::piece_at(int square) const {

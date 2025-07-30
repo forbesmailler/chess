@@ -21,25 +21,15 @@ std::string Utils::trim(const std::string& str) {
     auto start = str.begin();
     auto end = str.end();
     
-    // Find first non-whitespace character
-    while (start != end && std::isspace(*start)) {
-        ++start;
-    }
-    
-    // Find last non-whitespace character
-    while (end != start && std::isspace(*(end - 1))) {
-        --end;
-    }
+    while (start != end && std::isspace(*start)) ++start;
+    while (end != start && std::isspace(*(end - 1))) --end;
     
     return std::string(start, end);
 }
 
 bool Utils::string_ends_with(const std::string& str, const std::string& suffix) {
-    if (suffix.length() > str.length()) {
-        return false;
-    }
-    
-    return str.compare(str.length() - suffix.length(), suffix.length(), suffix) == 0;
+    return suffix.length() <= str.length() && 
+           str.compare(str.length() - suffix.length(), suffix.length(), suffix) == 0;
 }
 
 void Utils::log_info(const std::string& message) {

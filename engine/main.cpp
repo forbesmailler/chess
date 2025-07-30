@@ -15,16 +15,13 @@ public:
     LichessBot(const std::string& token, const std::string& model_path, int depth = 4)
         : client(token), model_path(model_path) {
         
-        // Load the model
         model = std::make_shared<LogisticModel>();
         if (!model->load_model(model_path)) {
             Utils::log_warning("Failed to load model from " + model_path + ", using dummy model");
         }
         
-        // Create the engine with specified depth
         engine = std::make_unique<ChessEngine>(model, depth);
         
-        // Get account info
         if (!client.get_account_info(account_info)) {
             Utils::log_error("Failed to get account information");
         } else {
@@ -57,9 +54,7 @@ private:
     
     void handle_event(const LichessClient::GameEvent& event) {
         if (event.type == "challenge") {
-            if (client.accept_challenge(event.challenge_id)) {
-                // Silently accept challenge
-            } else {
+            if (!client.accept_challenge(event.challenge_id)) {
                 Utils::log_error("Failed to accept challenge: " + event.challenge_id);
             }
         } else if (event.type == "gameStart") {
@@ -77,12 +72,10 @@ private:
             if (event.type == "gameFull" && first_event) {
                 first_event = false;
                 
-                // Determine our color by comparing account IDs
                 our_white = (event.white_id == account_info.id);
                 Utils::log_info("Game " + game_id + ": we are " + (our_white ? "White" : "Black"));
                 Utils::log_info("White player: " + event.white_id + ", Black player: " + event.black_id);
                 
-                // Parse initial moves
                 auto moves = Utils::split_string(event.moves, ' ');
                 for (const auto& uci : moves) {
                     if (!uci.empty()) {
@@ -92,18 +85,14 @@ private:
                     }
                 }
                 
-                // Log initial position evaluation
                 float eval = engine->evaluate(board);
                 Utils::log_info("Eval after ply " + std::to_string(ply_count) + 
                                " (white-persp): " + std::to_string(eval));
                 
-                // Make initial move if it's our turn
                 if ((board.turn() == ChessBoard::WHITE && our_white) || 
                     (board.turn() == ChessBoard::BLACK && !our_white)) {
                     
-                    if (play_best_move(game_id, board)) {
-                        ply_count++;
-                    }
+                    if (play_best_move(game_id, board)) ply_count++;
                 }
             } else if (event.type == "gameState") {
                 if (event.status != "started") {
@@ -111,12 +100,8 @@ private:
                     return;
                 }
                 
-                // Handle draw offers
-                if (event.draw_offer) {
-                    handle_draw_offer(game_id, board);
-                }
+                if (event.draw_offer) handle_draw_offer(game_id, board);
                 
-                // Parse new moves
                 auto moves = Utils::split_string(event.moves, ' ');
                 for (size_t i = ply_count; i < moves.size(); i++) {
                     const auto& uci = moves[i];
@@ -127,18 +112,14 @@ private:
                     }
                 }
                 
-                // Log position evaluation after moves are processed
                 float eval = engine->evaluate(board);
                 Utils::log_info("Eval after ply " + std::to_string(ply_count) + 
                                " (white-persp): " + std::to_string(eval));
                 
-                // Make our move if it's our turn
                 if ((board.turn() == ChessBoard::WHITE && our_white) || 
                     (board.turn() == ChessBoard::BLACK && !our_white)) {
                     
-                    if (play_best_move(game_id, board)) {
-                        ply_count++;
-                    }
+                    if (play_best_move(game_id, board)) ply_count++;
                 }
             }
         });
@@ -146,7 +127,7 @@ private:
     
     bool play_best_move(const std::string& game_id, ChessBoard& board) {
         auto move = engine->get_best_move(board);
-        if (!move.uci_string.empty()) { // Valid move check
+        if (!move.uci_string.empty()) {
             if (client.make_move(game_id, move.uci())) {
                 Utils::log_info("Move sent successfully: " + move.uci());
                 board.make_move(move);
@@ -162,17 +143,13 @@ private:
     
     void handle_draw_offer(const std::string& game_id, const ChessBoard& board) {
         float eval = engine->evaluate(board);
-        
-        // Adjust evaluation based on our color (eval is always from White's perspective)
         float our_eval = our_white ? eval : -eval;
 
-        // Use evaluation thresholds for the -1 to 1 range
-        if (our_eval > 0.0f) { // Winning position - reject draw
+        if (our_eval > 0.0f) {
             Utils::log_info("Declining draw offer (our eval: " + std::to_string(our_eval) + 
                            ", white eval: " + std::to_string(eval) + ")");
             client.decline_draw(game_id);
         } else {
-            // Not winning - accept draw
             Utils::log_info("Accepting draw offer (our eval: " + std::to_string(our_eval) + 
                            ", white eval: " + std::to_string(eval) + ")");
             client.accept_draw(game_id);
