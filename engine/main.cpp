@@ -9,6 +9,16 @@
 #include <thread>
 #include <string>
 #include <fstream>
+#include <unordered_map>
+#include <mutex>
+#include <atomic>
+
+struct GameState {
+    ChessBoard board;
+    int ply_count = 0;
+    bool our_white = false;
+    bool first_event = true;
+};
 
 class LichessBot {
 public:
@@ -50,79 +60,103 @@ private:
     std::unique_ptr<ChessEngine> engine;
     LichessClient::AccountInfo account_info;
     std::string model_path;
-    bool our_white = false;
+    
+    // Game state management
+    std::unordered_map<std::string, std::unique_ptr<GameState>> active_games;
+    std::mutex games_mutex;
+    std::atomic<int> active_game_count{0};
     
     void handle_event(const LichessClient::GameEvent& event) {
         if (event.type == "challenge") {
             if (!client.accept_challenge(event.challenge_id)) {
                 Utils::log_error("Failed to accept challenge: " + event.challenge_id);
+            } else {
+                Utils::log_info("Accepted challenge: " + event.challenge_id + 
+                              " (Active games: " + std::to_string(active_game_count.load()) + ")");
             }
         } else if (event.type == "gameStart") {
+            std::lock_guard<std::mutex> lock(games_mutex);
+            active_games[event.game_id] = std::make_unique<GameState>();
+            active_game_count++;
+            Utils::log_info("Game started: " + event.game_id + 
+                          " (Active games: " + std::to_string(active_game_count.load()) + ")");
+            
             std::thread game_thread(&LichessBot::handle_game, this, event.game_id);
             game_thread.detach();
         }
     }
     
     void handle_game(const std::string& game_id) {
-        bool first_event = true;
-        ChessBoard board;
-        int ply_count = 0;
+        GameState* game_state = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(games_mutex);
+            auto it = active_games.find(game_id);
+            if (it == active_games.end()) {
+                Utils::log_error("Game state not found for game: " + game_id);
+                return;
+            }
+            game_state = it->second.get();
+        }
         
         client.stream_game(game_id, [&](const LichessClient::GameEvent& event) {
-            if (event.type == "gameFull" && first_event) {
-                first_event = false;
+            if (event.type == "gameFull" && game_state->first_event) {
+                game_state->first_event = false;
                 
-                our_white = (event.white_id == account_info.id);
-                Utils::log_info("Game " + game_id + ": we are " + (our_white ? "White" : "Black"));
+                game_state->our_white = (event.white_id == account_info.id);
+                Utils::log_info("Game " + game_id + ": we are " + (game_state->our_white ? "White" : "Black"));
                 Utils::log_info("White player: " + event.white_id + ", Black player: " + event.black_id);
                 
                 auto moves = Utils::split_string(event.moves, ' ');
                 for (const auto& uci : moves) {
                     if (!uci.empty()) {
                         auto move = ChessBoard::Move::from_uci(uci);
-                        board.make_move(move);
-                        ply_count++;
+                        game_state->board.make_move(move);
+                        game_state->ply_count++;
                     }
                 }
                 
-                float eval = engine->evaluate(board);
-                Utils::log_info("Eval after ply " + std::to_string(ply_count) + 
+                float eval = engine->evaluate(game_state->board);
+                Utils::log_info("Game " + game_id + " - Eval after ply " + std::to_string(game_state->ply_count) + 
                                " (white-persp): " + std::to_string(eval));
                 
-                if ((board.turn() == ChessBoard::WHITE && our_white) || 
-                    (board.turn() == ChessBoard::BLACK && !our_white)) {
+                if ((game_state->board.turn() == ChessBoard::WHITE && game_state->our_white) || 
+                    (game_state->board.turn() == ChessBoard::BLACK && !game_state->our_white)) {
                     
-                    if (play_best_move(game_id, board)) ply_count++;
+                    if (play_best_move(game_id, game_state->board)) game_state->ply_count++;
                 }
             } else if (event.type == "gameState") {
                 if (event.status != "started") {
                     Utils::log_info("Game " + game_id + " ended with status: " + event.status);
+                    cleanup_game(game_id);
                     return;
                 }
                 
-                if (event.draw_offer) handle_draw_offer(game_id, board);
+                if (event.draw_offer) handle_draw_offer(game_id, game_state->board, game_state->our_white);
                 
                 auto moves = Utils::split_string(event.moves, ' ');
-                for (size_t i = ply_count; i < moves.size(); i++) {
+                for (size_t i = game_state->ply_count; i < moves.size(); i++) {
                     const auto& uci = moves[i];
                     if (!uci.empty()) {
                         auto move = ChessBoard::Move::from_uci(uci);
-                        board.make_move(move);
-                        ply_count++;
+                        game_state->board.make_move(move);
+                        game_state->ply_count++;
                     }
                 }
                 
-                float eval = engine->evaluate(board);
-                Utils::log_info("Eval after ply " + std::to_string(ply_count) + 
+                float eval = engine->evaluate(game_state->board);
+                Utils::log_info("Game " + game_id + " - Eval after ply " + std::to_string(game_state->ply_count) + 
                                " (white-persp): " + std::to_string(eval));
                 
-                if ((board.turn() == ChessBoard::WHITE && our_white) || 
-                    (board.turn() == ChessBoard::BLACK && !our_white)) {
+                if ((game_state->board.turn() == ChessBoard::WHITE && game_state->our_white) || 
+                    (game_state->board.turn() == ChessBoard::BLACK && !game_state->our_white)) {
                     
-                    if (play_best_move(game_id, board)) ply_count++;
+                    if (play_best_move(game_id, game_state->board)) game_state->ply_count++;
                 }
             }
         });
+        
+        // Clean up when stream ends
+        cleanup_game(game_id);
     }
     
     bool play_best_move(const std::string& game_id, ChessBoard& board) {
@@ -141,18 +175,28 @@ private:
         return false;
     }
     
-    void handle_draw_offer(const std::string& game_id, const ChessBoard& board) {
+    void handle_draw_offer(const std::string& game_id, const ChessBoard& board, bool our_white) {
         float eval = engine->evaluate(board);
         float our_eval = our_white ? eval : -eval;
 
         if (our_eval > 0.0f) {
-            Utils::log_info("Declining draw offer (our eval: " + std::to_string(our_eval) + 
+            Utils::log_info("Game " + game_id + " - Declining draw offer (our eval: " + std::to_string(our_eval) + 
                            ", white eval: " + std::to_string(eval) + ")");
             client.decline_draw(game_id);
         } else {
-            Utils::log_info("Accepting draw offer (our eval: " + std::to_string(our_eval) + 
+            Utils::log_info("Game " + game_id + " - Accepting draw offer (our eval: " + std::to_string(our_eval) + 
                            ", white eval: " + std::to_string(eval) + ")");
             client.accept_draw(game_id);
+        }
+    }
+    
+    void cleanup_game(const std::string& game_id) {
+        std::lock_guard<std::mutex> lock(games_mutex);
+        auto it = active_games.find(game_id);
+        if (it != active_games.end()) {
+            active_games.erase(it);
+            active_game_count--;
+            Utils::log_info("Game " + game_id + " cleaned up. Active games: " + std::to_string(active_game_count.load()));
         }
     }
 };
