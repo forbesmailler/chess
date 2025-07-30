@@ -7,16 +7,35 @@
 class ChessBoard {
 public:
     enum Color { WHITE = 0, BLACK = 1 };
+    
+    // PieceType enum to match chess engine expectations
+    enum PieceType { 
+        PAWN = 0, 
+        KNIGHT = 1, 
+        BISHOP = 2, 
+        ROOK = 3, 
+        QUEEN = 4, 
+        KING = 5, 
+        NONE = 6 
+    };
 
     struct Move {
         std::string uci_string;
+        chess::Move internal_move;
         
         std::string uci() const { return uci_string; }
+        
         static Move from_uci(const std::string& uci) {
             Move move;
             move.uci_string = uci;
             return move;
         }
+        
+        // Methods expected by chess engine
+        bool is_capture() const;
+        bool is_promotion() const;
+        int from() const;
+        int to() const;
     };
 
     struct CastlingRights {
@@ -51,6 +70,12 @@ public:
     Color turn() const;
     CastlingRights get_castling_rights() const;
     int piece_count() const;
+    
+    // Additional methods needed by chess engine
+    PieceType piece_type_at(int square) const;
+    PieceType piece_type_at(const std::string& square_str) const;
+    bool is_capture_move(const Move& move) const;
+    PieceType piece_at(int square) const;  // Alias for piece_type_at
     
     // Static utility methods
     static int square_from_string(const std::string& sq);

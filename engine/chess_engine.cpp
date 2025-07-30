@@ -78,7 +78,7 @@ int ChessEngine::score_move(const ChessBoard& board, const ChessBoard::Move& mov
     int score = 0;
     
     // Most Valuable Victim - Least Valuable Attacker (MVV-LVA)
-    if (move.is_capture()) {
+    if (board.is_capture_move(move)) {
         auto captured = board.piece_at(move.to());
         auto attacker = board.piece_at(move.from());
         
@@ -103,7 +103,7 @@ int ChessEngine::score_move(const ChessBoard& board, const ChessBoard::Move& mov
     }
     
     // Center control bonus for non-captures
-    if (!move.is_capture()) {
+    if (!board.is_capture_move(move)) {
         int to_square = move.to();
         int file = to_square % 8;
         int rank = to_square / 8;
@@ -146,6 +146,9 @@ std::vector<ChessBoard::Move> ChessEngine::order_moves(const ChessBoard& board,
         ordered_moves.push_back(pair.first);
     }
     
+    return ordered_moves;
+}
+
 ChessBoard::Move ChessEngine::get_best_move(const ChessBoard& board) {
     auto legal_moves = board.get_legal_moves();
     if (legal_moves.empty()) {
@@ -205,34 +208,7 @@ ChessBoard::Move ChessEngine::get_best_move(const ChessBoard& board) {
     
     return best_move;
 }
-    if (legal_moves.size() == 1) {
-        return legal_moves[0];
-    }
-    
-    ChessBoard::Move best_move = legal_moves[0];
-    float best_score = -std::numeric_limits<float>::infinity();
-    float alpha = -std::numeric_limits<float>::infinity();
-    float beta = std::numeric_limits<float>::infinity();
-    
-    ChessBoard temp_board = board;
-    
-    for (const auto& move : legal_moves) {
-        if (temp_board.make_move(move)) {
-            float score = -negamax(temp_board, search_depth - 1, -beta, -alpha);
-            temp_board.unmake_move(move);
-            
-            if (score > best_score) {
-                best_score = score;
-                best_move = move;
-            }
-            
-            alpha = std::max(alpha, score);
-            if (alpha >= beta) {
-                break; // Alpha-beta pruning
-            }
-        }
-    }
-    
+
 float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, float beta, bool is_pv) {
     // Check for mate/draw
     if (board.is_checkmate()) {
@@ -351,7 +327,7 @@ float ChessEngine::quiescence_search(const ChessBoard& board, float alpha, float
     
     ChessBoard temp_board = board;
     for (const auto& move : legal_moves) {
-        if (move.is_capture() || move.is_promotion()) {
+        if (board.is_capture_move(move) || move.is_promotion()) {
             tactical_moves.push_back(move);
         } else {
             // Check if move gives check
@@ -382,6 +358,9 @@ float ChessEngine::quiescence_search(const ChessBoard& board, float alpha, float
         }
     }
     
+    return alpha; // Return the best score found
+}
+
 std::string ChessEngine::get_position_key(const ChessBoard& board) const {
     // Use a simplified position key for better performance
     std::string fen = board.to_fen();

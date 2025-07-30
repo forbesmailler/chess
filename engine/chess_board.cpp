@@ -26,6 +26,7 @@ std::vector<ChessBoard::Move> ChessBoard::get_legal_moves() const {
     for (const auto& move : moves) {
         Move m;
         m.uci_string = chess::uci::moveToUci(move);
+        m.internal_move = move;
         result.push_back(m);
     }
     
@@ -138,4 +139,62 @@ std::string ChessBoard::square_to_string(int square) {
     char file = 'a' + (square % 8);
     char rank = '1' + (square / 8);
     return std::string(1, file) + std::string(1, rank);
+}
+
+ChessBoard::PieceType ChessBoard::piece_type_at(int square) const {
+    if (square < 0 || square > 63) return NONE;
+    
+    chess::Square sq = static_cast<chess::Square>(square);
+    chess::Piece piece = board.at(sq);
+    
+    if (piece == chess::Piece::NONE) return NONE;
+    
+    chess::PieceType pt = piece.type();
+    
+    if (pt == chess::PieceType::PAWN) return PAWN;
+    if (pt == chess::PieceType::KNIGHT) return KNIGHT;
+    if (pt == chess::PieceType::BISHOP) return BISHOP;
+    if (pt == chess::PieceType::ROOK) return ROOK;
+    if (pt == chess::PieceType::QUEEN) return QUEEN;
+    if (pt == chess::PieceType::KING) return KING;
+    
+    return NONE;
+}
+
+ChessBoard::PieceType ChessBoard::piece_type_at(const std::string& square_str) const {
+    int square = square_from_string(square_str);
+    return piece_type_at(square);
+}
+
+bool ChessBoard::Move::is_capture() const {
+    // For now, return false - the engine will use board.is_capture_move() instead
+    return false;
+}
+
+bool ChessBoard::Move::is_promotion() const {
+    return internal_move.typeOf() == chess::Move::PROMOTION;
+}
+
+int ChessBoard::Move::from() const {
+    return internal_move.from().index();
+}
+
+int ChessBoard::Move::to() const {
+    return internal_move.to().index();
+}
+
+bool ChessBoard::is_capture_move(const Move& move) const {
+    if (move.internal_move.typeOf() == chess::Move::ENPASSANT) {
+        return true;
+    }
+    
+    // Check if there's a piece on the target square
+    chess::Square target = move.internal_move.to();
+    chess::Piece piece = board.at(target);
+    
+    return piece != chess::Piece::NONE;
+}
+
+ChessBoard::PieceType ChessBoard::piece_at(int square) const {
+    return piece_type_at(square);
 }
