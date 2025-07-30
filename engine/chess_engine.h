@@ -14,7 +14,7 @@ struct TranspositionEntry {
 
 class ChessEngine {
 public:
-    explicit ChessEngine(std::shared_ptr<LogisticModel> model, int search_depth = 4);
+    explicit ChessEngine(std::shared_ptr<LogisticModel> model, int search_depth = 5);  // Increase default depth
     
     float evaluate(const ChessBoard& board);
     ChessBoard::Move get_best_move(const ChessBoard& board);
@@ -22,7 +22,7 @@ public:
     int get_depth() const { return search_depth; }
     
 private:
-    static constexpr float MATE_VALUE = 1.0f;
+    static constexpr float MATE_VALUE = 10000.0f;
     static constexpr size_t CACHE_SIZE = 1000000; // Larger transposition table
     
     std::shared_ptr<LogisticModel> model;
@@ -40,7 +40,6 @@ private:
     
     // Evaluation helpers
     float get_piece_value(ChessBoard::PieceType piece) const;
-    float evaluate_position(const ChessBoard& board);
     
     // Utility
     void clear_cache_if_needed();

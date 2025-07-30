@@ -22,25 +22,6 @@ float ChessEngine::get_piece_value(ChessBoard::PieceType piece) const {
     }
 }
 
-float ChessEngine::evaluate_position(const ChessBoard& board) {
-    // Quick material evaluation for move ordering
-    float material = 0.0f;
-    
-    for (int square = 0; square < 64; square++) {
-        auto piece = board.piece_at(square);
-        if (piece != ChessBoard::NONE) {
-            float value = get_piece_value(static_cast<ChessBoard::PieceType>(piece & 7));
-            if ((piece & 8) == 0) { // White piece
-                material += value;
-            } else { // Black piece
-                material -= value;
-            }
-        }
-    }
-    
-    return board.turn() == ChessBoard::WHITE ? material : -material;
-}
-
 float ChessEngine::evaluate(const ChessBoard& board) {
     // Terminal position detection with better scoring
     if (board.is_checkmate()) {
@@ -62,8 +43,11 @@ float ChessEngine::evaluate(const ChessBoard& board) {
     auto features = FeatureExtractor::extract_features(board);
     auto proba = model->predict_proba(features);
     
-    // Keep the evaluation in the -1 to 1 range from the ML model
-    float eval = proba[2] - proba[0];
+    float raw_eval = proba[2] - proba[0];  // Range: -1 to 1
+    float eval = raw_eval * 10000.0f;  // Scale by 10,000
+    
+    // NOTE: Evaluation is always from WHITE's perspective
+    // The caller is responsible for flipping the sign for Black
     
     // Cache the result
     if (eval_cache.size() >= CACHE_SIZE / 2) {
@@ -83,34 +67,50 @@ int ChessEngine::score_move(const ChessBoard& board, const ChessBoard::Move& mov
         auto attacker = board.piece_at(move.from());
         
         if (captured != ChessBoard::NONE && attacker != ChessBoard::NONE) {
-            score += static_cast<int>(get_piece_value(static_cast<ChessBoard::PieceType>(captured & 7))) * 10;
-            score -= static_cast<int>(get_piece_value(static_cast<ChessBoard::PieceType>(attacker & 7)));
+            // Much higher bonus for captures
+            score += static_cast<int>(get_piece_value(static_cast<ChessBoard::PieceType>(captured & 7))) * 100;
+            score -= static_cast<int>(get_piece_value(static_cast<ChessBoard::PieceType>(attacker & 7))) / 10;
         }
     }
     
-    // Promotion bonus
+    // Higher promotion bonus
     if (move.is_promotion()) {
-        score += 800; // High bonus for promotion
+        score += 8000; // Very high bonus for promotion
     }
     
-    // Check bonus
-    ChessBoard temp_board = board;
-    if (temp_board.make_move(move)) {
-        if (temp_board.is_in_check(temp_board.turn())) {
-            score += 50;
+    // Check bonus - but make it more efficient by not making/unmaking moves here
+    // We'll do a simpler positional evaluation instead
+    int to_square = move.to();
+    int from_square = move.from();
+    
+    // Center control bonus
+    int to_file = to_square % 8;
+    int to_rank = to_square / 8;
+    
+    // Bonus for moves to center squares
+    if ((to_file >= 2 && to_file <= 5) && (to_rank >= 2 && to_rank <= 5)) {
+        score += 50;
+        // Extra bonus for central squares
+        if ((to_file == 3 || to_file == 4) && (to_rank == 3 || to_rank == 4)) {
+            score += 30;
         }
-        temp_board.unmake_move(move);
     }
     
-    // Center control bonus for non-captures
-    if (!board.is_capture_move(move)) {
-        int to_square = move.to();
-        int file = to_square % 8;
-        int rank = to_square / 8;
-        
-        // Bonus for moves to center squares
-        if ((file >= 2 && file <= 5) && (rank >= 2 && rank <= 5)) {
-            score += 10;
+    // Development bonus for knights and bishops in opening
+    auto piece = board.piece_at(from_square);
+    if (piece == ChessBoard::KNIGHT || piece == ChessBoard::BISHOP) {
+        // Check if moving from back rank (development)
+        int from_rank = from_square / 8;
+        if ((board.turn() == ChessBoard::WHITE && from_rank == 0) ||
+            (board.turn() == ChessBoard::BLACK && from_rank == 7)) {
+            score += 100; // Development bonus
+        }
+    }
+    
+    // King safety - penalize king moves in opening/middlegame
+    if (piece == ChessBoard::KING) {
+        if (board.piece_count() > 20) { // Still in opening/middlegame
+            score -= 200; // Discourage king moves when not necessary
         }
     }
     
@@ -307,11 +307,15 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, floa
 float ChessEngine::quiescence_search(const ChessBoard& board, float alpha, float beta, int qs_depth) {
     // Limit quiescence search depth to prevent stack overflow
     if (qs_depth >= 10) {
-        return evaluate(board);
+        float eval = evaluate(board);
+        // Convert from White's perspective to current player's perspective
+        return board.turn() == ChessBoard::WHITE ? eval : -eval;
     }
     
     // Standing pat evaluation
     float stand_pat = evaluate(board);
+    // Convert from White's perspective to current player's perspective
+    stand_pat = board.turn() == ChessBoard::WHITE ? stand_pat : -stand_pat;
     
     if (stand_pat >= beta) {
         return beta;
