@@ -23,23 +23,7 @@ float ChessEngine::evaluate(const ChessBoard& board) {
     
     auto features = FeatureExtractor::extract_features(board);
     auto proba = model->predict_proba(features);
-    float eval = (proba[2] - proba[0]) * 9000.0f;
-    
-    int piece_count = board.piece_count();
-    float endgame_factor = get_endgame_factor(piece_count);
-    
-    if (endgame_factor > 0.0f) {
-        auto legal_moves = board.get_legal_moves();
-        if (legal_moves.size() < 10) {
-            float restriction_penalty = (10 - legal_moves.size()) * 50.0f * endgame_factor;
-            eval += (board.turn() == ChessBoard::WHITE) ? -restriction_penalty : restriction_penalty;
-        }
-        
-        if (board.is_in_check(board.turn())) {
-            float check_penalty = 300.0f * endgame_factor;
-            eval += (board.turn() == ChessBoard::WHITE) ? -check_penalty : check_penalty;
-        }
-    }
+    float eval = (proba[2] - proba[0]) * MATE_VALUE;
     
     if (eval_cache.size() >= CACHE_SIZE / 2) clear_cache_if_needed();
     eval_cache[pos_key] = eval;

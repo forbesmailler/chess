@@ -3,8 +3,7 @@ import pandas as pd
 import chess
 import numpy as np
 from sklearn.linear_model import LogisticRegression
-from sklearn.neural_network import MLPClassifier
-from sklearn.metrics import accuracy_score, log_loss
+from sklearn.metrics import log_loss
 import os
 import joblib
 
@@ -15,15 +14,78 @@ def extract_features(fen: str) -> np.ndarray:
         idx = (piece.piece_type - 1) + (0 if piece.color == chess.WHITE else 6)
         piece_arr[idx * 64 + sq] = 1.0
 
-    # Castling rights features (4)
-    castling = np.array([
-        board.has_kingside_castling_rights(chess.WHITE),
-        board.has_queenside_castling_rights(chess.WHITE),
-        board.has_kingside_castling_rights(chess.BLACK),
-        board.has_queenside_castling_rights(chess.BLACK)
+    # Additional features (8)
+    # 1-2. Number of moves available for white and black
+    white_moves = len(list(board.legal_moves)) if board.turn == chess.WHITE else 0
+    black_moves = 0
+    if board.turn == chess.WHITE:
+        board.turn = chess.BLACK
+        if not board.is_game_over():
+            black_moves = len(list(board.legal_moves))
+        board.turn = chess.WHITE
+    else:
+        black_moves = len(list(board.legal_moves))
+        board.turn = chess.WHITE
+        if not board.is_game_over():
+            white_moves = len(list(board.legal_moves))
+        board.turn = chess.BLACK
+    
+    # 3-4. Number of captures available for white and black
+    white_captures = 0
+    black_captures = 0
+    if board.turn == chess.WHITE:
+        white_captures = len([move for move in board.legal_moves if board.is_capture(move)])
+        board.turn = chess.BLACK
+        if not board.is_game_over():
+            black_captures = len([move for move in board.legal_moves if board.is_capture(move)])
+        board.turn = chess.WHITE
+    else:
+        black_captures = len([move for move in board.legal_moves if board.is_capture(move)])
+        board.turn = chess.WHITE
+        if not board.is_game_over():
+            white_captures = len([move for move in board.legal_moves if board.is_capture(move)])
+        board.turn = chess.BLACK
+    
+    # 5-6. Number of checks available for white and black
+    white_checks = 0
+    black_checks = 0
+    if board.turn == chess.WHITE:
+        white_checks = len([move for move in board.legal_moves if board.gives_check(move)])
+        board.turn = chess.BLACK
+        if not board.is_game_over():
+            black_checks = len([move for move in board.legal_moves if board.gives_check(move)])
+        board.turn = chess.WHITE
+    else:
+        black_checks = len([move for move in board.legal_moves if board.gives_check(move)])
+        board.turn = chess.WHITE
+        if not board.is_game_over():
+            white_checks = len([move for move in board.legal_moves if board.gives_check(move)])
+        board.turn = chess.BLACK
+    
+    # 7-8. Is white in check + is black in check
+    white_in_check = 0
+    black_in_check = 0
+    if board.turn == chess.WHITE:
+        white_in_check = 1 if board.is_check() else 0
+        board.turn = chess.BLACK
+        if not board.is_game_over():
+            black_in_check = 1 if board.is_check() else 0
+        board.turn = chess.WHITE
+    else:
+        black_in_check = 1 if board.is_check() else 0
+        board.turn = chess.WHITE
+        if not board.is_game_over():
+            white_in_check = 1 if board.is_check() else 0
+        board.turn = chess.BLACK
+    
+    additional_features = np.array([
+        white_moves, black_moves,
+        white_captures, black_captures,
+        white_checks, black_checks,
+        white_in_check, black_in_check
     ], dtype=np.float32)
 
-    base = np.concatenate([piece_arr, castling])  # length = 768 + 4 = 772
+    base = np.concatenate([piece_arr, additional_features])  # length = 768 + 8 = 776
 
     n_pieces = len(board.piece_map())
     factor = (n_pieces - 2) / 30
@@ -33,7 +95,7 @@ def extract_features(fen: str) -> np.ndarray:
 
 def process_dataset(df: pd.DataFrame, size: int, desc: str):
     df = df.sample(frac=1, random_state=42).reset_index(drop=True).iloc[:size]
-    X = np.zeros((len(df), 2 * (12 * 64 + 4)), dtype=np.float32)
+    X = np.zeros((len(df), 2 * (12 * 64 + 8)), dtype=np.float32)
     y = df['value'].values.astype(np.float32)
     for i, fen in tqdm(enumerate(df['FEN']), total=len(df), desc=f"Featurizing {desc}"):
         X[i] = extract_features(fen)
@@ -71,3 +133,13 @@ if __name__ == "__main__":
         'train.csv', 'val.csv',
         train_size=1_000_000, val_size=100_000
     )
+
+    print("Fitting logistic regression...")
+    lr = LogisticRegression(max_iter=1000, verbose=1)
+    lr.fit(X_train, y_train)
+    
+    y_prob = lr.predict_proba(X_val)
+    ll = log_loss(y_val, y_prob)
+    print(f"Log loss: {ll:.4f}")
+
+    joblib.dump(lr, "chess_lr.joblib")
