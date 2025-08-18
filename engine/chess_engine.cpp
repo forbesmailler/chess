@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <limits>
 #include <cmath>
+#include <sstream>
 
 ChessEngine::ChessEngine(std::shared_ptr<LogisticModel> model, int search_depth) 
     : model(model), search_depth(search_depth) {
@@ -55,11 +56,8 @@ std::vector<ChessBoard::Move> ChessEngine::order_moves(const ChessBoard& board,
         scored_moves.emplace_back(move, score);
     }
     
-    // Partial sort - only sort the top moves for better cutoffs
-    std::partial_sort(scored_moves.begin(), 
-                     scored_moves.begin() + std::min(static_cast<size_t>(8), scored_moves.size()),
-                     scored_moves.end(),
-                     [](const auto& a, const auto& b) { return a.second > b.second; });
+    std::sort(scored_moves.begin(), scored_moves.end(),
+              [](const auto& a, const auto& b) { return a.second > b.second; });
     
     std::vector<ChessBoard::Move> ordered_moves;
     ordered_moves.reserve(moves.size());
@@ -75,10 +73,32 @@ ChessBoard::Move ChessEngine::get_best_move(const ChessBoard& board) {
     if (legal_moves.empty()) return ChessBoard::Move{};
     if (legal_moves.size() == 1) return legal_moves[0];
     
+    // Extend search depth in endgame (when either player has <8 pieces)
+    int actual_search_depth = search_depth;
+    
+    // Count pieces by color using FEN parsing
+    std::string fen = board.to_fen();
+    std::istringstream iss(fen);
+    std::string board_str;
+    iss >> board_str;
+    
+    int white_pieces = 0;
+    int black_pieces = 0;
+    for (char c : board_str) {
+        if (c != '/' && !std::isdigit(c)) {
+            if (std::isupper(c)) white_pieces++;
+            else if (std::islower(c)) black_pieces++;
+        }
+    }
+    
+    if (white_pieces < 8 || black_pieces < 8) {
+        actual_search_depth += 1;
+    }
+    
     std::string pos_key = get_position_key(board);
     ChessBoard::Move tt_move;
     auto tt_it = transposition_table.find(pos_key);
-    if (tt_it != transposition_table.end() && tt_it->second.depth >= search_depth) {
+    if (tt_it != transposition_table.end() && tt_it->second.depth >= actual_search_depth) {
         tt_move = tt_it->second.best_move;
     }
     
@@ -91,7 +111,7 @@ ChessBoard::Move ChessEngine::get_best_move(const ChessBoard& board) {
     ChessBoard temp_board = board;
     for (const auto& move : ordered_moves) {
         if (temp_board.make_move(move)) {
-            float score = -negamax(temp_board, search_depth - 1, -beta, -alpha, true);
+            float score = -negamax(temp_board, actual_search_depth - 1, -beta, -alpha, true);
             temp_board.unmake_move(move);
             
             if (score > best_score) {
@@ -105,7 +125,7 @@ ChessBoard::Move ChessEngine::get_best_move(const ChessBoard& board) {
     }
     
     if (transposition_table.size() < CACHE_SIZE / 2) {
-        transposition_table[pos_key] = {best_score, search_depth, TranspositionEntry::EXACT, best_move};
+        transposition_table[pos_key] = {best_score, actual_search_depth, TranspositionEntry::EXACT, best_move};
     }
     
     return best_move;
