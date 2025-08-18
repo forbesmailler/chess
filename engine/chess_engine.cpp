@@ -141,9 +141,24 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, floa
         return board.is_in_check(board.turn()) ? -MATE_VALUE + (search_depth - depth) : 0.0f;
     }
     
+    // Null move pruning disabled for now (proper implementation needed)
+    // The previous implementation was buggy - it didn't actually make a null move
+    
+    // Conservative endgame extension
     float endgame_factor = get_endgame_factor(board.piece_count());
-    bool extend_search = (depth == 0 && endgame_factor > 0.5f);
-    if (extend_search) depth = 1;
+    bool extend_search = false;
+    
+    // Only extend in very specific cases to avoid search explosion
+    if (depth == 0 && endgame_factor > 0.7f) {
+        depth = 1;
+        extend_search = true;
+    }
+    
+    // Check extension - but only at low depths
+    if (board.is_in_check(board.turn()) && depth == 0) {
+        depth = 1;
+        extend_search = true;
+    }
     
     auto ordered_moves = order_moves(board, legal_moves, tt_move);
     float best_score = -std::numeric_limits<float>::infinity();
@@ -153,6 +168,7 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, floa
     ChessBoard temp_board = board;
     for (const auto& move : ordered_moves) {
         if (temp_board.make_move(move)) {
+            // Simple negamax search without LMR/PVS complications
             float score = -negamax(temp_board, depth - 1, -beta, -alpha, is_pv && best_move.uci_string.empty());
             temp_board.unmake_move(move);
             
@@ -181,7 +197,11 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, floa
 }
 
 float ChessEngine::quiescence_search(const ChessBoard& board, float alpha, float beta, int qs_depth) {
-    if (qs_depth >= 10) {
+    // Adjust max depth based on endgame factor for better performance
+    float endgame_factor = get_endgame_factor(board.piece_count());
+    int max_qs_depth = endgame_factor > 0.5f ? 12 : 6;  // Deeper in endgames
+    
+    if (qs_depth >= max_qs_depth) {
         float eval = evaluate(board);
         return board.turn() == ChessBoard::WHITE ? eval : -eval;
     }
@@ -234,21 +254,22 @@ std::string ChessEngine::get_position_key(const ChessBoard& board) const {
 }
 
 float ChessEngine::get_endgame_factor(int piece_count) const {    
-    if (piece_count <= 6) return 1.0f;
+    if (piece_count <= 8) return 1.0f;  // More aggressive endgame detection
     if (piece_count >= 16) return 0.0f;
-    return (16.0f - piece_count) / 10.0f;
+    return (16.0f - piece_count) / 8.0f;  // Smoother transition
 }
 
 void ChessEngine::clear_cache_if_needed() {
+    // Clear caches when they get too large, but keep some entries
     if (eval_cache.size() >= CACHE_SIZE / 2) {
         auto it = eval_cache.begin();
-        std::advance(it, eval_cache.size() / 2);
+        std::advance(it, eval_cache.size() / 3);  // Keep 2/3 of entries
         eval_cache.erase(eval_cache.begin(), it);
     }
     
     if (transposition_table.size() >= CACHE_SIZE / 2) {
         auto it = transposition_table.begin();
-        std::advance(it, transposition_table.size() / 2);
+        std::advance(it, transposition_table.size() / 3);  // Keep 2/3 of entries
         transposition_table.erase(transposition_table.begin(), it);
     }
 }

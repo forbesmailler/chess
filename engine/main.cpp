@@ -260,19 +260,19 @@ int main(int argc, char* argv[]) {
         std::cout << "2. model_coefficients.txt file in the cpp/train/ directory (run export_model.py to create it)" << std::endl;
         std::cout << "3. Network connectivity for Lichess API calls" << std::endl;
         std::cout << std::endl;
-        std::cout << "Optional depth parameter (default: 4, recommended: 3-6)" << std::endl;
+        std::cout << "Optional depth parameter (default: 5, recommended: 3-7)" << std::endl;
         return 0;
     }
     
     if (argc < 2 || argc > 3) {
         std::cerr << "Usage: " << argv[0] << " <lichess_token> [depth]" << std::endl;
         std::cerr << "Run without arguments to see test output" << std::endl;
-        std::cerr << "Depth parameter is optional (default: 4)" << std::endl;
+        std::cerr << "Depth parameter is optional (default: 5)" << std::endl;
         return 1;
     }
     
     std::string token = argv[1];
-    int depth = 4; // Default depth
+    int depth = 5; // Increased default depth for stronger play
     
     if (argc == 3) {
         try {
@@ -281,8 +281,8 @@ int main(int argc, char* argv[]) {
                 std::cerr << "Warning: Depth should be between 1-10. Using depth " << depth << std::endl;
             }
         } catch (const std::exception& e) {
-            std::cerr << "Invalid depth parameter, using default depth 4" << std::endl;
-            depth = 4;
+            std::cerr << "Invalid depth parameter, using default depth 5" << std::endl;
+            depth = 5;
         }
     }
     
