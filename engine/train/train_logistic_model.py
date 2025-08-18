@@ -9,60 +9,16 @@ import joblib
 
 def extract_features(fen: str) -> np.ndarray:
     board = chess.Board(fen)
+    
+    # 64 * 12 piece square table
     piece_arr = np.zeros(12 * 64, dtype=np.float32)
     for sq, piece in board.piece_map().items():
         idx = (piece.piece_type - 1) + (0 if piece.color == chess.WHITE else 6)
         piece_arr[idx * 64 + sq] = 1.0
 
-    # Additional features (8)
-    # 1-2. Number of moves available for white and black
-    white_moves = len(list(board.legal_moves)) if board.turn == chess.WHITE else 0
-    black_moves = 0
-    if board.turn == chess.WHITE:
-        board.turn = chess.BLACK
-        if not board.is_game_over():
-            black_moves = len(list(board.legal_moves))
-        board.turn = chess.WHITE
-    else:
-        black_moves = len(list(board.legal_moves))
-        board.turn = chess.WHITE
-        if not board.is_game_over():
-            white_moves = len(list(board.legal_moves))
-        board.turn = chess.BLACK
-    
-    # 3-4. Number of captures available for white and black
-    white_captures = 0
-    black_captures = 0
-    if board.turn == chess.WHITE:
-        white_captures = len([move for move in board.legal_moves if board.is_capture(move)])
-        board.turn = chess.BLACK
-        if not board.is_game_over():
-            black_captures = len([move for move in board.legal_moves if board.is_capture(move)])
-        board.turn = chess.WHITE
-    else:
-        black_captures = len([move for move in board.legal_moves if board.is_capture(move)])
-        board.turn = chess.WHITE
-        if not board.is_game_over():
-            white_captures = len([move for move in board.legal_moves if board.is_capture(move)])
-        board.turn = chess.BLACK
-    
-    # 5-6. Number of checks available for white and black
-    white_checks = 0
-    black_checks = 0
-    if board.turn == chess.WHITE:
-        white_checks = len([move for move in board.legal_moves if board.gives_check(move)])
-        board.turn = chess.BLACK
-        if not board.is_game_over():
-            black_checks = len([move for move in board.legal_moves if board.gives_check(move)])
-        board.turn = chess.WHITE
-    else:
-        black_checks = len([move for move in board.legal_moves if board.gives_check(move)])
-        board.turn = chess.WHITE
-        if not board.is_game_over():
-            white_checks = len([move for move in board.legal_moves if board.gives_check(move)])
-        board.turn = chess.BLACK
-    
-    # 7-8. Is white in check + is black in check
+    # Additional features for regular scaling (2)
+    # 1. Is white in check?
+    # 2. Is black in check?
     white_in_check = 0
     black_in_check = 0
     if board.turn == chess.WHITE:
@@ -78,24 +34,58 @@ def extract_features(fen: str) -> np.ndarray:
             white_in_check = 1 if board.is_check() else 0
         board.turn = chess.BLACK
     
-    additional_features = np.array([
-        white_moves, black_moves,
-        white_captures, black_captures,
-        white_checks, black_checks,
-        white_in_check, black_in_check
-    ], dtype=np.float32)
-
-    base = np.concatenate([piece_arr, additional_features])  # length = 768 + 8 = 776
-
     n_pieces = len(board.piece_map())
-    factor = (n_pieces - 2) / 30
+    
+    # Base features for regular scaling
+    base_features = np.array([white_in_check, black_in_check], dtype=np.float32)
+    
+    # Combine piece array and check features
+    base = np.concatenate([piece_arr, base_features])  # length = 768 + 2 = 770
 
-    # Multiply at the end
-    return np.concatenate([base * factor, base * (1.0 - factor)])
+    # Scale by number of pieces factor
+    factor = (n_pieces - 2) / 30.0
+    scaled_features = np.concatenate([base * factor, base * (1.0 - factor)])  # 770 * 2 = 1540
+    
+    # Calculate mobility features separately
+    white_mobility = 0.0
+    black_mobility = 0.0
+    
+    # Count pieces for each color
+    white_pieces = sum(1 for piece in board.piece_map().values() if piece.color == chess.WHITE)
+    black_pieces = sum(1 for piece in board.piece_map().values() if piece.color == chess.BLACK)
+    
+    # Only calculate white mobility if white has < 8 pieces
+    if white_pieces < 8:
+        white_moves = len(list(board.legal_moves)) if board.turn == chess.WHITE else 0
+        if board.turn == chess.BLACK:
+            board.turn = chess.WHITE
+            if not board.is_game_over():
+                white_moves = len(list(board.legal_moves))
+            board.turn = chess.BLACK
+        
+        # Scale by white piece count: max((8 - white_pieces) / 6, 0)
+        white_factor = max((8 - white_pieces) / 6.0, 0)
+        white_mobility = white_factor * white_moves
+    
+    # Only calculate black mobility if black has < 8 pieces
+    if black_pieces < 8:
+        black_moves = len(list(board.legal_moves)) if board.turn == chess.BLACK else 0
+        if board.turn == chess.WHITE:
+            board.turn = chess.BLACK
+            if not board.is_game_over():
+                black_moves = len(list(board.legal_moves))
+            board.turn = chess.WHITE
+        
+        # Scale by black piece count: max((8 - black_pieces) / 6, 0)
+        black_factor = max((8 - black_pieces) / 6.0, 0)
+        black_mobility = black_factor * black_moves
+
+    # Return scaled features + mobility features
+    return np.concatenate([scaled_features, [white_mobility, black_mobility]])
 
 def process_dataset(df: pd.DataFrame, size: int, desc: str):
     df = df.sample(frac=1, random_state=42).reset_index(drop=True).iloc[:size]
-    X = np.zeros((len(df), 2 * (12 * 64 + 8)), dtype=np.float32)
+    X = np.zeros((len(df), 2 * (12 * 64 + 2) + 2), dtype=np.float32)  # 770 * 2 + 2 = 1542 features
     y = df['value'].values.astype(np.float32)
     for i, fen in tqdm(enumerate(df['FEN']), total=len(df), desc=f"Featurizing {desc}"):
         X[i] = extract_features(fen)

@@ -34,7 +34,6 @@ private:
     float quiescence_search(const ChessBoard& board, float alpha, float beta, int depth = 0);
     std::vector<ChessBoard::Move> order_moves(const ChessBoard& board, const std::vector<ChessBoard::Move>& moves, const ChessBoard::Move& tt_move = ChessBoard::Move{});
     int score_move(const ChessBoard& board, const ChessBoard::Move& move);
-    float get_endgame_factor(int piece_count) const;
     void clear_cache_if_needed();
     std::string get_position_key(const ChessBoard& board) const;
 };

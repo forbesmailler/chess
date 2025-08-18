@@ -13,7 +13,7 @@ std::vector<float> FeatureExtractor::extract_features(const ChessBoard& board) {
     auto additional_features = extract_additional_features(board);
     
     std::vector<float> base_features;
-    base_features.reserve(776);
+    base_features.reserve(770);
     
     for (float f : piece_features) base_features.push_back(f);
     for (float f : additional_features) base_features.push_back(f);
@@ -23,8 +23,14 @@ std::vector<float> FeatureExtractor::extract_features(const ChessBoard& board) {
     std::vector<float> features;
     features.reserve(FEATURE_SIZE);
     
+    // Add scaled features (770 * 2 = 1540)
     for (float f : base_features) features.push_back(f * factor);
     for (float f : base_features) features.push_back(f * (1.0f - factor));
+    
+    // Add mobility features separately
+    auto mobility_features = extract_mobility_features(board);
+    features.push_back(mobility_features[0]);  // white mobility
+    features.push_back(mobility_features[1]);  // black mobility
     
     return features;
 }
@@ -68,100 +74,132 @@ std::array<float, 768> FeatureExtractor::extract_piece_features(const ChessBoard
     return piece_arr;
 }
 
-std::array<float, 8> FeatureExtractor::extract_additional_features(const ChessBoard& board) {
-    std::array<float, 8> features;
+std::array<float, 2> FeatureExtractor::extract_additional_features(const ChessBoard& board) {
+    std::array<float, 2> features;
     features.fill(0.0f);
     
-    // Get current player's features
-    auto moves = board.get_legal_moves();
-    float move_count = static_cast<float>(moves.size());
-    float capture_count = 0.0f;
-    float check_count = 0.0f;
+    // 1. Is white in check?
+    // 2. Is black in check?
+    float white_in_check = 0.0f;
+    float black_in_check = 0.0f;
     
-    // Create a mutable copy for testing moves
-    ChessBoard temp_board = board;
-    
-    for (const auto& move : moves) {
-        if (temp_board.is_capture_move(move)) {
-            capture_count += 1.0f;
-        }
-        
-        // Test if move gives check
-        if (temp_board.make_move(move)) {
-            ChessBoard::Color opponent_color = (temp_board.turn() == ChessBoard::WHITE) ? 
-                                             ChessBoard::BLACK : ChessBoard::WHITE;
-            if (temp_board.is_in_check(opponent_color)) {
-                check_count += 1.0f;
-            }
-            temp_board.unmake_move(move);
-        }
-    }
-    
-    // Get current check status
-    float in_check = board.is_in_check(board.turn()) ? 1.0f : 0.0f;
-    
-    // Create a board with flipped turn to get opponent features
-    std::string fen = board.to_fen();
-    std::istringstream iss(fen);
-    std::string board_str, turn_str, castling_str, ep_str, halfmove_str, fullmove_str;
-    iss >> board_str >> turn_str >> castling_str >> ep_str >> halfmove_str >> fullmove_str;
-    
-    // Flip the turn
-    turn_str = (turn_str == "w") ? "b" : "w";
-    std::string flipped_fen = board_str + " " + turn_str + " " + castling_str + " " + 
-                             ep_str + " " + halfmove_str + " " + fullmove_str;
-    
-    ChessBoard flipped_board(flipped_fen);
-    
-    // Get opponent features (if the position is legal with flipped turn)
-    float opponent_move_count = 0.0f;
-    float opponent_capture_count = 0.0f;
-    float opponent_check_count = 0.0f;
-    float opponent_in_check = 0.0f;
-    
-    if (!flipped_board.is_game_over()) {
-        auto opponent_moves = flipped_board.get_legal_moves();
-        opponent_move_count = static_cast<float>(opponent_moves.size());
-        
-        ChessBoard temp_flipped = flipped_board;
-        for (const auto& move : opponent_moves) {
-            if (temp_flipped.is_capture_move(move)) {
-                opponent_capture_count += 1.0f;
-            }
-            
-            if (temp_flipped.make_move(move)) {
-                ChessBoard::Color target_color = (temp_flipped.turn() == ChessBoard::WHITE) ? 
-                                               ChessBoard::BLACK : ChessBoard::WHITE;
-                if (temp_flipped.is_in_check(target_color)) {
-                    opponent_check_count += 1.0f;
-                }
-                temp_flipped.unmake_move(move);
-            }
-        }
-        
-        opponent_in_check = flipped_board.is_in_check(flipped_board.turn()) ? 1.0f : 0.0f;
-    }
-    
-    // Assign features based on whose turn it is in the original position
     if (board.turn() == ChessBoard::WHITE) {
-        features[0] = move_count;              // white moves
-        features[1] = opponent_move_count;     // black moves  
-        features[2] = capture_count;           // white captures
-        features[3] = opponent_capture_count;  // black captures
-        features[4] = check_count;             // white checks
-        features[5] = opponent_check_count;    // black checks
-        features[6] = in_check;                // white in check
-        features[7] = opponent_in_check;       // black in check
+        white_in_check = board.is_in_check(ChessBoard::WHITE) ? 1.0f : 0.0f;
+        
+        // Check if black would be in check with flipped turn
+        std::string fen = board.to_fen();
+        std::istringstream iss(fen);
+        std::string board_str, turn_str, castling_str, ep_str, halfmove_str, fullmove_str;
+        iss >> board_str >> turn_str >> castling_str >> ep_str >> halfmove_str >> fullmove_str;
+        
+        turn_str = "b";  // Flip to black
+        std::string flipped_fen = board_str + " " + turn_str + " " + castling_str + " " + 
+                                 ep_str + " " + halfmove_str + " " + fullmove_str;
+        
+        ChessBoard flipped_board(flipped_fen);
+        if (!flipped_board.is_game_over()) {
+            black_in_check = flipped_board.is_in_check(ChessBoard::BLACK) ? 1.0f : 0.0f;
+        }
     } else {
-        features[0] = opponent_move_count;     // white moves
-        features[1] = move_count;              // black moves
-        features[2] = opponent_capture_count;  // white captures
-        features[3] = capture_count;           // black captures
-        features[4] = opponent_check_count;    // white checks
-        features[5] = check_count;             // black checks
-        features[6] = opponent_in_check;       // white in check
-        features[7] = in_check;                // black in check
+        black_in_check = board.is_in_check(ChessBoard::BLACK) ? 1.0f : 0.0f;
+        
+        // Check if white would be in check with flipped turn
+        std::string fen = board.to_fen();
+        std::istringstream iss(fen);
+        std::string board_str, turn_str, castling_str, ep_str, halfmove_str, fullmove_str;
+        iss >> board_str >> turn_str >> castling_str >> ep_str >> halfmove_str >> fullmove_str;
+        
+        turn_str = "w";  // Flip to white
+        std::string flipped_fen = board_str + " " + turn_str + " " + castling_str + " " + 
+                                 ep_str + " " + halfmove_str + " " + fullmove_str;
+        
+        ChessBoard flipped_board(flipped_fen);
+        if (!flipped_board.is_game_over()) {
+            white_in_check = flipped_board.is_in_check(ChessBoard::WHITE) ? 1.0f : 0.0f;
+        }
     }
+    
+    features[0] = white_in_check;
+    features[1] = black_in_check;
     
     return features;
+}
+
+std::array<float, 2> FeatureExtractor::extract_mobility_features(const ChessBoard& board) {
+    std::array<float, 2> mobility_features = {0.0f, 0.0f};  // [white_mobility, black_mobility]
+    
+    // Count pieces for each color
+    std::string fen = board.to_fen();
+    std::istringstream iss(fen);
+    std::string board_str;
+    iss >> board_str;
+    
+    int white_pieces = 0;
+    int black_pieces = 0;
+    
+    for (char c : board_str) {
+        if (c != '/' && !std::isdigit(c)) {
+            if (std::isupper(c)) {
+                white_pieces++;
+            } else if (std::islower(c)) {
+                black_pieces++;
+            }
+        }
+    }
+    
+    // Only calculate white mobility if white has < 8 pieces
+    if (white_pieces < 8) {
+        float white_moves = 0.0f;
+        
+        if (board.turn() == ChessBoard::WHITE) {
+            white_moves = static_cast<float>(board.get_legal_moves().size());
+        } else {
+            // Get white moves by flipping turn
+            std::istringstream fen_stream(board.to_fen());
+            std::string board_str, turn_str, castling_str, ep_str, halfmove_str, fullmove_str;
+            fen_stream >> board_str >> turn_str >> castling_str >> ep_str >> halfmove_str >> fullmove_str;
+            
+            turn_str = "w";
+            std::string flipped_fen = board_str + " " + turn_str + " " + castling_str + " " + 
+                                     ep_str + " " + halfmove_str + " " + fullmove_str;
+            
+            ChessBoard flipped_board(flipped_fen);
+            if (!flipped_board.is_game_over()) {
+                white_moves = static_cast<float>(flipped_board.get_legal_moves().size());
+            }
+        }
+        
+        // Scale by white piece count: max((8 - white_pieces) / 6, 0)
+        float white_factor = std::max((8.0f - white_pieces) / 6.0f, 0.0f);
+        mobility_features[0] = white_factor * white_moves;
+    }
+    
+    // Only calculate black mobility if black has < 8 pieces
+    if (black_pieces < 8) {
+        float black_moves = 0.0f;
+        
+        if (board.turn() == ChessBoard::BLACK) {
+            black_moves = static_cast<float>(board.get_legal_moves().size());
+        } else {
+            // Get black moves by flipping turn
+            std::istringstream fen_stream(board.to_fen());
+            std::string board_str, turn_str, castling_str, ep_str, halfmove_str, fullmove_str;
+            fen_stream >> board_str >> turn_str >> castling_str >> ep_str >> halfmove_str >> fullmove_str;
+            
+            turn_str = "b";
+            std::string flipped_fen = board_str + " " + turn_str + " " + castling_str + " " + 
+                                     ep_str + " " + halfmove_str + " " + fullmove_str;
+            
+            ChessBoard flipped_board(flipped_fen);
+            if (!flipped_board.is_game_over()) {
+                black_moves = static_cast<float>(flipped_board.get_legal_moves().size());
+            }
+        }
+        
+        // Scale by black piece count: max((8 - black_pieces) / 6, 0)
+        float black_factor = std::max((8.0f - black_pieces) / 6.0f, 0.0f);
+        mobility_features[1] = black_factor * black_moves;
+    }
+    
+    return mobility_features;
 }

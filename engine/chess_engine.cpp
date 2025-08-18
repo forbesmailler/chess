@@ -144,20 +144,9 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, floa
     // Null move pruning disabled for now (proper implementation needed)
     // The previous implementation was buggy - it didn't actually make a null move
     
-    // Conservative endgame extension
-    float endgame_factor = get_endgame_factor(board.piece_count());
-    bool extend_search = false;
-    
-    // Only extend in very specific cases to avoid search explosion
-    if (depth == 0 && endgame_factor > 0.7f) {
-        depth = 1;
-        extend_search = true;
-    }
-    
     // Check extension - but only at low depths
     if (board.is_in_check(board.turn()) && depth == 0) {
         depth = 1;
-        extend_search = true;
     }
     
     auto ordered_moves = order_moves(board, legal_moves, tt_move);
@@ -189,7 +178,7 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, floa
         }
     }
     
-    if (!extend_search && transposition_table.size() < CACHE_SIZE / 2) {
+    if (transposition_table.size() < CACHE_SIZE / 2) {
         transposition_table[pos_key] = {best_score, depth, node_type, best_move};
     }
     
@@ -197,9 +186,8 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, floa
 }
 
 float ChessEngine::quiescence_search(const ChessBoard& board, float alpha, float beta, int qs_depth) {
-    // Adjust max depth based on endgame factor for better performance
-    float endgame_factor = get_endgame_factor(board.piece_count());
-    int max_qs_depth = endgame_factor > 0.5f ? 12 : 6;  // Deeper in endgames
+    // Fixed max depth for quiescence search
+    int max_qs_depth = 10;
     
     if (qs_depth >= max_qs_depth) {
         float eval = evaluate(board);
@@ -251,12 +239,6 @@ std::string ChessEngine::get_position_key(const ChessBoard& board) const {
         }
     }
     return fen;
-}
-
-float ChessEngine::get_endgame_factor(int piece_count) const {    
-    if (piece_count <= 8) return 1.0f;  // More aggressive endgame detection
-    if (piece_count >= 16) return 0.0f;
-    return (16.0f - piece_count) / 8.0f;  // Smoother transition
 }
 
 void ChessEngine::clear_cache_if_needed() {
