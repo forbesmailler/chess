@@ -5,7 +5,7 @@
 #include <cmath>
 #include <algorithm>
 
-LogisticModel::LogisticModel() : n_classes(3), n_features(1544) {}
+LogisticModel::LogisticModel() : n_classes(3), n_features(1542) {}
 
 bool LogisticModel::load_model(const std::string& model_path) {
     std::string txt_path = model_path;

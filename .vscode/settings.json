@@ -5,6 +5,8 @@
     "files.associations": {
         "memory": "cpp",
         "limits": "cpp",
-        "utility": "cpp"
+        "utility": "cpp",
+        "vector": "cpp",
+        "list": "cpp"
     },
 }

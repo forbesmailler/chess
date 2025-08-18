@@ -37,13 +37,15 @@ int ChessEngine::score_move(const ChessBoard& board, const ChessBoard::Move& mov
     float eval_after = evaluate(temp_board);
     float score_for_current_player = board.turn() == ChessBoard::WHITE ? eval_after : -eval_after;
     temp_board.unmake_move(move);
-    
+
     return static_cast<int>(score_for_current_player / 10.0f);
 }
 
 std::vector<ChessBoard::Move> ChessEngine::order_moves(const ChessBoard& board, 
                                                       const std::vector<ChessBoard::Move>& moves, 
                                                       const ChessBoard::Move& tt_move) {
+    if (moves.size() <= 1) return moves;
+    
     std::vector<std::pair<ChessBoard::Move, int>> scored_moves;
     scored_moves.reserve(moves.size());
     
@@ -53,8 +55,11 @@ std::vector<ChessBoard::Move> ChessEngine::order_moves(const ChessBoard& board,
         scored_moves.emplace_back(move, score);
     }
     
-    std::sort(scored_moves.begin(), scored_moves.end(), 
-              [](const auto& a, const auto& b) { return a.second > b.second; });
+    // Partial sort - only sort the top moves for better cutoffs
+    std::partial_sort(scored_moves.begin(), 
+                     scored_moves.begin() + std::min(static_cast<size_t>(8), scored_moves.size()),
+                     scored_moves.end(),
+                     [](const auto& a, const auto& b) { return a.second > b.second; });
     
     std::vector<ChessBoard::Move> ordered_moves;
     ordered_moves.reserve(moves.size());
@@ -187,7 +192,7 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, floa
 
 float ChessEngine::quiescence_search(const ChessBoard& board, float alpha, float beta, int qs_depth) {
     // Fixed max depth for quiescence search
-    int max_qs_depth = 10;
+    int max_qs_depth = 8;  // Reduced for better performance
     
     if (qs_depth >= max_qs_depth) {
         float eval = evaluate(board);
@@ -202,12 +207,15 @@ float ChessEngine::quiescence_search(const ChessBoard& board, float alpha, float
     
     auto legal_moves = board.get_legal_moves();
     std::vector<ChessBoard::Move> tactical_moves;
+    tactical_moves.reserve(legal_moves.size() / 4);  // Estimate
     
+    // Look at captures, promotions, and checks
     ChessBoard temp_board = board;
     for (const auto& move : legal_moves) {
         if (board.is_capture_move(move) || move.is_promotion()) {
             tactical_moves.push_back(move);
         } else if (temp_board.make_move(move)) {
+            // Check if move gives check
             if (temp_board.is_in_check(temp_board.turn())) {
                 tactical_moves.push_back(move);
             }
@@ -215,8 +223,9 @@ float ChessEngine::quiescence_search(const ChessBoard& board, float alpha, float
         }
     }
     
-    auto ordered_tactical = order_moves(board, tactical_moves);
-    for (const auto& move : ordered_tactical) {
+    // Simple ordering: captures/promotions/checks
+    temp_board = board;
+    for (const auto& move : tactical_moves) {
         if (temp_board.make_move(move)) {
             float score = -quiescence_search(temp_board, -beta, -alpha, qs_depth + 1);
             temp_board.unmake_move(move);
@@ -231,27 +240,31 @@ float ChessEngine::quiescence_search(const ChessBoard& board, float alpha, float
 
 std::string ChessEngine::get_position_key(const ChessBoard& board) const {
     std::string fen = board.to_fen();
-    size_t space_pos = fen.find(' ');
-    if (space_pos != std::string::npos) {
-        size_t second_space = fen.find(' ', space_pos + 1);
+    // Find second space to truncate after castling rights
+    size_t first_space = fen.find(' ');
+    if (first_space != std::string::npos) {
+        size_t second_space = fen.find(' ', first_space + 1);
         if (second_space != std::string::npos) {
-            return fen.substr(0, second_space);
+            size_t third_space = fen.find(' ', second_space + 1);
+            if (third_space != std::string::npos) {
+                return fen.substr(0, third_space);  // Include en passant square
+            }
         }
     }
     return fen;
 }
 
 void ChessEngine::clear_cache_if_needed() {
-    // Clear caches when they get too large, but keep some entries
+    // Use a simple random eviction strategy for better performance
     if (eval_cache.size() >= CACHE_SIZE / 2) {
         auto it = eval_cache.begin();
-        std::advance(it, eval_cache.size() / 3);  // Keep 2/3 of entries
+        std::advance(it, eval_cache.size() / 2);  // Remove half
         eval_cache.erase(eval_cache.begin(), it);
     }
     
     if (transposition_table.size() >= CACHE_SIZE / 2) {
         auto it = transposition_table.begin();
-        std::advance(it, transposition_table.size() / 3);  // Keep 2/3 of entries
+        std::advance(it, transposition_table.size() / 2);  // Remove half  
         transposition_table.erase(transposition_table.begin(), it);
     }
 }
