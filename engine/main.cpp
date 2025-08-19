@@ -12,6 +12,33 @@
 #include <unordered_map>
 #include <mutex>
 #include <atomic>
+#include <chrono>
+#include <signal.h>
+#include <exception>
+#ifdef _WIN32
+#include <process.h>
+#define getpid _getpid
+#else
+#include <unistd.h>
+#endif
+
+// Robust bot configuration
+const int MAX_RETRIES = 3;
+const int RETRY_DELAY_MS = 5000;  // 5 seconds
+const int HEARTBEAT_INTERVAL_MS = 30000;  // 30 seconds
+const int CONNECTION_TIMEOUT_MS = 120000;  // 2 minutes
+const int MAX_CONSECUTIVE_ERRORS = 10;
+
+// Global state for graceful shutdown
+std::atomic<bool> shutdown_requested{false};
+std::atomic<int> consecutive_errors{0};
+std::atomic<std::chrono::steady_clock::time_point> last_activity{std::chrono::steady_clock::now()};
+
+// Signal handler for graceful shutdown
+void signal_handler(int signal) {
+    Utils::log_info("Received shutdown signal " + std::to_string(signal) + ", shutting down gracefully...");
+    shutdown_requested.store(true);
+}
 
 struct GameState {
     ChessBoard board;
@@ -19,12 +46,18 @@ struct GameState {
     bool our_white = false;
     bool first_event = true;
     std::unique_ptr<ChessEngine> engine;
+    std::chrono::steady_clock::time_point last_move_time;
+    std::atomic<bool> is_active{true};
 };
 
 class LichessBot {
 public:
     LichessBot(const std::string& token, const std::string& model_path, int depth = 4)
-        : client(token), model_path(model_path) {
+        : client(token), model_path(model_path), heartbeat_active(true) {
+        
+        // Setup signal handlers
+        signal(SIGINT, signal_handler);
+        signal(SIGTERM, signal_handler);
         
         model = std::make_shared<LogisticModel>();
         if (!model->load_model(model_path)) {
@@ -33,26 +66,36 @@ public:
         
         engine = std::make_unique<ChessEngine>(model, depth);
         
-        if (!client.get_account_info(account_info)) {
-            Utils::log_error("Failed to get account information");
+        if (!get_account_info_with_retry()) {
+            throw std::runtime_error("Failed to get account information after retries");
+        }
+        
+        Utils::log_info("Bot started as user: " + account_info.username + " (" + account_info.id + ")");
+        Utils::log_info("Search depth: " + std::to_string(depth));
+        
+        if (account_info.is_bot) {
+            Utils::log_info("Account is properly configured as a bot");
         } else {
-            Utils::log_info("Bot started as user: " + account_info.username + " (" + account_info.id + ")");
-            Utils::log_info("Search depth: " + std::to_string(depth));
-            if (account_info.is_bot) {
-                Utils::log_info("Account is properly configured as a bot");
-            } else {
-                Utils::log_error("WARNING: Account is NOT configured as a bot! Title: " + account_info.title);
-                Utils::log_error("Please upgrade your account to a bot account on Lichess");
-            }
+            Utils::log_error("WARNING: Account is NOT configured as a bot! Title: " + account_info.title);
+            Utils::log_error("Please upgrade your account to a bot account on Lichess");
+        }
+    }
+    
+    ~LichessBot() {
+        heartbeat_active = false;
+        if (heartbeat_thread.joinable()) {
+            heartbeat_thread.join();
         }
     }
     
     void start() {
-        Utils::log_info("Starting bot, listening for events...");
+        Utils::log_info("Starting bot with enhanced error handling and keep-alive features...");
         
-        client.stream_events([this](const LichessClient::GameEvent& event) {
-            handle_event(event);
-        });
+        // Start heartbeat monitor
+        start_heartbeat_monitor();
+        
+        // Main bot loop with retry logic
+        start_with_retry();
     }
     
 private:
@@ -67,30 +110,205 @@ private:
     std::mutex games_mutex;
     std::atomic<int> active_game_count{0};
     
-    void handle_event(const LichessClient::GameEvent& event) {
-        if (event.type == "challenge") {
-            if (!client.accept_challenge(event.challenge_id)) {
-                Utils::log_error("Failed to accept challenge: " + event.challenge_id);
-            } else {
-                Utils::log_info("Accepted challenge: " + event.challenge_id + 
-                              " (Active games: " + std::to_string(active_game_count.load()) + ")");
+    // Heartbeat and monitoring
+    std::atomic<bool> heartbeat_active{true};
+    std::thread heartbeat_thread;
+    
+    bool get_account_info_with_retry() {
+        for (int attempt = 1; attempt <= MAX_RETRIES; ++attempt) {
+            try {
+                if (client.get_account_info(account_info)) {
+                    consecutive_errors.store(0);
+                    return true;
+                }
+                Utils::log_warning("Failed to get account info (attempt " + std::to_string(attempt) + "/" + std::to_string(MAX_RETRIES) + ")");
+            } catch (const std::exception& e) {
+                Utils::log_error("Exception getting account info (attempt " + std::to_string(attempt) + "): " + std::string(e.what()));
             }
-        } else if (event.type == "gameStart") {
-            std::lock_guard<std::mutex> lock(games_mutex);
-            auto game_state = std::make_shared<GameState>();
-            // Create a separate engine instance for this game
-            game_state->engine = std::make_unique<ChessEngine>(model, engine->get_depth());
-            active_games[event.game_id] = game_state;
-            active_game_count++;
-            Utils::log_info("Game started: " + event.game_id + 
-                          " (Active games: " + std::to_string(active_game_count.load()) + ")");
             
-            std::thread game_thread(&LichessBot::handle_game, this, event.game_id);
-            game_thread.detach();
+            if (attempt < MAX_RETRIES && !shutdown_requested.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(RETRY_DELAY_MS));
+            }
+        }
+        return false;
+    }
+    
+    void start_heartbeat_monitor() {
+        heartbeat_thread = std::thread([this]() {
+            while (heartbeat_active.load() && !shutdown_requested.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(HEARTBEAT_INTERVAL_MS));
+                
+                if (shutdown_requested.load()) break;
+                
+                // Check if we've been inactive too long
+                auto now = std::chrono::steady_clock::now();
+                auto time_since_activity = now - last_activity.load();
+                
+                if (std::chrono::duration_cast<std::chrono::milliseconds>(time_since_activity).count() > CONNECTION_TIMEOUT_MS) {
+                    Utils::log_warning("No activity for " + std::to_string(std::chrono::duration_cast<std::chrono::seconds>(time_since_activity).count()) + " seconds");
+                    
+                    // Test connection
+                    LichessClient::AccountInfo test_info;
+                    if (client.get_account_info(test_info)) {
+                        Utils::log_info("Connection test passed - updating activity timestamp");
+                        last_activity.store(now);
+                        consecutive_errors.store(0);
+                    } else {
+                        Utils::log_error("Connection test failed");
+                        consecutive_errors.fetch_add(1);
+                    }
+                }
+                
+                // Log status
+                int error_count = consecutive_errors.load();
+                int active_count = active_game_count.load();
+                Utils::log_info("Heartbeat: " + std::to_string(active_count) + " active games, " + std::to_string(error_count) + " consecutive errors");
+                
+                // Check if we should shut down due to too many errors
+                if (error_count > MAX_CONSECUTIVE_ERRORS) {
+                    Utils::log_error("Too many consecutive errors (" + std::to_string(error_count) + "), requesting shutdown");
+                    shutdown_requested.store(true);
+                    break;
+                }
+            }
+            Utils::log_info("Heartbeat monitor stopped");
+        });
+    }
+    
+    void start_with_retry() {
+        int restart_attempts = 0;
+        const int max_restarts = 5;
+        
+        while (!shutdown_requested.load() && restart_attempts < max_restarts) {
+            try {
+                Utils::log_info("Starting event stream (attempt " + std::to_string(restart_attempts + 1) + ")");
+                consecutive_errors.store(0);
+                
+                stream_events_with_recovery();
+                
+                // If we get here, stream ended normally
+                if (!shutdown_requested.load()) {
+                    Utils::log_warning("Event stream ended unexpectedly, will retry");
+                    restart_attempts++;
+                }
+                
+            } catch (const std::exception& e) {
+                Utils::log_error("Exception in main event loop: " + std::string(e.what()));
+                restart_attempts++;
+                consecutive_errors.fetch_add(1);
+            }
+            
+            if (!shutdown_requested.load() && restart_attempts < max_restarts) {
+                int delay = RETRY_DELAY_MS * (restart_attempts + 1); // Exponential backoff
+                Utils::log_info("Restarting in " + std::to_string(delay / 1000) + " seconds...");
+                std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+            }
+        }
+        
+        if (restart_attempts >= max_restarts) {
+            Utils::log_error("Maximum restart attempts reached, shutting down");
+        }
+    }
+    
+    void stream_events_with_recovery() {
+        client.stream_events([this](const LichessClient::GameEvent& event) {
+            if (shutdown_requested.load()) return;
+            
+            last_activity.store(std::chrono::steady_clock::now());
+            
+            try {
+                handle_event(event);
+                consecutive_errors.store(0); // Reset on successful event handling
+            } catch (const std::exception& e) {
+                Utils::log_error("Error handling event: " + std::string(e.what()));
+                consecutive_errors.fetch_add(1);
+                
+                if (consecutive_errors.load() > MAX_CONSECUTIVE_ERRORS) {
+                    Utils::log_error("Too many consecutive errors, stopping event stream");
+                    shutdown_requested.store(true);
+                }
+            }
+        });
+    }
+    
+    void handle_event(const LichessClient::GameEvent& event) {
+        try {
+            if (event.type == "challenge") {
+                Utils::log_info("Received challenge: " + event.challenge_id);
+                
+                if (!accept_challenge_with_retry(event.challenge_id)) {
+                    Utils::log_error("Failed to accept challenge after retries: " + event.challenge_id);
+                } else {
+                    Utils::log_info("Accepted challenge: " + event.challenge_id + 
+                                  " (Active games: " + std::to_string(active_game_count.load()) + ")");
+                }
+                
+            } else if (event.type == "gameStart") {
+                Utils::log_info("Game starting: " + event.game_id);
+                
+                std::lock_guard<std::mutex> lock(games_mutex);
+                auto game_state = std::make_shared<GameState>();
+                
+                // Create a separate engine instance for this game
+                try {
+                    game_state->engine = std::make_unique<ChessEngine>(model, engine->get_depth());
+                    game_state->last_move_time = std::chrono::steady_clock::now();
+                    game_state->is_active.store(true);
+                    
+                    active_games[event.game_id] = game_state;
+                    active_game_count++;
+                    
+                    Utils::log_info("Game started: " + event.game_id + 
+                                  " (Active games: " + std::to_string(active_game_count.load()) + ")");
+                    
+                    // Start game handler in separate thread
+                    std::thread game_thread(&LichessBot::handle_game_with_recovery, this, event.game_id);
+                    game_thread.detach();
+                    
+                } catch (const std::exception& e) {
+                    Utils::log_error("Failed to initialize game " + event.game_id + ": " + std::string(e.what()));
+                    active_games.erase(event.game_id);
+                }
+                
+            } else {
+                Utils::log_info("Ignoring event type: " + event.type);
+            }
+        } catch (const std::exception& e) {
+            Utils::log_error("Exception in handle_event: " + std::string(e.what()));
+            throw; // Re-throw to be caught by caller
+        }
+    }
+    
+    bool accept_challenge_with_retry(const std::string& challenge_id) {
+        for (int attempt = 1; attempt <= MAX_RETRIES; ++attempt) {
+            try {
+                if (client.accept_challenge(challenge_id)) {
+                    return true;
+                }
+                Utils::log_warning("Failed to accept challenge (attempt " + std::to_string(attempt) + "/" + std::to_string(MAX_RETRIES) + ")");
+            } catch (const std::exception& e) {
+                Utils::log_error("Exception accepting challenge (attempt " + std::to_string(attempt) + "): " + std::string(e.what()));
+            }
+            
+            if (attempt < MAX_RETRIES && !shutdown_requested.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(RETRY_DELAY_MS / 2));
+            }
+        }
+        return false;
+    }
+    
+    void handle_game_with_recovery(const std::string& game_id) {
+        try {
+            handle_game(game_id);
+        } catch (const std::exception& e) {
+            Utils::log_error("Fatal error in game " + game_id + ": " + std::string(e.what()));
+            cleanup_game(game_id);
         }
     }
     
     void handle_game(const std::string& game_id) {
+        Utils::log_info("Starting game handler for: " + game_id);
+        
         std::shared_ptr<GameState> game_state;
         {
             std::lock_guard<std::mutex> lock(games_mutex);
@@ -102,95 +320,189 @@ private:
             game_state = it->second; // Keep shared_ptr alive
         }
         
-        client.stream_game(game_id, [this, game_state, game_id](const LichessClient::GameEvent& event) {
-            if (event.type == "gameFull" && game_state->first_event) {
-                game_state->first_event = false;
-                
-                game_state->our_white = (event.white_id == account_info.id);
-                Utils::log_info("Game " + game_id + ": we are " + (game_state->our_white ? "White" : "Black"));
-                Utils::log_info("White player: " + event.white_id + ", Black player: " + event.black_id);
-                
-                auto moves = Utils::split_string(event.moves, ' ');
-                for (const auto& uci : moves) {
-                    if (!uci.empty()) {
-                        auto move = ChessBoard::Move::from_uci(uci);
-                        game_state->board.make_move(move);
-                        game_state->ply_count++;
-                    }
-                }
-                
-                float eval = game_state->engine->evaluate(game_state->board);
-                Utils::log_info("Game " + game_id + " - Eval after ply " + std::to_string(game_state->ply_count) + 
-                               " (white-persp): " + std::to_string(eval));
-                
-                if ((game_state->board.turn() == ChessBoard::WHITE && game_state->our_white) || 
-                    (game_state->board.turn() == ChessBoard::BLACK && !game_state->our_white)) {
-                    
-                    if (play_best_move(game_id, game_state)) game_state->ply_count++;
-                }
-            } else if (event.type == "gameState") {
-                if (event.status != "started") {
-                    Utils::log_info("Game " + game_id + " ended with status: " + event.status);
-                    cleanup_game(game_id);
+        try {
+            client.stream_game(game_id, [this, game_state, game_id](const LichessClient::GameEvent& event) {
+                if (shutdown_requested.load() || !game_state->is_active.load()) {
+                    Utils::log_info("Game " + game_id + ": Shutdown requested or game inactive, ending handler");
                     return;
                 }
                 
-                if (event.draw_offer) handle_draw_offer(game_id, game_state);
+                last_activity.store(std::chrono::steady_clock::now());
+                game_state->last_move_time = std::chrono::steady_clock::now();
                 
-                auto moves = Utils::split_string(event.moves, ' ');
-                for (size_t i = game_state->ply_count; i < moves.size(); i++) {
-                    const auto& uci = moves[i];
-                    if (!uci.empty()) {
-                        auto move = ChessBoard::Move::from_uci(uci);
-                        game_state->board.make_move(move);
-                        game_state->ply_count++;
+                try {
+                    handle_game_event(game_id, game_state, event);
+                } catch (const std::exception& e) {
+                    Utils::log_error("Game " + game_id + ": Error processing event: " + std::string(e.what()));
+                    consecutive_errors.fetch_add(1);
+                    
+                    if (consecutive_errors.load() > MAX_CONSECUTIVE_ERRORS / 2) { // Per-game threshold
+                        Utils::log_error("Game " + game_id + ": Too many errors, abandoning game");
+                        game_state->is_active.store(false);
                     }
                 }
-                
-                float eval = game_state->engine->evaluate(game_state->board);
-                Utils::log_info("Game " + game_id + " - Eval after ply " + std::to_string(game_state->ply_count) + 
-                               " (white-persp): " + std::to_string(eval));
-                
-                if ((game_state->board.turn() == ChessBoard::WHITE && game_state->our_white) || 
-                    (game_state->board.turn() == ChessBoard::BLACK && !game_state->our_white)) {
-                    
-                    if (play_best_move(game_id, game_state)) game_state->ply_count++;
-                }
-            }
-        });
+            });
+        } catch (const std::exception& e) {
+            Utils::log_error("Game " + game_id + ": Exception in stream_game: " + std::string(e.what()));
+        }
         
         // Clean up when stream ends
+        Utils::log_info("Game " + game_id + ": Stream ended, cleaning up");
         cleanup_game(game_id);
     }
     
-    bool play_best_move(const std::string& game_id, std::shared_ptr<GameState> game_state) {
-        auto move = game_state->engine->get_best_move(game_state->board);
-        if (!move.uci_string.empty()) {
-            if (client.make_move(game_id, move.uci())) {
-                Utils::log_info("Move sent successfully: " + move.uci());
+    void handle_game_event(const std::string& game_id, std::shared_ptr<GameState> game_state, const LichessClient::GameEvent& event) {
+        if (event.type == "gameFull" && game_state->first_event) {
+            game_state->first_event = false;
+            
+            game_state->our_white = (event.white_id == account_info.id);
+            Utils::log_info("Game " + game_id + ": we are " + (game_state->our_white ? "White" : "Black"));
+            Utils::log_info("White player: " + event.white_id + ", Black player: " + event.black_id);
+            
+            // Process initial moves
+            process_moves(game_id, game_state, event.moves);
+            
+            float eval = evaluate_position_safely(game_state);
+            Utils::log_info("Game " + game_id + " - Initial eval after ply " + std::to_string(game_state->ply_count) + 
+                           " (white-persp): " + std::to_string(eval));
+            
+            // Make initial move if it's our turn
+            if (is_our_turn(game_state)) {
+                play_best_move_safely(game_id, game_state);
+            }
+            
+        } else if (event.type == "gameState") {
+            if (event.status != "started") {
+                Utils::log_info("Game " + game_id + " ended with status: " + event.status);
+                game_state->is_active.store(false);
+                return;
+            }
+            
+            if (event.draw_offer) {
+                handle_draw_offer_safely(game_id, game_state);
+            }
+            
+            // Process new moves
+            process_moves(game_id, game_state, event.moves);
+            
+            float eval = evaluate_position_safely(game_state);
+            Utils::log_info("Game " + game_id + " - Eval after ply " + std::to_string(game_state->ply_count) + 
+                           " (white-persp): " + std::to_string(eval));
+            
+            // Make our move if it's our turn
+            if (is_our_turn(game_state)) {
+                play_best_move_safely(game_id, game_state);
+            }
+        }
+    }
+    
+    void process_moves(const std::string& game_id, std::shared_ptr<GameState> game_state, const std::string& moves_str) {
+        auto moves = Utils::split_string(moves_str, ' ');
+        
+        for (size_t i = game_state->ply_count; i < moves.size(); i++) {
+            const auto& uci = moves[i];
+            if (uci.empty()) continue;
+            
+            try {
+                auto move = ChessBoard::Move::from_uci(uci);
                 game_state->board.make_move(move);
+                game_state->ply_count++;
+                
+                // Log who made the move
+                bool bot_move = ((i % 2 == 0 && game_state->our_white) || (i % 2 == 1 && !game_state->our_white));
+                std::string actor = bot_move ? "Bot" : "Opponent";
+                Utils::log_info("Game " + game_id + ": " + actor + " played " + uci);
+                
+            } catch (const std::exception& e) {
+                Utils::log_error("Game " + game_id + ": Invalid move '" + uci + "': " + std::string(e.what()));
+                throw; // This is a fatal error for the game
+            }
+        }
+    }
+    
+    bool is_our_turn(std::shared_ptr<GameState> game_state) {
+        return (game_state->board.turn() == ChessBoard::WHITE && game_state->our_white) || 
+               (game_state->board.turn() == ChessBoard::BLACK && !game_state->our_white);
+    }
+    
+    float evaluate_position_safely(std::shared_ptr<GameState> game_state) {
+        try {
+            return game_state->engine->evaluate(game_state->board);
+        } catch (const std::exception& e) {
+            Utils::log_warning("Error evaluating position: " + std::string(e.what()));
+            return 0.0f; // Return neutral evaluation on error
+        }
+    }
+    
+    bool play_best_move_safely(const std::string& game_id, std::shared_ptr<GameState> game_state) {
+        try {
+            auto move = game_state->engine->get_best_move(game_state->board);
+            if (move.uci_string.empty()) {
+                Utils::log_error("Game " + game_id + ": No valid move found!");
+                return false;
+            }
+            
+            // Try to make the move with retry logic
+            if (make_move_with_retry(game_id, move.uci())) {
+                Utils::log_info("Game " + game_id + ": Move sent successfully: " + move.uci());
+                game_state->board.make_move(move);
+                game_state->ply_count++;
+                game_state->last_move_time = std::chrono::steady_clock::now();
                 return true;
             } else {
-                Utils::log_error("Failed to send move: " + move.uci());
+                Utils::log_error("Game " + game_id + ": Failed to send move after retries: " + move.uci());
+                return false;
             }
-        } else {
-            Utils::log_error("No valid move found!");
+            
+        } catch (const std::exception& e) {
+            Utils::log_error("Game " + game_id + ": Exception finding/playing move: " + std::string(e.what()));
+            return false;
+        }
+    }
+    
+    bool make_move_with_retry(const std::string& game_id, const std::string& uci) {
+        for (int attempt = 1; attempt <= MAX_RETRIES; ++attempt) {
+            try {
+                if (client.make_move(game_id, uci)) {
+                    return true;
+                }
+                Utils::log_warning("Game " + game_id + ": Move attempt " + std::to_string(attempt) + " failed for " + uci);
+            } catch (const std::exception& e) {
+                Utils::log_error("Game " + game_id + ": Exception on move attempt " + std::to_string(attempt) + ": " + std::string(e.what()));
+            }
+            
+            if (attempt < MAX_RETRIES && !shutdown_requested.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000)); // 1 second retry delay for moves
+            }
         }
         return false;
     }
     
-    void handle_draw_offer(const std::string& game_id, std::shared_ptr<GameState> game_state) {
-        float eval = game_state->engine->evaluate(game_state->board);
-        float our_eval = game_state->our_white ? eval : -eval;
+    void handle_draw_offer_safely(const std::string& game_id, std::shared_ptr<GameState> game_state) {
+        try {
+            float eval = evaluate_position_safely(game_state);
+            float our_eval = game_state->our_white ? eval : -eval;
 
-        if (our_eval > 0.0f) {
-            Utils::log_info("Game " + game_id + " - Declining draw offer (our eval: " + std::to_string(our_eval) + 
+            bool accept_draw = (our_eval <= 0.0f);
+            
+            Utils::log_info("Game " + game_id + " - Draw offer: " + 
+                           (accept_draw ? "ACCEPTING" : "DECLINING") +
+                           " (our eval: " + std::to_string(our_eval) + 
                            ", white eval: " + std::to_string(eval) + ")");
-            client.decline_draw(game_id);
-        } else {
-            Utils::log_info("Game " + game_id + " - Accepting draw offer (our eval: " + std::to_string(our_eval) + 
-                           ", white eval: " + std::to_string(eval) + ")");
-            client.accept_draw(game_id);
+            
+            // Try the draw response with simple retry
+            for (int attempt = 1; attempt <= 2; ++attempt) {
+                bool success = accept_draw ? client.accept_draw(game_id) : client.decline_draw(game_id);
+                if (success) break;
+                
+                if (attempt == 1) {
+                    Utils::log_warning("Game " + game_id + ": Draw response failed, retrying...");
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+                }
+            }
+            
+        } catch (const std::exception& e) {
+            Utils::log_error("Game " + game_id + ": Error handling draw offer: " + std::string(e.what()));
         }
     }
     
@@ -198,9 +510,19 @@ private:
         std::lock_guard<std::mutex> lock(games_mutex);
         auto it = active_games.find(game_id);
         if (it != active_games.end()) {
+            // Mark game as inactive
+            it->second->is_active.store(false);
+            
+            // Calculate game duration
+            auto now = std::chrono::steady_clock::now();
+            auto duration = now - it->second->last_move_time;
+            auto duration_seconds = std::chrono::duration_cast<std::chrono::seconds>(duration).count();
+            
             active_games.erase(it);
             active_game_count--;
-            Utils::log_info("Game " + game_id + " cleaned up. Active games: " + std::to_string(active_game_count.load()));
+            
+            Utils::log_info("Game " + game_id + " cleaned up after " + std::to_string(duration_seconds) + 
+                           " seconds. Active games: " + std::to_string(active_game_count.load()));
         }
     }
 };
@@ -288,19 +610,41 @@ int main(int argc, char* argv[]) {
     
     std::string model_path = "../../train/model_coefficients.txt"; // Relative to build/Release directory
     
-    std::cout << "=== Starting Lichess Bot ===" << std::endl;
+    std::cout << "=== Starting Enhanced Lichess Bot ===" << std::endl;
     std::cout << "Token: " << token.substr(0, 8) << "..." << std::endl;
     std::cout << "Model path: " << model_path << std::endl;
     std::cout << "Search depth: " << depth << std::endl;
+    std::cout << "Process ID: " << getpid() << std::endl;
+    std::cout << std::endl;
+    std::cout << "Enhanced features:" << std::endl;
+    std::cout << "- Automatic retry on errors (max " << MAX_RETRIES << " attempts)" << std::endl;
+    std::cout << "- Heartbeat monitoring every " << HEARTBEAT_INTERVAL_MS / 1000 << " seconds" << std::endl;
+    std::cout << "- Connection timeout: " << CONNECTION_TIMEOUT_MS / 1000 << " seconds" << std::endl;
+    std::cout << "- Error threshold: " << MAX_CONSECUTIVE_ERRORS << " consecutive errors" << std::endl;
+    std::cout << std::endl;
+    std::cout << "Press Ctrl+C to stop the bot gracefully" << std::endl;
     std::cout << std::endl;
     
+    int exit_code = 0;
     try {
         LichessBot bot(token, model_path, depth);
+        Utils::log_info("Bot initialized successfully, starting main loop...");
+        
         bot.start();
+        
+        if (shutdown_requested.load()) {
+            Utils::log_info("Bot stopped gracefully");
+        } else {
+            Utils::log_warning("Bot stopped unexpectedly");
+            exit_code = 1;
+        }
+        
     } catch (const std::exception& e) {
         Utils::log_error("Bot crashed with exception: " + std::string(e.what()));
-        return 1;
+        std::cerr << "Fatal error: " << e.what() << std::endl;
+        exit_code = 1;
     }
     
-    return 0;
+    Utils::log_info("=== Bot Shutdown Complete ===");
+    return exit_code;
 }
