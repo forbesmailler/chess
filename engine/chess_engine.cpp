@@ -117,6 +117,33 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, floa
         return board.is_in_check(board.turn()) ? -MATE_VALUE : 0.0f;
     }
     
+    // Null Move Pruning
+    bool do_null_move = depth > 2 && !is_pv && !board.is_in_check(board.turn()) && 
+                        beta < MATE_VALUE - 1000 && alpha > -MATE_VALUE + 1000;
+    
+    if (do_null_move) {
+        // Make null move (switch turns without moving)
+        std::string fen = board.to_fen();
+        std::istringstream iss(fen);
+        std::string board_str, turn_str, castling_str, ep_str, halfmove_str, fullmove_str;
+        iss >> board_str >> turn_str >> castling_str >> ep_str >> halfmove_str >> fullmove_str;
+        
+        std::string null_turn = (turn_str == "w") ? "b" : "w";
+        std::string null_fen = board_str + " " + null_turn + " " + castling_str + " - " + 
+                              halfmove_str + " " + fullmove_str;
+        
+        ChessBoard null_board(null_fen);
+        if (!null_board.is_game_over()) {
+            int reduction = 3;
+            if (depth > 6) reduction = 4;
+            float null_score = -negamax(null_board, depth - 1 - reduction, -beta, -beta + 1, false);
+            
+            if (null_score >= beta) {
+                return null_score; // Null move cutoff
+            }
+        }
+    }
+    
     // Check extension
     if (board.is_in_check(board.turn()) && depth == 0) depth = 1;
     
@@ -126,9 +153,32 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, floa
     auto node_type = TranspositionEntry::UPPER_BOUND;
     
     ChessBoard temp_board = board;
+    int moves_searched = 0;
     for (const auto& move : ordered_moves) {
         if (temp_board.make_move(move)) {
-            float score = -negamax(temp_board, depth - 1, -beta, -alpha, is_pv && best_move.uci_string.empty());
+            moves_searched++;
+            float score;
+            
+            // Late Move Reduction (LMR)
+            bool do_lmr = moves_searched > 1 && depth > 2 && !is_pv && 
+                         !board.is_in_check(board.turn()) && 
+                         !board.is_capture_move(move) && !move.is_promotion();
+            
+            if (do_lmr) {
+                // Search with reduced depth first
+                int reduction = 1;
+                if (moves_searched > 6) reduction = 2;
+                score = -negamax(temp_board, depth - 1 - reduction, -beta, -alpha, false);
+                
+                // If reduced search fails high, re-search with full depth
+                if (score > alpha) {
+                    score = -negamax(temp_board, depth - 1, -beta, -alpha, is_pv && best_move.uci_string.empty());
+                }
+            } else {
+                // Normal search
+                score = -negamax(temp_board, depth - 1, -beta, -alpha, is_pv && best_move.uci_string.empty());
+            }
+            
             temp_board.unmake_move(move);
             
             // Check if search was interrupted
@@ -170,26 +220,30 @@ float ChessEngine::quiescence_search(const ChessBoard& board, float alpha, float
     stand_pat = board.turn() == ChessBoard::WHITE ? stand_pat : -stand_pat;
     
     if (stand_pat >= beta) return beta;
+    
+    // Delta pruning - if even capturing the most valuable piece won't raise alpha
+    float delta_margin = 900.0f; // Queen value
+    if (stand_pat + delta_margin < alpha) return alpha;
+    
     if (stand_pat > alpha) alpha = stand_pat;
     
     auto legal_moves = board.get_legal_moves();
     std::vector<ChessBoard::Move> tactical_moves;
     tactical_moves.reserve(legal_moves.size() / 4);
     
-    ChessBoard temp_board = board;
+    // Only consider captures and promotions in quiescence (not checks)
     for (const auto& move : legal_moves) {
         if (board.is_capture_move(move) || move.is_promotion()) {
             tactical_moves.push_back(move);
-        } else if (temp_board.make_move(move)) {
-            if (temp_board.is_in_check(temp_board.turn())) {
-                tactical_moves.push_back(move);
-            }
-            temp_board.unmake_move(move);
         }
     }
     
-    temp_board = board;
-    for (const auto& move : tactical_moves) {
+    // Use existing move ordering system for better tactical move ordering
+    ChessBoard::Move dummy_tt_move; // No hash move in quiescence
+    auto ordered_tactical_moves = order_moves(board, tactical_moves, dummy_tt_move);
+    
+    ChessBoard temp_board = board;
+    for (const auto& move : ordered_tactical_moves) {
         if (temp_board.make_move(move)) {
             float score = -quiescence_search(temp_board, -beta, -alpha, qs_depth + 1);
             temp_board.unmake_move(move);
