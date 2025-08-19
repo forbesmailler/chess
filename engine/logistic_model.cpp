@@ -9,8 +9,8 @@ LogisticModel::LogisticModel() : n_classes(3), n_features(1542) {}
 
 bool LogisticModel::load_model(const std::string& model_path) {
     std::string txt_path = model_path;
-    if (txt_path.find(".joblib") != std::string::npos) {
-        txt_path = txt_path.substr(0, txt_path.find(".joblib")) + "_coefficients.txt";
+    if (auto pos = txt_path.find(".joblib"); pos != std::string::npos) {
+        txt_path = txt_path.substr(0, pos) + "_coefficients.txt";
     }
     
     std::ifstream file(txt_path);
@@ -20,11 +20,12 @@ bool LogisticModel::load_model(const std::string& model_path) {
             std::cerr << "Could not open model file: " << model_path << " or " << txt_path << std::endl;
             std::cerr << "Please run export_model.py in the cpp/train/ directory to convert your .joblib model to text format" << std::endl;
             
-            weights.resize(n_features * n_classes, 0.001f);
-            intercept.resize(n_classes, 0.0f);
+            // Create dummy model
+            weights.assign(n_features * n_classes, 0.001f);
+            intercept.assign(n_classes, 0.0f);
             
-            for (size_t i = 0; i < weights.size(); i++) {
-                weights[i] = (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 0.001f;
+            for (auto& w : weights) {
+                w = (static_cast<float>(rand()) / RAND_MAX - 0.5f) * 0.001f;
             }
             
             std::cout << "Using dummy model (model file not found)" << std::endl;
@@ -33,8 +34,7 @@ bool LogisticModel::load_model(const std::string& model_path) {
     }
     
     std::string line;
-    bool reading_intercept = false;
-    bool reading_coefficients = false;
+    enum class Section { NONE, INTERCEPT, COEFFICIENTS } section = Section::NONE;
     
     intercept.clear();
     weights.clear();
@@ -43,23 +43,15 @@ bool LogisticModel::load_model(const std::string& model_path) {
         if (line.empty() || line[0] == '#') continue;
         
         if (line == "INTERCEPT") {
-            reading_intercept = true;
-            reading_coefficients = false;
-            continue;
+            section = Section::INTERCEPT;
         } else if (line == "COEFFICIENTS") {
-            reading_intercept = false;
-            reading_coefficients = true;
-            continue;
-        }
-        
-        if (reading_intercept) {
+            section = Section::COEFFICIENTS;
+        } else if (section == Section::INTERCEPT) {
             intercept.push_back(std::stof(line));
-        } else if (reading_coefficients) {
+        } else if (section == Section::COEFFICIENTS) {
             weights.push_back(std::stof(line));
         }
     }
-    
-    file.close();
     
     n_classes = static_cast<int>(intercept.size());
     if (!weights.empty() && n_classes > 0) {
@@ -93,18 +85,16 @@ float LogisticModel::sigmoid(float x) {
 }
 
 std::vector<float> LogisticModel::softmax(const std::vector<float>& logits) {
-    std::vector<float> probs(logits.size());
     float max_logit = *std::max_element(logits.begin(), logits.end());
     
+    std::vector<float> probs(logits.size());
     float sum = 0.0f;
+    
     for (size_t i = 0; i < logits.size(); i++) {
         probs[i] = std::exp(logits[i] - max_logit);
         sum += probs[i];
     }
     
-    for (size_t i = 0; i < probs.size(); i++) {
-        probs[i] /= sum;
-    }
-    
+    for (auto& p : probs) p /= sum;
     return probs;
 }

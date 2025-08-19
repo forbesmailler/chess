@@ -5,6 +5,16 @@
 #include <chrono>
 #include <iomanip>
 
+namespace {
+    std::string get_timestamp() {
+        auto now = std::chrono::system_clock::now();
+        auto time_t = std::chrono::system_clock::to_time_t(now);
+        std::ostringstream oss;
+        oss << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S");
+        return oss.str();
+    }
+}
+
 std::vector<std::string> Utils::split_string(const std::string& str, char delimiter) {
     std::vector<std::string> tokens;
     std::stringstream ss(str);
@@ -24,7 +34,7 @@ std::string Utils::trim(const std::string& str) {
     while (start != end && std::isspace(*start)) ++start;
     while (end != start && std::isspace(*(end - 1))) --end;
     
-    return std::string(start, end);
+    return {start, end};
 }
 
 bool Utils::string_ends_with(const std::string& str, const std::string& suffix) {
@@ -33,25 +43,13 @@ bool Utils::string_ends_with(const std::string& str, const std::string& suffix) 
 }
 
 void Utils::log_info(const std::string& message) {
-    auto now = std::chrono::system_clock::now();
-    auto time_t = std::chrono::system_clock::to_time_t(now);
-    
-    std::cout << "[INFO " << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S") 
-              << "] " << message << std::endl;
+    std::cout << "[INFO " << get_timestamp() << "] " << message << std::endl;
 }
 
 void Utils::log_error(const std::string& message) {
-    auto now = std::chrono::system_clock::now();
-    auto time_t = std::chrono::system_clock::to_time_t(now);
-    
-    std::cerr << "[ERROR " << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S") 
-              << "] " << message << std::endl;
+    std::cerr << "[ERROR " << get_timestamp() << "] " << message << std::endl;
 }
 
 void Utils::log_warning(const std::string& message) {
-    auto now = std::chrono::system_clock::now();
-    auto time_t = std::chrono::system_clock::to_time_t(now);
-    
-    std::cout << "[WARNING " << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S") 
-              << "] " << message << std::endl;
+    std::cout << "[WARNING " << get_timestamp() << "] " << message << std::endl;
 }

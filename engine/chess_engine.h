@@ -44,6 +44,7 @@ public:
     
 private:
     static constexpr float MATE_VALUE = 10000.0f;
+    static constexpr float SEARCH_INTERRUPTED = -99999.0f;  // Special value for interrupted search
     static constexpr size_t CACHE_SIZE = 1000000;
     
     std::shared_ptr<LogisticModel> model;

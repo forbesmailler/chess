@@ -4,6 +4,20 @@
 #include <sstream>
 #include <cctype>
 
+namespace {
+    int get_piece_type(char c) {
+        switch (std::tolower(c)) {
+            case 'p': return 1;
+            case 'n': return 2;
+            case 'b': return 3;
+            case 'r': return 4;
+            case 'q': return 5;
+            case 'k': return 6;
+            default: return 0;
+        }
+    }
+}
+
 std::vector<float> FeatureExtractor::extract_features(const std::string& fen) {
     return extract_features(ChessBoard(fen));
 }
@@ -14,9 +28,8 @@ std::vector<float> FeatureExtractor::extract_features(const ChessBoard& board) {
     
     std::vector<float> base_features;
     base_features.reserve(770);
-    
-    for (float f : piece_features) base_features.push_back(f);
-    for (float f : additional_features) base_features.push_back(f);
+    base_features.insert(base_features.end(), piece_features.begin(), piece_features.end());
+    base_features.insert(base_features.end(), additional_features.begin(), additional_features.end());
     
     float factor = static_cast<float>(board.piece_count() - 2) / 30.0f;
     
@@ -27,10 +40,9 @@ std::vector<float> FeatureExtractor::extract_features(const ChessBoard& board) {
     for (float f : base_features) features.push_back(f * factor);
     for (float f : base_features) features.push_back(f * (1.0f - factor));
     
-    // Add mobility features separately
+    // Add mobility features
     auto mobility_features = extract_mobility_features(board);
-    features.push_back(mobility_features[0]);  // white mobility
-    features.push_back(mobility_features[1]);  // black mobility
+    features.insert(features.end(), mobility_features.begin(), mobility_features.end());
     
     return features;
 }
@@ -51,22 +63,9 @@ std::array<float, 768> FeatureExtractor::extract_piece_features(const ChessBoard
             square -= 16;
         } else if (std::isdigit(c)) {
             square += (c - '0');
-        } else {
-            static const int piece_map[] = {0, 1, 2, 3, 4, 5, 6}; // p=1, n=2, b=3, r=4, q=5, k=6
-            int piece_type = 0;
-            switch (std::tolower(c)) {
-                case 'p': piece_type = 1; break;
-                case 'n': piece_type = 2; break;
-                case 'b': piece_type = 3; break;
-                case 'r': piece_type = 4; break;
-                case 'q': piece_type = 5; break;
-                case 'k': piece_type = 6; break;
-            }
-            
-            if (piece_type > 0) {
-                int idx = (piece_type - 1) + (std::isupper(c) ? 0 : 6);
-                piece_arr[idx * 64 + square] = 1.0f;
-            }
+        } else if (int piece_type = get_piece_type(c); piece_type > 0) {
+            int idx = (piece_type - 1) + (std::isupper(c) ? 0 : 6);
+            piece_arr[idx * 64 + square] = 1.0f;
             square++;
         }
     }
@@ -75,20 +74,15 @@ std::array<float, 768> FeatureExtractor::extract_piece_features(const ChessBoard
 }
 
 std::array<float, 2> FeatureExtractor::extract_additional_features(const ChessBoard& board) {
-    std::array<float, 2> features;
-    features.fill(0.0f);
-    
-    // Check current position's check status
-    ChessBoard::Color current_turn = board.turn();
-    bool current_in_check = board.is_in_check(current_turn);
-    
-    // Parse FEN once and reuse components
+    // Parse FEN components
     std::string fen = board.to_fen();
     std::istringstream iss(fen);
     std::string board_str, turn_str, castling_str, ep_str, halfmove_str, fullmove_str;
     iss >> board_str >> turn_str >> castling_str >> ep_str >> halfmove_str >> fullmove_str;
     
-    // Flip turn and check opponent
+    bool current_in_check = board.is_in_check(board.turn());
+    
+    // Check opponent by flipping turn
     std::string flipped_turn = (turn_str == "w") ? "b" : "w";
     std::string flipped_fen = board_str + " " + flipped_turn + " " + castling_str + " " + 
                              ep_str + " " + halfmove_str + " " + fullmove_str;
@@ -96,20 +90,16 @@ std::array<float, 2> FeatureExtractor::extract_additional_features(const ChessBo
     bool opponent_in_check = false;
     ChessBoard flipped_board(flipped_fen);
     if (!flipped_board.is_game_over()) {
-        ChessBoard::Color opponent_color = (current_turn == ChessBoard::WHITE) ? ChessBoard::BLACK : ChessBoard::WHITE;
+        ChessBoard::Color opponent_color = (board.turn() == ChessBoard::WHITE) ? ChessBoard::BLACK : ChessBoard::WHITE;
         opponent_in_check = flipped_board.is_in_check(opponent_color);
     }
     
-    // Set features based on colors (always white first, then black)
-    if (current_turn == ChessBoard::WHITE) {
-        features[0] = current_in_check ? 1.0f : 0.0f;   // white in check
-        features[1] = opponent_in_check ? 1.0f : 0.0f;  // black in check
+    // Return features based on colors (always white first, then black)
+    if (board.turn() == ChessBoard::WHITE) {
+        return {current_in_check ? 1.0f : 0.0f, opponent_in_check ? 1.0f : 0.0f};
     } else {
-        features[0] = opponent_in_check ? 1.0f : 0.0f;  // white in check
-        features[1] = current_in_check ? 1.0f : 0.0f;   // black in check
+        return {opponent_in_check ? 1.0f : 0.0f, current_in_check ? 1.0f : 0.0f};
     }
-    
-    return features;
 }
 
 std::array<float, 2> FeatureExtractor::extract_mobility_features(const ChessBoard& board) {
