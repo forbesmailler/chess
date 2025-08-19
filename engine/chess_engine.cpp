@@ -172,11 +172,11 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, floa
                 
                 // If reduced search fails high, re-search with full depth
                 if (score > alpha) {
-                    score = -negamax(temp_board, depth - 1, -beta, -alpha, is_pv && best_move.uci_string.empty());
+                    score = -negamax(temp_board, depth - 1, -beta, -alpha, is_pv && moves_searched == 1);
                 }
             } else {
                 // Normal search
-                score = -negamax(temp_board, depth - 1, -beta, -alpha, is_pv && best_move.uci_string.empty());
+                score = -negamax(temp_board, depth - 1, -beta, -alpha, is_pv && moves_searched == 1);
             }
             
             temp_board.unmake_move(move);
@@ -240,7 +240,11 @@ float ChessEngine::quiescence_search(const ChessBoard& board, float alpha, float
     
     // Use existing move ordering system for better tactical move ordering
     ChessBoard::Move dummy_tt_move; // No hash move in quiescence
-    auto ordered_tactical_moves = order_moves(board, tactical_moves, dummy_tt_move);
+    std::vector<ChessBoard::Move> ordered_tactical_moves;
+    
+    if (!tactical_moves.empty()) {
+        ordered_tactical_moves = order_moves(board, tactical_moves, dummy_tt_move);
+    }
     
     ChessBoard temp_board = board;
     for (const auto& move : ordered_tactical_moves) {
