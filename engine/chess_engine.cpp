@@ -5,8 +5,8 @@
 #include <cmath>
 #include <sstream>
 
-ChessEngine::ChessEngine(std::shared_ptr<LogisticModel> model, int search_depth) 
-    : model(model), search_depth(search_depth) {
+ChessEngine::ChessEngine(std::shared_ptr<LogisticModel> model, int max_time_ms) 
+    : model(model), max_search_time_ms(max_time_ms) {
     eval_cache.reserve(CACHE_SIZE / 2);
     transposition_table.reserve(CACHE_SIZE / 2);
 }
@@ -68,71 +68,37 @@ std::vector<ChessBoard::Move> ChessEngine::order_moves(const ChessBoard& board,
     return ordered_moves;
 }
 
-ChessBoard::Move ChessEngine::get_best_move(const ChessBoard& board) {
+SearchResult ChessEngine::get_best_move(const ChessBoard& board, const TimeControl& time_control) {
     auto legal_moves = board.get_legal_moves();
-    if (legal_moves.empty()) return ChessBoard::Move{};
-    if (legal_moves.size() == 1) return legal_moves[0];
-    
-    // Extend search depth in endgame (when either player has <8 pieces)
-    int actual_search_depth = search_depth;
-    
-    // Count pieces by color using FEN parsing
-    std::string fen = board.to_fen();
-    std::istringstream iss(fen);
-    std::string board_str;
-    iss >> board_str;
-    
-    int white_pieces = 0;
-    int black_pieces = 0;
-    for (char c : board_str) {
-        if (c != '/' && !std::isdigit(c)) {
-            if (std::isupper(c)) white_pieces++;
-            else if (std::islower(c)) black_pieces++;
+    if (legal_moves.empty()) {
+        // No legal moves - check if it's checkmate or stalemate
+        if (board.is_in_check(board.turn())) {
+            return {ChessBoard::Move{}, -MATE_VALUE, 0, std::chrono::milliseconds(0), 0};
+        } else {
+            return {ChessBoard::Move{}, 0.0f, 0, std::chrono::milliseconds(0), 0}; // Stalemate
         }
     }
-    
-    if (white_pieces < 8 || black_pieces < 8) {
-        actual_search_depth += 1;
+    if (legal_moves.size() == 1) {
+        return {legal_moves[0], 0.0f, 1, std::chrono::milliseconds(50), 1};
     }
     
-    std::string pos_key = get_position_key(board);
-    ChessBoard::Move tt_move;
-    auto tt_it = transposition_table.find(pos_key);
-    if (tt_it != transposition_table.end() && tt_it->second.depth >= actual_search_depth) {
-        tt_move = tt_it->second.best_move;
-    }
+    int search_time_ms = calculate_search_time(time_control);
     
-    auto ordered_moves = order_moves(board, legal_moves, tt_move);
-    ChessBoard::Move best_move = ordered_moves[0];
-    float best_score = -std::numeric_limits<float>::infinity();
-    float alpha = -std::numeric_limits<float>::infinity();
-    float beta = std::numeric_limits<float>::infinity();
-    
-    ChessBoard temp_board = board;
-    for (const auto& move : ordered_moves) {
-        if (temp_board.make_move(move)) {
-            float score = -negamax(temp_board, actual_search_depth - 1, -beta, -alpha, true);
-            temp_board.unmake_move(move);
-            
-            if (score > best_score) {
-                best_score = score;
-                best_move = move;
-            }
-            
-            alpha = std::max(alpha, score);
-            if (alpha >= beta) break;
-        }
-    }
-    
-    if (transposition_table.size() < CACHE_SIZE / 2) {
-        transposition_table[pos_key] = {best_score, actual_search_depth, TranspositionEntry::EXACT, best_move};
-    }
-    
-    return best_move;
+    return iterative_deepening_search(board, search_time_ms);
 }
 
 float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, float beta, bool is_pv) {
-    if (board.is_checkmate()) return -MATE_VALUE + (search_depth - depth);
+    // Check if search should stop
+    if (should_stop.load()) return 0.0f;
+    
+    // Increment node counter
+    nodes_searched.fetch_add(1);
+    
+    // Periodically check if we should stop (every 1000 nodes to avoid overhead)
+    if (nodes_searched.load() % 1000 == 0 && should_stop.load()) {
+        return 0.0f;
+    }
+    
     if (board.is_stalemate() || board.is_draw()) return 0.0f;
     
     std::string pos_key = get_position_key(board);
@@ -163,11 +129,8 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, floa
     
     auto legal_moves = board.get_legal_moves();
     if (legal_moves.empty()) {
-        return board.is_in_check(board.turn()) ? -MATE_VALUE + (search_depth - depth) : 0.0f;
+        return board.is_in_check(board.turn()) ? -MATE_VALUE : 0.0f;
     }
-    
-    // Null move pruning disabled for now (proper implementation needed)
-    // The previous implementation was buggy - it didn't actually make a null move
     
     // Check extension - but only at low depths
     if (board.is_in_check(board.turn()) && depth == 0) {
@@ -287,4 +250,128 @@ void ChessEngine::clear_cache_if_needed() {
         std::advance(it, transposition_table.size() / 2);  // Remove half  
         transposition_table.erase(transposition_table.begin(), it);
     }
+}
+
+int ChessEngine::calculate_search_time(const TimeControl& time_control) {
+    if (time_control.time_left_ms <= 0) {
+        return max_search_time_ms; // Default minimum time if no time control
+    }
+    
+    // Simple time management: increment + (remaining time / 40), capped at max_search_time_ms
+    int base_time = time_control.time_left_ms;
+    int increment = time_control.increment_ms;
+    
+    int allocated_time = increment + (base_time / 40);
+    
+    // Cap at configured max search time
+    allocated_time = std::min(allocated_time, max_search_time_ms);
+    
+    return allocated_time;
+}
+
+SearchResult ChessEngine::iterative_deepening_search(const ChessBoard& board, int max_time_ms) {
+    auto start_time = std::chrono::steady_clock::now();
+    should_stop.store(false);
+    nodes_searched.store(0);
+    
+    auto legal_moves = board.get_legal_moves();
+    if (legal_moves.empty()) {
+        // No legal moves - check if it's checkmate or stalemate
+        if (board.is_in_check(board.turn())) {
+            return {ChessBoard::Move{}, -MATE_VALUE, 0, std::chrono::milliseconds(0), 0};
+        } else {
+            return {ChessBoard::Move{}, 0.0f, 0, std::chrono::milliseconds(0), 0}; // Stalemate
+        }
+    }
+    
+    SearchResult best_result;
+    best_result.best_move = legal_moves[0]; // Fallback move
+    best_result.score = -std::numeric_limits<float>::infinity();
+    best_result.depth_reached = 0;
+    best_result.nodes_searched = 0;
+    
+    // Iterative deepening loop - continue until time runs out
+    for (int depth = 1; depth <= 50; ++depth) { // Cap at reasonable depth of 50
+        auto iteration_start = std::chrono::steady_clock::now();
+        
+        // Check if we have enough time for this depth
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(iteration_start - start_time);
+        if (elapsed.count() >= max_time_ms) {
+            break; // Time is up
+        }
+
+        std::string pos_key = get_position_key(board);
+        ChessBoard::Move tt_move;
+        auto tt_it = transposition_table.find(pos_key);
+        if (tt_it != transposition_table.end()) {
+            tt_move = tt_it->second.best_move;
+        }
+        
+        auto ordered_moves = order_moves(board, legal_moves, tt_move);
+        ChessBoard::Move current_best_move = ordered_moves[0];
+        float current_best_score = -std::numeric_limits<float>::infinity();
+        float alpha = -std::numeric_limits<float>::infinity();
+        float beta = std::numeric_limits<float>::infinity();
+        
+        ChessBoard temp_board = board;
+        bool completed_depth = true;
+        
+        for (const auto& move : ordered_moves) {
+            // Check time before each move
+            auto now = std::chrono::steady_clock::now();
+            auto total_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time);
+            if (total_elapsed.count() > max_time_ms || should_stop.load()) {
+                completed_depth = false;
+                break;
+            }
+            
+            if (temp_board.make_move(move)) {
+                float score = -negamax(temp_board, depth - 1, -beta, -alpha, true);
+                temp_board.unmake_move(move);
+                
+                // Check if search was stopped
+                if (should_stop.load()) {
+                    completed_depth = false;
+                    break;
+                }
+                
+                if (score > current_best_score) {
+                    current_best_score = score;
+                    current_best_move = move;
+                }
+                
+                alpha = std::max(alpha, score);
+                if (alpha >= beta) break; // Alpha-beta cutoff
+            }
+        }
+        
+        // Only update result if we completed this depth
+        if (completed_depth && !should_stop.load()) {
+            best_result.best_move = current_best_move;
+            best_result.score = current_best_score;
+            best_result.depth_reached = depth;
+            
+            // Update transposition table
+            if (transposition_table.size() < CACHE_SIZE / 2) {
+                transposition_table[pos_key] = {current_best_score, depth, TranspositionEntry::EXACT, current_best_move};
+            }
+        } else {
+            // Didn't complete this depth, stop searching
+            break;
+        }
+        
+        if (std::abs(current_best_score) == MATE_VALUE) {
+            break;
+        }
+        
+        // Time management: if this depth took a long time, probably won't have time for next depth
+        auto iteration_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - iteration_start);
+        auto total_time_used = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time);
+    }
+    
+    auto end_time = std::chrono::steady_clock::now();
+    best_result.time_used = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+    best_result.nodes_searched = nodes_searched.load();
+    
+    return best_result;
 }

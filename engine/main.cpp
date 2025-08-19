@@ -52,7 +52,7 @@ struct GameState {
 
 class LichessBot {
 public:
-    LichessBot(const std::string& token, const std::string& model_path, int depth = 4)
+    LichessBot(const std::string& token, const std::string& model_path, int max_time_ms = 1000)
         : client(token), model_path(model_path), heartbeat_active(true) {
         
         // Setup signal handlers
@@ -64,14 +64,14 @@ public:
             Utils::log_warning("Failed to load model from " + model_path + ", using dummy model");
         }
         
-        engine = std::make_unique<ChessEngine>(model, depth);
+        engine = std::make_unique<ChessEngine>(model, max_time_ms);
         
         if (!get_account_info_with_retry()) {
             throw std::runtime_error("Failed to get account information after retries");
         }
         
         Utils::log_info("Bot started as user: " + account_info.username + " (" + account_info.id + ")");
-        Utils::log_info("Search depth: " + std::to_string(depth));
+        Utils::log_info("Max search time: " + std::to_string(max_time_ms) + "ms");
         
         if (account_info.is_bot) {
             Utils::log_info("Account is properly configured as a bot");
@@ -89,7 +89,7 @@ public:
     }
     
     void start() {
-        Utils::log_info("Starting bot with enhanced error handling and keep-alive features...");
+        Utils::log_info("Starting bot with error handling and keep-alive features...");
         
         // Start heartbeat monitor
         start_heartbeat_monitor();
@@ -251,7 +251,7 @@ private:
                 
                 // Create a separate engine instance for this game
                 try {
-                    game_state->engine = std::make_unique<ChessEngine>(model, engine->get_depth());
+                    game_state->engine = std::make_unique<ChessEngine>(model, engine->get_max_time());
                     game_state->last_move_time = std::chrono::steady_clock::now();
                     game_state->is_active.store(true);
                     
@@ -366,9 +366,10 @@ private:
             Utils::log_info("Game " + game_id + " - Initial eval after ply " + std::to_string(game_state->ply_count) + 
                            " (white-persp): " + std::to_string(eval));
             
-            // Make initial move if it's our turn
+            // Make initial move if it's our turn with time control
             if (is_our_turn(game_state)) {
-                play_best_move_safely(game_id, game_state);
+                TimeControl time_control = create_time_control(event, game_state->our_white);
+                play_best_move_safely(game_id, game_state, time_control);
             }
             
         } else if (event.type == "gameState") {
@@ -389,9 +390,10 @@ private:
             Utils::log_info("Game " + game_id + " - Eval after ply " + std::to_string(game_state->ply_count) + 
                            " (white-persp): " + std::to_string(eval));
             
-            // Make our move if it's our turn
+            // Make our move if it's our turn with updated time control
             if (is_our_turn(game_state)) {
-                play_best_move_safely(game_id, game_state);
+                TimeControl time_control = create_time_control(event, game_state->our_white);
+                play_best_move_safely(game_id, game_state, time_control);
             }
         }
     }
@@ -420,6 +422,51 @@ private:
         }
     }
     
+    TimeControl create_time_control(const LichessClient::GameEvent& event, bool our_white) {
+        int our_time = our_white ? event.wtime : event.btime;
+        int our_increment = our_white ? event.winc : event.binc;
+        
+        Utils::log_info("Time control: " + std::to_string(our_time) + "ms + " + std::to_string(our_increment) + "ms increment");
+        
+        return TimeControl(our_time, our_increment, 0); // moves_to_go = 0 means no time control limit
+    }
+    
+    bool play_best_move_safely(const std::string& game_id, std::shared_ptr<GameState> game_state, const TimeControl& time_control) {
+        try {
+            Utils::log_info("Game " + game_id + ": Thinking with " + std::to_string(time_control.time_left_ms) + 
+                           "ms left, " + std::to_string(time_control.increment_ms) + "ms increment");
+            
+            auto search_result = game_state->engine->get_best_move(game_state->board, time_control);
+            
+            if (search_result.best_move.uci_string.empty()) {
+                Utils::log_error("Game " + game_id + ": No valid move found!");
+                return false;
+            }
+            
+            Utils::log_info("Game " + game_id + ": Found move " + search_result.best_move.uci() + 
+                           " (depth: " + std::to_string(search_result.depth_reached) + 
+                           ", score: " + std::to_string(search_result.score) +
+                           ", time: " + std::to_string(search_result.time_used.count()) + "ms" +
+                           ", nodes: " + std::to_string(search_result.nodes_searched) + ")");
+            
+            // Try to make the move with retry logic
+            if (make_move_with_retry(game_id, search_result.best_move.uci())) {
+                Utils::log_info("Game " + game_id + ": Move sent successfully: " + search_result.best_move.uci());
+                game_state->board.make_move(search_result.best_move);
+                game_state->ply_count++;
+                game_state->last_move_time = std::chrono::steady_clock::now();
+                return true;
+            } else {
+                Utils::log_error("Game " + game_id + ": Failed to send move after retries: " + search_result.best_move.uci());
+                return false;
+            }
+            
+        } catch (const std::exception& e) {
+            Utils::log_error("Game " + game_id + ": Exception finding/playing move: " + std::string(e.what()));
+            return false;
+        }
+    }
+    
     bool is_our_turn(std::shared_ptr<GameState> game_state) {
         return (game_state->board.turn() == ChessBoard::WHITE && game_state->our_white) || 
                (game_state->board.turn() == ChessBoard::BLACK && !game_state->our_white);
@@ -431,32 +478,6 @@ private:
         } catch (const std::exception& e) {
             Utils::log_warning("Error evaluating position: " + std::string(e.what()));
             return 0.0f; // Return neutral evaluation on error
-        }
-    }
-    
-    bool play_best_move_safely(const std::string& game_id, std::shared_ptr<GameState> game_state) {
-        try {
-            auto move = game_state->engine->get_best_move(game_state->board);
-            if (move.uci_string.empty()) {
-                Utils::log_error("Game " + game_id + ": No valid move found!");
-                return false;
-            }
-            
-            // Try to make the move with retry logic
-            if (make_move_with_retry(game_id, move.uci())) {
-                Utils::log_info("Game " + game_id + ": Move sent successfully: " + move.uci());
-                game_state->board.make_move(move);
-                game_state->ply_count++;
-                game_state->last_move_time = std::chrono::steady_clock::now();
-                return true;
-            } else {
-                Utils::log_error("Game " + game_id + ": Failed to send move after retries: " + move.uci());
-                return false;
-            }
-            
-        } catch (const std::exception& e) {
-            Utils::log_error("Game " + game_id + ": Exception finding/playing move: " + std::string(e.what()));
-            return false;
         }
     }
     
@@ -574,49 +595,49 @@ int main(int argc, char* argv[]) {
         std::cout << "All tests passed!" << std::endl;
         std::cout << std::endl;
         std::cout << "=== To run the actual bot ===" << std::endl;
-        std::cout << "Usage: " << argv[0] << " <lichess_token> [depth]" << std::endl;
-        std::cout << "Example: " << argv[0] << " lip_abc123... 5" << std::endl;
+        std::cout << "Usage: " << argv[0] << " <lichess_token> [max_time_ms]" << std::endl;
+        std::cout << "Example: " << argv[0] << " lip_abc123... 1000" << std::endl;
         std::cout << std::endl;
         std::cout << "You'll also need:" << std::endl;
         std::cout << "1. A valid Lichess API token with bot permissions" << std::endl;
         std::cout << "2. model_coefficients.txt file in the cpp/train/ directory (run export_model.py to create it)" << std::endl;
         std::cout << "3. Network connectivity for Lichess API calls" << std::endl;
         std::cout << std::endl;
-        std::cout << "Optional depth parameter (default: 5, recommended: 3-7)" << std::endl;
+        std::cout << "Optional max_time_ms parameter (default: 1000ms, recommended: 500-3000ms)" << std::endl;
         return 0;
     }
     
     if (argc < 2 || argc > 3) {
-        std::cerr << "Usage: " << argv[0] << " <lichess_token> [depth]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <lichess_token> [max_time_ms]" << std::endl;
         std::cerr << "Run without arguments to see test output" << std::endl;
-        std::cerr << "Depth parameter is optional (default: 5)" << std::endl;
+        std::cerr << "Max time parameter is optional (default: 1000ms)" << std::endl;
         return 1;
     }
     
     std::string token = argv[1];
-    int depth = 5; // Increased default depth for stronger play
+    int max_time_ms = 1000; // Default to 1 second
     
     if (argc == 3) {
         try {
-            depth = std::stoi(argv[2]);
-            if (depth < 1 || depth > 10) {
-                std::cerr << "Warning: Depth should be between 1-10. Using depth " << depth << std::endl;
+            max_time_ms = std::stoi(argv[2]);
+            if (max_time_ms < 50 || max_time_ms > 30000) {
+                std::cerr << "Warning: Max time should be between 50-30000ms. Using max_time " << max_time_ms << "ms" << std::endl;
             }
         } catch (const std::exception& e) {
-            std::cerr << "Invalid depth parameter, using default depth 5" << std::endl;
-            depth = 5;
+            std::cerr << "Invalid max_time parameter, using default 1000ms" << std::endl;
+            max_time_ms = 1000;
         }
     }
     
     std::string model_path = "../../train/model_coefficients.txt"; // Relative to build/Release directory
     
-    std::cout << "=== Starting Enhanced Lichess Bot ===" << std::endl;
+    std::cout << "=== Starting Lichess Bot ===" << std::endl;
     std::cout << "Token: " << token.substr(0, 8) << "..." << std::endl;
     std::cout << "Model path: " << model_path << std::endl;
-    std::cout << "Search depth: " << depth << std::endl;
+    std::cout << "Max search time: " << max_time_ms << "ms" << std::endl;
     std::cout << "Process ID: " << getpid() << std::endl;
     std::cout << std::endl;
-    std::cout << "Enhanced features:" << std::endl;
+    std::cout << "Features:" << std::endl;
     std::cout << "- Automatic retry on errors (max " << MAX_RETRIES << " attempts)" << std::endl;
     std::cout << "- Heartbeat monitoring every " << HEARTBEAT_INTERVAL_MS / 1000 << " seconds" << std::endl;
     std::cout << "- Connection timeout: " << CONNECTION_TIMEOUT_MS / 1000 << " seconds" << std::endl;
@@ -627,7 +648,7 @@ int main(int argc, char* argv[]) {
     
     int exit_code = 0;
     try {
-        LichessBot bot(token, model_path, depth);
+        LichessBot bot(token, model_path, max_time_ms);
         Utils::log_info("Bot initialized successfully, starting main loop...");
         
         bot.start();
