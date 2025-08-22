@@ -38,6 +38,9 @@ public:
     bool decline_draw(const std::string& game_id);
     bool offer_draw(const std::string& game_id);
     
+    // Connectivity test
+    bool test_connectivity();
+    
     void stream_events(std::function<void(const GameEvent&)> callback);
     void stream_game(const std::string& game_id, std::function<void(const GameEvent&)> callback);
     

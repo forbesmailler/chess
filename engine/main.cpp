@@ -147,14 +147,20 @@ private:
                 if (std::chrono::duration_cast<std::chrono::milliseconds>(time_since_activity).count() > CONNECTION_TIMEOUT_MS) {
                     Utils::log_warning("No activity for " + std::to_string(std::chrono::duration_cast<std::chrono::seconds>(time_since_activity).count()) + " seconds");
                     
-                    // Test connection
-                    LichessClient::AccountInfo test_info;
-                    if (client.get_account_info(test_info)) {
-                        Utils::log_info("Connection test passed - updating activity timestamp");
-                        last_activity.store(now);
-                        consecutive_errors.store(0);
+                    // Test basic connectivity first
+                    if (client.test_connectivity()) {
+                        // If basic connectivity is OK, test Lichess account info
+                        LichessClient::AccountInfo test_info;
+                        if (client.get_account_info(test_info)) {
+                            Utils::log_info("Connection test passed - updating activity timestamp");
+                            last_activity.store(now);
+                            consecutive_errors.store(0);
+                        } else {
+                            Utils::log_error("Lichess account test failed, but basic connectivity OK");
+                            consecutive_errors.fetch_add(1);
+                        }
                     } else {
-                        Utils::log_error("Connection test failed");
+                        Utils::log_error("Basic network connectivity failed");
                         consecutive_errors.fetch_add(1);
                     }
                 }
@@ -202,6 +208,13 @@ private:
                 int delay = RETRY_DELAY_MS * (restart_attempts + 1); // Exponential backoff
                 Utils::log_info("Restarting in " + std::to_string(delay / 1000) + " seconds...");
                 std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+                
+                // Test connectivity before retrying
+                Utils::log_info("Testing connectivity before retry...");
+                if (!client.test_connectivity()) {
+                    Utils::log_error("Connectivity test failed, waiting longer...");
+                    std::this_thread::sleep_for(std::chrono::milliseconds(delay)); // Wait extra time
+                }
             }
         }
         
