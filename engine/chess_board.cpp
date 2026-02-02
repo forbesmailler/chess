@@ -124,7 +124,7 @@ ChessBoard::PieceType ChessBoard::piece_type_at(int square) const {
     if (piece == chess::Piece::NONE) return NONE;
 
     chess::PieceType pt = piece.type();
-    static const PieceType piece_map[] = {NONE, PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING};
+    static const PieceType piece_map[] = {PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING, NONE};
     return piece_map[static_cast<int>(pt)];
 }
 

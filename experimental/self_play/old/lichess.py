@@ -115,7 +115,7 @@ def handle_game(game_id: str):
         raw_b = first.get("black")
 
     white_id = _extract_player_id(raw_w)
-    black_id = _extract_player_id(raw_b)
+    _extract_player_id(raw_b)
     our_white = white_id == MY_ID
 
     logging.info(f"Game {game_id}: we are {'White' if our_white else 'Black'}")

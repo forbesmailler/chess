@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
 project(lichess_bot)
 
+option(BUILD_TESTS "Build unit tests" ON)
+
 # CMake 4.x compatibility - handle version detection
 if(CMAKE_VERSION VERSION_GREATER_EQUAL "4.0")
     cmake_policy(SET CMP0000 NEW)
@@ -90,7 +92,18 @@ FetchContent_Declare(
 )
 
 # Set additional options that might help with CMake 4.x
-set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTING ${BUILD_TESTS} CACHE BOOL "" FORCE)
+
+# Google Test for unit testing
+if(BUILD_TESTS)
+    FetchContent_Declare(
+        googletest
+        URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+    )
+    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googletest)
+    enable_testing()
+endif()
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 
 # Populate the chess library (header-only)
@@ -120,21 +133,27 @@ else()
     message(STATUS "Chess library already populated")
 endif()
 
-# Create the main executable
-add_executable(lichess_bot
-    main.cpp
+# Create library for engine code (used by both main executable and tests)
+add_library(chess_engine_lib STATIC
     chess_board.cpp
     chess_engine.cpp
     mcts_engine.cpp
     feature_extractor.cpp
     logistic_model.cpp
-    lichess_client.cpp
     utils.cpp
 )
 
+target_link_libraries(chess_engine_lib PUBLIC chess-library)
+
+# Create the main executable
+add_executable(lichess_bot
+    main.cpp
+    lichess_client.cpp
+)
+
 # Link libraries to main executable
-target_link_libraries(lichess_bot 
-    chess-library
+target_link_libraries(lichess_bot
+    chess_engine_lib
 )
 
 # Handle nlohmann_json linking
@@ -168,4 +187,35 @@ if(WIN32)
         RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/Debug
         RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/Release
     )
+endif()
+
+# Unit tests
+if(BUILD_TESTS)
+    add_executable(chess_tests
+        tests/test_chess_board.cpp
+        tests/test_feature_extractor.cpp
+        tests/test_chess_engine.cpp
+    )
+
+    target_link_libraries(chess_tests
+        chess_engine_lib
+        GTest::gtest_main
+    )
+
+    # Handle nlohmann_json linking for tests
+    if(nlohmann_json_FOUND)
+        target_link_libraries(chess_tests nlohmann_json::nlohmann_json)
+    else()
+        target_link_libraries(chess_tests nlohmann_json)
+    endif()
+
+    include(GoogleTest)
+    gtest_discover_tests(chess_tests)
+
+    if(WIN32)
+        set_target_properties(chess_tests PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/Debug
+            RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/Release
+        )
+    endif()
 endif()

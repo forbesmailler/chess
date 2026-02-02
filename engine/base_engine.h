@@ -10,6 +10,7 @@
 struct TimeControl {
     int time_left_ms;
     int increment_ms;
+    int moves_to_go;
 };
 
 struct SearchResult {

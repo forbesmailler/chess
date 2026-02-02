@@ -17,8 +17,8 @@ mkdir build && cd build
 cmake .. -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
 cmake --build . --config Release
 
-# Run tests
-.\Release\lichess_bot.exe
+# Run unit tests
+ctest -C Release --output-on-failure
 
 # Run bot
 .\Release\lichess_bot.exe <lichess_token> [max_time_ms] [--engine=negamax|mcts]
@@ -28,8 +28,8 @@ cmake --build . --config Release
 # Linux/macOS
 cd engine && mkdir build && cd build
 cmake .. && cmake --build . --config Release
-./lichess_bot                                    # test mode
-./lichess_bot <token> 1000 --engine=mcts         # bot mode
+ctest --output-on-failure                        # run unit tests
+./lichess_bot <token> 1000 --engine=mcts         # run bot
 ```
 
 ### Python Training
@@ -62,7 +62,7 @@ invoke format-cpp         # format C++ with clang-format
 
 invoke test               # run all tests
 invoke test-py            # run pytest
-invoke test-cpp           # run C++ engine tests
+invoke test-cpp           # run C++ unit tests (gtest/ctest)
 
 invoke build-cpp          # build C++ engine
 ```

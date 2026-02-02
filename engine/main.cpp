@@ -499,8 +499,7 @@ class LichessBot {
         Utils::log_info("Time control: " + std::to_string(our_time) + "ms + " +
                         std::to_string(our_increment) + "ms increment");
 
-        return TimeControl(our_time, our_increment,
-                           0);  // moves_to_go = 0 means no time control limit
+        return TimeControl{our_time, our_increment, 0};
     }
 
     bool play_best_move_safely(const std::string& game_id, std::shared_ptr<GameState> game_state,
@@ -518,7 +517,7 @@ class LichessBot {
             }
 
             Utils::log_info("Game " + game_id + ": Found move " + search_result.best_move.uci() +
-                            " (depth: " + std::to_string(search_result.depth_reached) +
+                            " (depth: " + std::to_string(search_result.depth) +
                             ", score: " + std::to_string(search_result.score) +
                             ", time: " + std::to_string(search_result.time_used.count()) + "ms" +
                             ", nodes: " + std::to_string(search_result.nodes_searched) + ")");

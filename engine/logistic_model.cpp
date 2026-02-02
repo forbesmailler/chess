@@ -6,7 +6,10 @@
 #include <iostream>
 #include <sstream>
 
-LogisticModel::LogisticModel() : n_classes(3), n_features(1542) {}
+LogisticModel::LogisticModel() : n_classes(3), n_features(1542) {
+    weights.assign(n_features * n_classes, 0.0f);
+    intercept.assign(n_classes, 0.0f);
+}
 
 bool LogisticModel::load_model(const std::string& model_path) {
     std::string txt_path = model_path;

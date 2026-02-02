@@ -1,5 +1,3 @@
-import sys
-
 from invoke import task
 
 CPP_FILES = "engine/*.cpp engine/*.h"
@@ -28,8 +26,9 @@ def format_cpp(c):
 @task
 def test(c):
     """Run all tests (Python + C++)."""
-    test_py(c)
-    test_cpp(c)
+    c.run("pytest", warn=True)
+    with c.cd("engine/build"):
+        c.run("ctest -C Release --output-on-failure")
 
 
 @task
@@ -40,11 +39,9 @@ def test_py(c):
 
 @task
 def test_cpp(c):
-    """Run C++ engine tests."""
-    if sys.platform == "win32":
-        c.run("engine\\build\\Release\\lichess_bot.exe")
-    else:
-        c.run("engine/build/lichess_bot")
+    """Run C++ unit tests with ctest."""
+    with c.cd("engine/build"):
+        c.run("ctest -C Release --output-on-failure")
 
 
 @task
