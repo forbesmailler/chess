@@ -1,24 +1,19 @@
 #include "chess_board.h"
+
 #include <sstream>
 
 ChessBoard::ChessBoard() : board() {}
 
-ChessBoard::ChessBoard(const std::string& fen) {
-    load_fen(fen);
-}
+ChessBoard::ChessBoard(const std::string& fen) { load_fen(fen); }
 
-void ChessBoard::load_fen(const std::string& fen) {
-    board = chess::Board(fen);
-}
+void ChessBoard::load_fen(const std::string& fen) { board = chess::Board(fen); }
 
-std::string ChessBoard::to_fen() const {
-    return board.getFen();
-}
+std::string ChessBoard::to_fen() const { return board.getFen(); }
 
 std::vector<ChessBoard::Move> ChessBoard::get_legal_moves() const {
     chess::Movelist moves;
     chess::movegen::legalmoves(moves, board);
-    
+
     std::vector<Move> result;
     for (const auto& move : moves) {
         Move m;
@@ -26,7 +21,7 @@ std::vector<ChessBoard::Move> ChessBoard::get_legal_moves() const {
         m.internal_move = move;
         result.push_back(m);
     }
-    
+
     return result;
 }
 
@@ -34,7 +29,7 @@ bool ChessBoard::make_move(const Move& move) {
     try {
         chess::Move chess_move = chess::uci::uciToMove(board, move.uci_string);
         if (chess_move == chess::Move::NO_MOVE) return false;
-        
+
         move_history.push_back(chess_move);
         board.makeMove(chess_move);
         return true;
@@ -72,7 +67,8 @@ bool ChessBoard::is_game_over() const {
 
 bool ChessBoard::is_in_check(Color color) const {
     return ((color == WHITE && board.sideToMove() == chess::Color::WHITE) ||
-            (color == BLACK && board.sideToMove() == chess::Color::BLACK)) && board.inCheck();
+            (color == BLACK && board.sideToMove() == chess::Color::BLACK)) &&
+           board.inCheck();
 }
 
 ChessBoard::Color ChessBoard::turn() const {
@@ -85,12 +81,12 @@ ChessBoard::CastlingRights ChessBoard::get_castling_rights() const {
     std::istringstream iss(fen);
     std::string board_str, turn_str, castling_str;
     iss >> board_str >> turn_str >> castling_str;
-    
+
     rights.white_kingside = castling_str.find('K') != std::string::npos;
     rights.white_queenside = castling_str.find('Q') != std::string::npos;
     rights.black_kingside = castling_str.find('k') != std::string::npos;
     rights.black_queenside = castling_str.find('q') != std::string::npos;
-    
+
     return rights;
 }
 
@@ -99,12 +95,12 @@ int ChessBoard::piece_count() const {
     std::istringstream iss(fen);
     std::string board_str;
     iss >> board_str;
-    
+
     int count = 0;
     for (char c : board_str) {
         if (c != '/' && !std::isdigit(c)) count++;
     }
-    
+
     return count;
 }
 
@@ -122,11 +118,11 @@ std::string ChessBoard::square_to_string(int square) {
 
 ChessBoard::PieceType ChessBoard::piece_type_at(int square) const {
     if (square < 0 || square > 63) return NONE;
-    
+
     chess::Square sq = static_cast<chess::Square>(square);
     chess::Piece piece = board.at(sq);
     if (piece == chess::Piece::NONE) return NONE;
-    
+
     chess::PieceType pt = piece.type();
     static const PieceType piece_map[] = {NONE, PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING};
     return piece_map[static_cast<int>(pt)];
@@ -136,27 +132,19 @@ ChessBoard::PieceType ChessBoard::piece_type_at(const std::string& square_str) c
     return piece_type_at(square_from_string(square_str));
 }
 
-bool ChessBoard::Move::is_capture() const {
-    return false;
-}
+bool ChessBoard::Move::is_capture() const { return false; }
 
 bool ChessBoard::Move::is_promotion() const {
     return internal_move.typeOf() == chess::Move::PROMOTION;
 }
 
-int ChessBoard::Move::from() const {
-    return internal_move.from().index();
-}
+int ChessBoard::Move::from() const { return internal_move.from().index(); }
 
-int ChessBoard::Move::to() const {
-    return internal_move.to().index();
-}
+int ChessBoard::Move::to() const { return internal_move.to().index(); }
 
 bool ChessBoard::is_capture_move(const Move& move) const {
-    return move.internal_move.typeOf() == chess::Move::ENPASSANT || 
+    return move.internal_move.typeOf() == chess::Move::ENPASSANT ||
            board.at(move.internal_move.to()) != chess::Piece::NONE;
 }
 
-ChessBoard::PieceType ChessBoard::piece_at(int square) const {
-    return piece_type_at(square);
-}
+ChessBoard::PieceType ChessBoard::piece_at(int square) const { return piece_type_at(square); }

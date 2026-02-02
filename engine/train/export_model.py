@@ -34,9 +34,7 @@ def export_logistic_model(joblib_path, output_path):
                 f.write("# Logistic Regression Model Export\n")
                 f.write(f"# Classes: {len(intercept)}\n")
                 f.write(f"# Features: {coef.shape[1]}\n")
-                f.write(
-                    "# Format: intercept_values, then coefficients (row-major)\n\n"
-                )
+                f.write("# Format: intercept_values, then coefficients (row-major)\n\n")
 
                 # Write intercepts
                 f.write("INTERCEPT\n")

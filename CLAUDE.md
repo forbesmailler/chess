@@ -51,13 +51,20 @@ cd experimental
 python lichess.py --token <lichess_token>
 ```
 
-### Python Development
+### Development Tasks
 
 ```bash
 pip install -e ".[dev]"   # install with dev dependencies
-invoke format             # format code with ruff
-invoke lint               # check without modifying
-invoke test               # run pytest
+
+invoke format             # format all (Python + C++)
+invoke format-py          # format Python with ruff
+invoke format-cpp         # format C++ with clang-format
+
+invoke test               # run all tests
+invoke test-py            # run pytest
+invoke test-cpp           # run C++ engine tests
+
+invoke build-cpp          # build C++ engine
 ```
 
 ## Architecture
