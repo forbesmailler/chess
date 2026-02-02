@@ -125,6 +125,7 @@ add_executable(lichess_bot
     main.cpp
     chess_board.cpp
     chess_engine.cpp
+    mcts_engine.cpp
     feature_extractor.cpp
     logistic_model.cpp
     lichess_client.cpp

@@ -6,7 +6,7 @@
 #include <sstream>
 
 ChessEngine::ChessEngine(std::shared_ptr<LogisticModel> model, int max_time_ms) 
-    : model(model), max_search_time_ms(max_time_ms) {
+    : BaseEngine(model, max_time_ms) {
     eval_cache.reserve(CACHE_SIZE / 2);
     transposition_table.reserve(CACHE_SIZE / 2);
 }

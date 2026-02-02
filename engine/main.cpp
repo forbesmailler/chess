@@ -1,5 +1,7 @@
 #include "chess_board.h"
+#include "base_engine.h"
 #include "chess_engine.h"
+#include "mcts_engine.h"
 #include "feature_extractor.h"
 #include "lichess_client.h"
 #include "logistic_model.h"
@@ -45,15 +47,17 @@ struct GameState {
     int ply_count = 0;
     bool our_white = false;
     bool first_event = true;
-    std::unique_ptr<ChessEngine> engine;
+    std::unique_ptr<BaseEngine> engine;
     std::chrono::steady_clock::time_point last_move_time;
     std::atomic<bool> is_active{true};
 };
 
 class LichessBot {
 public:
-    LichessBot(const std::string& token, const std::string& model_path, int max_time_ms = 1000)
-        : client(token), model_path(model_path), heartbeat_active(true) {
+    enum class EngineType { NEGAMAX, MCTS };
+    
+    LichessBot(const std::string& token, const std::string& model_path, int max_time_ms = 1000, EngineType engine_type = EngineType::NEGAMAX)
+        : client(token), model_path(model_path), engine_type(engine_type), heartbeat_active(true) {
         
         // Setup signal handlers
         signal(SIGINT, signal_handler);
@@ -64,7 +68,14 @@ public:
             Utils::log_warning("Failed to load model from " + model_path + ", using dummy model");
         }
         
-        engine = std::make_unique<ChessEngine>(model, max_time_ms);
+        // Create engine based on type
+        if (engine_type == EngineType::MCTS) {
+            engine = std::make_unique<MCTSEngine>(model, max_time_ms);
+            Utils::log_info("Using MCTS engine");
+        } else {
+            engine = std::make_unique<ChessEngine>(model, max_time_ms);
+            Utils::log_info("Using Negamax engine");
+        }
         
         if (!get_account_info_with_retry()) {
             throw std::runtime_error("Failed to get account information after retries");
@@ -101,7 +112,8 @@ public:
 private:
     LichessClient client;
     std::shared_ptr<LogisticModel> model;
-    std::unique_ptr<ChessEngine> engine;
+    std::unique_ptr<BaseEngine> engine;
+    EngineType engine_type;
     LichessClient::AccountInfo account_info;
     std::string model_path;
     
@@ -264,7 +276,11 @@ private:
                 
                 // Create a separate engine instance for this game
                 try {
-                    game_state->engine = std::make_unique<ChessEngine>(model, engine->get_max_time());
+                    if (engine_type == EngineType::MCTS) {
+                        game_state->engine = std::make_unique<MCTSEngine>(model, engine->get_max_time());
+                    } else {
+                        game_state->engine = std::make_unique<ChessEngine>(model, engine->get_max_time());
+                    }
                     game_state->last_move_time = std::chrono::steady_clock::now();
                     game_state->is_active.store(true);
                     
@@ -608,8 +624,8 @@ int main(int argc, char* argv[]) {
         std::cout << "All tests passed!" << std::endl;
         std::cout << std::endl;
         std::cout << "=== To run the actual bot ===" << std::endl;
-        std::cout << "Usage: " << argv[0] << " <lichess_token> [max_time_ms]" << std::endl;
-        std::cout << "Example: " << argv[0] << " lip_abc123... 1000" << std::endl;
+        std::cout << "Usage: " << argv[0] << " <lichess_token> [max_time_ms] [--engine=negamax|mcts]" << std::endl;
+        std::cout << "Example: " << argv[0] << " lip_abc123... 1000 --engine=mcts" << std::endl;
         std::cout << std::endl;
         std::cout << "You'll also need:" << std::endl;
         std::cout << "1. A valid Lichess API token with bot permissions" << std::endl;
@@ -620,33 +636,53 @@ int main(int argc, char* argv[]) {
         return 0;
     }
     
-    if (argc < 2 || argc > 3) {
-        std::cerr << "Usage: " << argv[0] << " <lichess_token> [max_time_ms]" << std::endl;
+    if (argc < 2 || argc > 4) {
+        std::cerr << "Usage: " << argv[0] << " <lichess_token> [max_time_ms] [--engine=negamax|mcts]" << std::endl;
         std::cerr << "Run without arguments to see test output" << std::endl;
         std::cerr << "Max time parameter is optional (default: 1000ms)" << std::endl;
+        std::cerr << "Engine type is optional (default: negamax)" << std::endl;
         return 1;
     }
     
     std::string token = argv[1];
     int max_time_ms = 1000; // Default to 1 second
+    LichessBot::EngineType engine_type = LichessBot::EngineType::NEGAMAX; // Default engine
     
-    if (argc == 3) {
-        try {
-            max_time_ms = std::stoi(argv[2]);
-            if (max_time_ms < 50 || max_time_ms > 30000) {
-                std::cerr << "Warning: Max time should be between 50-30000ms. Using max_time " << max_time_ms << "ms" << std::endl;
+    // Parse optional arguments
+    for (int i = 2; i < argc; i++) {
+        std::string arg = argv[i];
+        
+        if (arg.find("--engine=") == 0) {
+            std::string engine_str = arg.substr(9); // Skip "--engine="
+            if (engine_str == "mcts") {
+                engine_type = LichessBot::EngineType::MCTS;
+            } else if (engine_str == "negamax") {
+                engine_type = LichessBot::EngineType::NEGAMAX;
+            } else {
+                std::cerr << "Unknown engine type: " << engine_str << ". Using negamax." << std::endl;
             }
-        } catch (const std::exception& e) {
-            std::cerr << "Invalid max_time parameter, using default 1000ms" << std::endl;
-            max_time_ms = 1000;
+        } else {
+            // Assume it's max_time_ms
+            try {
+                max_time_ms = std::stoi(arg);
+                if (max_time_ms < 50 || max_time_ms > 30000) {
+                    std::cerr << "Warning: Max time should be between 50-30000ms. Using max_time " << max_time_ms << "ms" << std::endl;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "Invalid max_time parameter: " << arg << ", using default 1000ms" << std::endl;
+                max_time_ms = 1000;
+            }
         }
     }
     
     std::string model_path = "../../train/model_coefficients.txt"; // Relative to build/Release directory
     
+    std::string engine_name = (engine_type == LichessBot::EngineType::MCTS) ? "MCTS" : "Negamax";
+    
     std::cout << "=== Starting Lichess Bot ===" << std::endl;
     std::cout << "Token: " << token.substr(0, 8) << "..." << std::endl;
     std::cout << "Model path: " << model_path << std::endl;
+    std::cout << "Engine: " << engine_name << std::endl;
     std::cout << "Max search time: " << max_time_ms << "ms" << std::endl;
     std::cout << "Process ID: " << getpid() << std::endl;
     std::cout << std::endl;
@@ -661,7 +697,7 @@ int main(int argc, char* argv[]) {
     
     int exit_code = 0;
     try {
-        LichessBot bot(token, model_path, max_time_ms);
+        LichessBot bot(token, model_path, max_time_ms, engine_type);
         Utils::log_info("Bot initialized successfully, starting main loop...");
         
         bot.start();
