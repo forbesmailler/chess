@@ -1,0 +1,40 @@
+[project]
+name = "chess-bot"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "chess",
+    "numpy",
+    "pandas",
+    "scikit-learn",
+    "joblib",
+    "tqdm",
+    "berserk",
+]
+
+[project.optional-dependencies]
+dev = [
+    "invoke",
+    "pytest",
+    "ruff",
+]
+train = [
+    "torch",
+]
+
+[tool.ruff]
+line-length = 88
+indent-width = 4
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
