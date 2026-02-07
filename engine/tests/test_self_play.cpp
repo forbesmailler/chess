@@ -89,7 +89,7 @@ TEST(SelfPlay, SingleGameProducesPositions) {
     config.num_games = 1;
     config.num_threads = 1;
     config.output_file = tmp_file;
-    config.search_time_ms = 10;
+    config.search_time_ms = 50;
     config.max_game_ply = 50;
     config.resign_threshold = 500;
 
@@ -118,7 +118,7 @@ TEST(SelfPlay, MultiThreadedNoCorruption) {
     config.num_games = 4;
     config.num_threads = 2;
     config.output_file = tmp_file;
-    config.search_time_ms = 10;
+    config.search_time_ms = 50;
     config.max_game_ply = 50;
     config.resign_threshold = 500;
 
