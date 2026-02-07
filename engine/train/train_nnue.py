@@ -15,7 +15,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset, random_split
 
-
 POSITION_SIZE = 42  # bytes per training position
 
 INPUT_SIZE = 768
@@ -112,7 +111,7 @@ class SelfPlayDataset(Dataset):
 
     def __getitem__(self, idx):
         offset = idx * POSITION_SIZE
-        raw = self.data[offset:offset + POSITION_SIZE]
+        raw = self.data[offset : offset + POSITION_SIZE]
 
         piece_placement = raw[0:32]
         side_to_move = raw[32]
@@ -131,9 +130,7 @@ class SelfPlayDataset(Dataset):
         p_win_eval = 1.0 / (1.0 + np.exp(-eval_scaled))
         p_loss_eval = 1.0 - p_win_eval
         p_draw_eval = 0.0  # simple model: eval only predicts win/loss
-        eval_target = np.array(
-            [p_win_eval, p_draw_eval, p_loss_eval], dtype=np.float32
-        )
+        eval_target = np.array([p_win_eval, p_draw_eval, p_loss_eval], dtype=np.float32)
 
         # Result target: one-hot from game result (0=loss, 1=draw, 2=win)
         result_target = np.zeros(3, dtype=np.float32)
@@ -146,8 +143,7 @@ class SelfPlayDataset(Dataset):
 
         # Blend eval and result targets
         target = (
-            self.eval_weight * eval_target
-            + (1.0 - self.eval_weight) * result_target
+            self.eval_weight * eval_target + (1.0 - self.eval_weight) * result_target
         )
         # Normalize to sum to 1
         target /= target.sum()
@@ -166,7 +162,8 @@ def train(args):
     val_size = max(1, int(len(dataset) * 0.1))
     train_size = len(dataset) - val_size
     train_set, val_set = random_split(
-        dataset, [train_size, val_size],
+        dataset,
+        [train_size, val_size],
         generator=torch.Generator().manual_seed(42),
     )
 
@@ -252,7 +249,9 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--patience", type=int, default=10)
     parser.add_argument(
-        "--eval-weight", type=float, default=0.75,
+        "--eval-weight",
+        type=float,
+        default=0.75,
         help="Weight for search eval vs game result in target (0-1)",
     )
     args = parser.parse_args()

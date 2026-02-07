@@ -9,9 +9,10 @@
 #include "feature_extractor.h"
 #include "handcrafted_eval.h"
 
-MCTSEngine::MCTSEngine(std::shared_ptr<LogisticModel> model, int max_time_ms,
-                        EvalMode eval_mode, std::shared_ptr<NNUEModel> nnue_model)
-    : BaseEngine(model, max_time_ms, eval_mode), rng(std::random_device{}()),
+MCTSEngine::MCTSEngine(std::shared_ptr<LogisticModel> model, int max_time_ms, EvalMode eval_mode,
+                       std::shared_ptr<NNUEModel> nnue_model)
+    : BaseEngine(model, max_time_ms, eval_mode),
+      rng(std::random_device{}()),
       nnue_model(nnue_model) {
     eval_cache.reserve(CACHE_SIZE);
 }

@@ -16,13 +16,13 @@ uint8_t SelfPlayGenerator::encode_piece(const chess::Piece& piece) {
     if (piece == chess::Piece::NONE) return 0;
 
     // chess library: PieceType order is PAWN=0..KING=5, Color WHITE=0/BLACK=1
-    int pt = static_cast<int>(piece.type());  // 0-5
+    int pt = static_cast<int>(piece.type());      // 0-5
     int color = static_cast<int>(piece.color());  // 0=white, 1=black
     return static_cast<uint8_t>(1 + pt + color * 6);
 }
 
 TrainingPosition SelfPlayGenerator::encode_position(const ChessBoard& board, float eval,
-                                                     uint8_t result, uint16_t ply) {
+                                                    uint8_t result, uint16_t ply) {
     TrainingPosition pos;
     std::memset(&pos, 0, sizeof(pos));
 
@@ -83,17 +83,15 @@ void SelfPlayGenerator::generate() {
     for (int t = 0; t < threads; ++t) {
         int n = games_per_thread + (t < remainder ? 1 : 0);
         if (n == 0) continue;
-        thread_pool.emplace_back(&SelfPlayGenerator::play_games, this, n,
-                                 config.output_file);
+        thread_pool.emplace_back(&SelfPlayGenerator::play_games, this, n, config.output_file);
     }
 
     for (auto& t : thread_pool) t.join();
 
-    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::steady_clock::now() - start);
+    auto elapsed =
+        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - start);
     std::cout << "Self-play complete: " << games_completed.load() << " games, "
-              << total_positions.load() << " positions in " << elapsed.count()
-              << "s" << std::endl;
+              << total_positions.load() << " positions in " << elapsed.count() << "s" << std::endl;
 }
 
 void SelfPlayGenerator::play_games(int num_games, const std::string& output_file) {
@@ -105,8 +103,8 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
 
         // Create a local engine for this game (handcrafted eval, no model needed)
         auto dummy_model = std::make_shared<LogisticModel>();
-        auto engine = std::make_unique<ChessEngine>(
-            dummy_model, 200, EvalMode::HANDCRAFTED);
+        auto engine = std::make_unique<ChessEngine>(dummy_model, config.search_time_ms,
+                                                    EvalMode::HANDCRAFTED);
 
         ChessBoard board;
         uint16_t ply = 0;
@@ -129,13 +127,11 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
 
             // Get evaluation via search
             TimeControl tc{60000, 0, 0};
-            engine->set_max_time(200);  // Short time per move for speed
+            engine->set_max_time(config.search_time_ms);
             auto result = engine->get_best_move(board, tc);
 
             // Eval from side-to-move's perspective
-            float stm_eval = board.turn() == ChessBoard::WHITE
-                                 ? result.score
-                                 : -result.score;
+            float stm_eval = board.turn() == ChessBoard::WHITE ? result.score : -result.score;
 
             // Record position
             // Game result will be filled in after game ends
@@ -189,8 +185,8 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
         total_positions.fetch_add(static_cast<int>(positions.size()));
 
         if (completed % 10 == 0) {
-            std::cout << "Self-play progress: " << completed << "/"
-                      << config.num_games << " games" << std::endl;
+            std::cout << "Self-play progress: " << completed << "/" << config.num_games << " games"
+                      << std::endl;
         }
     }
 }

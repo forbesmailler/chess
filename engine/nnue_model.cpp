@@ -28,12 +28,11 @@ bool NNUEModel::load_weights(const std::string& path) {
     file.read(reinterpret_cast<char*>(&hidden2_size), 4);
     file.read(reinterpret_cast<char*>(&output_size), 4);
 
-    if (input_size != INPUT_SIZE || hidden1_size != HIDDEN1_SIZE ||
-        hidden2_size != HIDDEN2_SIZE || output_size != OUTPUT_SIZE) {
-        std::cerr << "NNUE architecture mismatch: expected " << INPUT_SIZE << "/"
-                  << HIDDEN1_SIZE << "/" << HIDDEN2_SIZE << "/" << OUTPUT_SIZE
-                  << ", got " << input_size << "/" << hidden1_size << "/"
-                  << hidden2_size << "/" << output_size << std::endl;
+    if (input_size != INPUT_SIZE || hidden1_size != HIDDEN1_SIZE || hidden2_size != HIDDEN2_SIZE ||
+        output_size != OUTPUT_SIZE) {
+        std::cerr << "NNUE architecture mismatch: expected " << INPUT_SIZE << "/" << HIDDEN1_SIZE
+                  << "/" << HIDDEN2_SIZE << "/" << OUTPUT_SIZE << ", got " << input_size << "/"
+                  << hidden1_size << "/" << hidden2_size << "/" << output_size << std::endl;
         return false;
     }
 
@@ -56,9 +55,8 @@ bool NNUEModel::load_weights(const std::string& path) {
     }
 
     loaded = true;
-    std::cout << "Loaded NNUE model (v" << version << "): " << INPUT_SIZE << " -> "
-              << HIDDEN1_SIZE << " -> " << HIDDEN2_SIZE << " -> " << OUTPUT_SIZE
-              << std::endl;
+    std::cout << "Loaded NNUE model (v" << version << "): " << INPUT_SIZE << " -> " << HIDDEN1_SIZE
+              << " -> " << HIDDEN2_SIZE << " -> " << OUTPUT_SIZE << std::endl;
     return true;
 }
 
@@ -71,8 +69,7 @@ std::vector<float> NNUEModel::extract_features(const ChessBoard& board) {
     // When black to move, flip board vertically and swap colors
     static constexpr chess::PieceType PIECE_TYPES[] = {
         chess::PieceType::PAWN, chess::PieceType::KNIGHT, chess::PieceType::BISHOP,
-        chess::PieceType::ROOK, chess::PieceType::QUEEN, chess::PieceType::KING
-    };
+        chess::PieceType::ROOK, chess::PieceType::QUEEN,  chess::PieceType::KING};
 
     auto own_color = white_to_move ? chess::Color::WHITE : chess::Color::BLACK;
     auto opp_color = white_to_move ? chess::Color::BLACK : chess::Color::WHITE;
@@ -98,9 +95,7 @@ std::vector<float> NNUEModel::extract_features(const ChessBoard& board) {
     return features;
 }
 
-float NNUEModel::clipped_relu(float x) {
-    return std::max(0.0f, std::min(1.0f, x));
-}
+float NNUEModel::clipped_relu(float x) { return std::max(0.0f, std::min(1.0f, x)); }
 
 std::vector<float> NNUEModel::softmax(const std::vector<float>& logits) {
     float max_val = *std::max_element(logits.begin(), logits.end());
@@ -117,10 +112,8 @@ std::vector<float> NNUEModel::softmax(const std::vector<float>& logits) {
 float NNUEModel::predict(const ChessBoard& board) const {
     if (!loaded) return 0.0f;
 
-    if (board.is_checkmate())
-        return board.turn() == ChessBoard::WHITE ? -MATE_VALUE : MATE_VALUE;
-    if (board.is_stalemate() || board.is_draw())
-        return 0.0f;
+    if (board.is_checkmate()) return board.turn() == ChessBoard::WHITE ? -MATE_VALUE : MATE_VALUE;
+    if (board.is_stalemate() || board.is_draw()) return 0.0f;
 
     auto input = extract_features(board);
 
@@ -128,8 +121,7 @@ float NNUEModel::predict(const ChessBoard& board) const {
     std::vector<float> h1(HIDDEN1_SIZE);
     for (int j = 0; j < HIDDEN1_SIZE; ++j) {
         float sum = b1[j];
-        for (int i = 0; i < INPUT_SIZE; ++i)
-            sum += input[i] * w1[i * HIDDEN1_SIZE + j];
+        for (int i = 0; i < INPUT_SIZE; ++i) sum += input[i] * w1[i * HIDDEN1_SIZE + j];
         h1[j] = clipped_relu(sum);
     }
 
@@ -137,8 +129,7 @@ float NNUEModel::predict(const ChessBoard& board) const {
     std::vector<float> h2(HIDDEN2_SIZE);
     for (int j = 0; j < HIDDEN2_SIZE; ++j) {
         float sum = b2[j];
-        for (int i = 0; i < HIDDEN1_SIZE; ++i)
-            sum += h1[i] * w2[i * HIDDEN2_SIZE + j];
+        for (int i = 0; i < HIDDEN1_SIZE; ++i) sum += h1[i] * w2[i * HIDDEN2_SIZE + j];
         h2[j] = clipped_relu(sum);
     }
 
@@ -146,8 +137,7 @@ float NNUEModel::predict(const ChessBoard& board) const {
     std::vector<float> logits(OUTPUT_SIZE);
     for (int j = 0; j < OUTPUT_SIZE; ++j) {
         float sum = b3[j];
-        for (int i = 0; i < HIDDEN2_SIZE; ++i)
-            sum += h2[i] * w3[i * OUTPUT_SIZE + j];
+        for (int i = 0; i < HIDDEN2_SIZE; ++i) sum += h2[i] * w3[i * OUTPUT_SIZE + j];
         logits[j] = sum;
     }
 

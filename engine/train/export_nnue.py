@@ -18,9 +18,7 @@ import struct
 
 import numpy as np
 import torch
-
 from train_nnue import NNUE
-
 
 INPUT_SIZE = 768
 HIDDEN1_SIZE = 256
@@ -31,7 +29,9 @@ VERSION = 1
 
 def export_model(pytorch_path, output_path):
     model = NNUE()
-    model.load_state_dict(torch.load(pytorch_path, map_location="cpu", weights_only=True))
+    model.load_state_dict(
+        torch.load(pytorch_path, map_location="cpu", weights_only=True)
+    )
     model.eval()
 
     with open(output_path, "wb") as f:
@@ -59,13 +59,18 @@ def export_model(pytorch_path, output_path):
             f.write(arr.astype(np.float32).tobytes())
 
     total_params = (
-        INPUT_SIZE * HIDDEN1_SIZE + HIDDEN1_SIZE
-        + HIDDEN1_SIZE * HIDDEN2_SIZE + HIDDEN2_SIZE
-        + HIDDEN2_SIZE * OUTPUT_SIZE + OUTPUT_SIZE
+        INPUT_SIZE * HIDDEN1_SIZE
+        + HIDDEN1_SIZE
+        + HIDDEN1_SIZE * HIDDEN2_SIZE
+        + HIDDEN2_SIZE
+        + HIDDEN2_SIZE * OUTPUT_SIZE
+        + OUTPUT_SIZE
     )
     file_size = 24 + total_params * 4  # header + float32 params
     print(f"Exported NNUE model to {output_path}")
-    print(f"  Architecture: {INPUT_SIZE} -> {HIDDEN1_SIZE} -> {HIDDEN2_SIZE} -> {OUTPUT_SIZE}")
+    print(
+        f"  Architecture: {INPUT_SIZE} -> {HIDDEN1_SIZE} -> {HIDDEN2_SIZE} -> {OUTPUT_SIZE}"
+    )
     print(f"  Total parameters: {total_params:,}")
     print(f"  File size: {file_size:,} bytes ({file_size / 1024:.1f} KB)")
 
@@ -74,12 +79,8 @@ def main():
     parser = argparse.ArgumentParser(
         description="Export NNUE PyTorch model to binary format for C++"
     )
-    parser.add_argument(
-        "--model", required=True, help="Path to PyTorch model (.pt)"
-    )
-    parser.add_argument(
-        "--output", default="nnue.bin", help="Output binary file path"
-    )
+    parser.add_argument("--model", required=True, help="Path to PyTorch model (.pt)")
+    parser.add_argument("--output", default="nnue.bin", help="Output binary file path")
     args = parser.parse_args()
 
     export_model(args.model, args.output)

@@ -19,8 +19,7 @@ struct TrainingPosition {
     uint16_t ply_number;
 };
 
-static_assert(sizeof(TrainingPosition) == 42 ||
-              sizeof(TrainingPosition) <= 48,
+static_assert(sizeof(TrainingPosition) == 42 || sizeof(TrainingPosition) <= 48,
               "TrainingPosition should be compact");
 
 class SelfPlayGenerator {
@@ -31,6 +30,7 @@ class SelfPlayGenerator {
         int num_threads = 1;
         std::string output_file = "training_data.bin";
         int max_game_ply = 400;
+        int search_time_ms = 200;     // time per move in milliseconds
         int resign_threshold = 5000;  // centipawns
         int resign_count = 3;         // consecutive moves above threshold
     };
@@ -41,8 +41,8 @@ class SelfPlayGenerator {
     int get_total_positions() const { return total_positions; }
 
     // Encode/decode for binary format
-    static TrainingPosition encode_position(const ChessBoard& board, float eval,
-                                            uint8_t result, uint16_t ply);
+    static TrainingPosition encode_position(const ChessBoard& board, float eval, uint8_t result,
+                                            uint16_t ply);
     static void write_position(std::ofstream& out, const TrainingPosition& pos);
     static bool read_position(std::ifstream& in, TrainingPosition& pos);
 

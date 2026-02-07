@@ -10,103 +10,64 @@ static constexpr int MATERIAL_EG[] = {110, 310, 330, 520, 950, 0};
 // Piece-Square Tables from white's perspective (a1=0, h8=63)
 
 static constexpr int PST_PAWN_MG[64] = {
-     0,   0,   0,   0,   0,   0,   0,   0,
-     5,  10,  10, -20, -20,  10,  10,   5,
-     5,  -5, -10,   0,   0, -10,  -5,   5,
-     0,   0,   0,  20,  20,   0,   0,   0,
-     5,   5,  10,  25,  25,  10,   5,   5,
-    10,  10,  20,  30,  30,  20,  10,  10,
-    50,  50,  50,  50,  50,  50,  50,  50,
-     0,   0,   0,   0,   0,   0,   0,   0,
+    0,  0,  0,  0,  0,  0,  0,  0,  5,  10, 10, -20, -20, 10, 10, 5,  5, -5, -10, 0,  0,  -10,
+    -5, 5,  0,  0,  0,  20, 20, 0,  0,  0,  5,  5,   10,  25, 25, 10, 5, 5,  10,  10, 20, 30,
+    30, 20, 10, 10, 50, 50, 50, 50, 50, 50, 50, 50,  0,   0,  0,  0,  0, 0,  0,   0,
 };
 
 static constexpr int PST_PAWN_EG[64] = {
-     0,   0,   0,   0,   0,   0,   0,   0,
-    10,  10,  10,  10,  10,  10,  10,  10,
-    10,  10,  10,  10,  10,  10,  10,  10,
-    20,  20,  20,  20,  20,  20,  20,  20,
-    30,  30,  30,  30,  30,  30,  30,  30,
-    50,  50,  50,  50,  50,  50,  50,  50,
-    80,  80,  80,  80,  80,  80,  80,  80,
-     0,   0,   0,   0,   0,   0,   0,   0,
+    0,  0,  0,  0,  0,  0,  0,  0,  10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
+    10, 10, 20, 20, 20, 20, 20, 20, 20, 20, 30, 30, 30, 30, 30, 30, 30, 30, 50, 50, 50, 50,
+    50, 50, 50, 50, 80, 80, 80, 80, 80, 80, 80, 80, 0,  0,  0,  0,  0,  0,  0,  0,
 };
 
 static constexpr int PST_KNIGHT_MG[64] = {
-   -50, -40, -30, -30, -30, -30, -40, -50,
-   -40, -20,   0,   5,   5,   0, -20, -40,
-   -30,   5,  10,  15,  15,  10,   5, -30,
-   -30,   0,  15,  20,  20,  15,   0, -30,
-   -30,   5,  15,  20,  20,  15,   5, -30,
-   -30,   0,  10,  15,  15,  10,   0, -30,
-   -40, -20,   0,   0,   0,   0, -20, -40,
-   -50, -40, -30, -30, -30, -30, -40, -50,
+    -50, -40, -30, -30, -30, -30, -40, -50, -40, -20, 0,   5,   5,   0,   -20, -40,
+    -30, 5,   10,  15,  15,  10,  5,   -30, -30, 0,   15,  20,  20,  15,  0,   -30,
+    -30, 5,   15,  20,  20,  15,  5,   -30, -30, 0,   10,  15,  15,  10,  0,   -30,
+    -40, -20, 0,   0,   0,   0,   -20, -40, -50, -40, -30, -30, -30, -30, -40, -50,
 };
 
 static constexpr int PST_BISHOP_MG[64] = {
-   -20, -10, -10, -10, -10, -10, -10, -20,
-   -10,   5,   0,   0,   0,   0,   5, -10,
-   -10,  10,  10,  10,  10,  10,  10, -10,
-   -10,   0,  10,  10,  10,  10,   0, -10,
-   -10,   5,   5,  10,  10,   5,   5, -10,
-   -10,   0,   5,  10,  10,   5,   0, -10,
-   -10,   0,   0,   0,   0,   0,   0, -10,
-   -20, -10, -10, -10, -10, -10, -10, -20,
+    -20, -10, -10, -10, -10, -10, -10, -20, -10, 5,   0,   0,   0,   0,   5,   -10,
+    -10, 10,  10,  10,  10,  10,  10,  -10, -10, 0,   10,  10,  10,  10,  0,   -10,
+    -10, 5,   5,   10,  10,  5,   5,   -10, -10, 0,   5,   10,  10,  5,   0,   -10,
+    -10, 0,   0,   0,   0,   0,   0,   -10, -20, -10, -10, -10, -10, -10, -10, -20,
 };
 
 static constexpr int PST_ROOK_MG[64] = {
-     0,   0,   0,   5,   5,   0,   0,   0,
-    -5,   0,   0,   0,   0,   0,   0,  -5,
-    -5,   0,   0,   0,   0,   0,   0,  -5,
-    -5,   0,   0,   0,   0,   0,   0,  -5,
-    -5,   0,   0,   0,   0,   0,   0,  -5,
-    -5,   0,   0,   0,   0,   0,   0,  -5,
-     5,  10,  10,  10,  10,  10,  10,   5,
-     0,   0,   0,   0,   0,   0,   0,   0,
+    0, 0,  0,  5,  5, 0,  0,  0,  -5, 0,  0,  0, 0, 0, 0, -5, -5, 0,  0,  0, 0, 0,
+    0, -5, -5, 0,  0, 0,  0,  0,  0,  -5, -5, 0, 0, 0, 0, 0,  0,  -5, -5, 0, 0, 0,
+    0, 0,  0,  -5, 5, 10, 10, 10, 10, 10, 10, 5, 0, 0, 0, 0,  0,  0,  0,  0,
 };
 
 static constexpr int PST_QUEEN_MG[64] = {
-   -20, -10, -10,  -5,  -5, -10, -10, -20,
-   -10,   0,   5,   0,   0,   0,   0, -10,
-   -10,   5,   5,   5,   5,   5,   0, -10,
-     0,   0,   5,   5,   5,   5,   0,  -5,
-    -5,   0,   5,   5,   5,   5,   0,  -5,
-   -10,   0,   5,   5,   5,   5,   0, -10,
-   -10,   0,   0,   0,   0,   0,   0, -10,
-   -20, -10, -10,  -5,  -5, -10, -10, -20,
+    -20, -10, -10, -5, -5, -10, -10, -20, -10, 0,   5,   0,  0,  0,   0,   -10,
+    -10, 5,   5,   5,  5,  5,   0,   -10, 0,   0,   5,   5,  5,  5,   0,   -5,
+    -5,  0,   5,   5,  5,  5,   0,   -5,  -10, 0,   5,   5,  5,  5,   0,   -10,
+    -10, 0,   0,   0,  0,  0,   0,   -10, -20, -10, -10, -5, -5, -10, -10, -20,
 };
 
 static constexpr int PST_KING_MG[64] = {
-    20,  30,  10,   0,   0,  10,  30,  20,
-    20,  20,   0,   0,   0,   0,  20,  20,
-   -10, -20, -20, -20, -20, -20, -20, -10,
-   -20, -30, -30, -40, -40, -30, -30, -20,
-   -30, -40, -40, -50, -50, -40, -40, -30,
-   -30, -40, -40, -50, -50, -40, -40, -30,
-   -30, -40, -40, -50, -50, -40, -40, -30,
-   -30, -40, -40, -50, -50, -40, -40, -30,
+    20,  30,  10,  0,   0,   10,  30,  20,  20,  20,  0,   0,   0,   0,   20,  20,
+    -10, -20, -20, -20, -20, -20, -20, -10, -20, -30, -30, -40, -40, -30, -30, -20,
+    -30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30,
+    -30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30,
 };
 
 static constexpr int PST_KING_EG[64] = {
-   -50, -30, -30, -30, -30, -30, -30, -50,
-   -30, -30,   0,   0,   0,   0, -30, -30,
-   -30, -10,  20,  30,  30,  20, -10, -30,
-   -30, -10,  30,  40,  40,  30, -10, -30,
-   -30, -10,  30,  40,  40,  30, -10, -30,
-   -30, -10,  20,  30,  30,  20, -10, -30,
-   -30, -20, -10,   0,   0, -10, -20, -30,
-   -50, -40, -30, -20, -20, -30, -40, -50,
+    -50, -30, -30, -30, -30, -30, -30, -50, -30, -30, 0,   0,   0,   0,   -30, -30,
+    -30, -10, 20,  30,  30,  20,  -10, -30, -30, -10, 30,  40,  40,  30,  -10, -30,
+    -30, -10, 30,  40,  40,  30,  -10, -30, -30, -10, 20,  30,  30,  20,  -10, -30,
+    -30, -20, -10, 0,   0,   -10, -20, -30, -50, -40, -30, -20, -20, -30, -40, -50,
 };
 
 // PST lookup arrays (MG and EG)
-static constexpr const int* PST_MG[] = {
-    PST_PAWN_MG, PST_KNIGHT_MG, PST_BISHOP_MG,
-    PST_ROOK_MG, PST_QUEEN_MG, PST_KING_MG
-};
+static constexpr const int* PST_MG[] = {PST_PAWN_MG, PST_KNIGHT_MG, PST_BISHOP_MG,
+                                        PST_ROOK_MG, PST_QUEEN_MG,  PST_KING_MG};
 
-static constexpr const int* PST_EG[] = {
-    PST_PAWN_EG, PST_KNIGHT_MG, PST_BISHOP_MG,
-    PST_ROOK_MG, PST_QUEEN_MG, PST_KING_EG
-};
+static constexpr const int* PST_EG[] = {PST_PAWN_EG, PST_KNIGHT_MG, PST_BISHOP_MG,
+                                        PST_ROOK_MG, PST_QUEEN_MG,  PST_KING_EG};
 
 // Phase weights per piece type (pawns/kings don't count)
 static constexpr int PHASE_WEIGHT[] = {0, 1, 1, 2, 4, 0};
@@ -121,12 +82,9 @@ static constexpr int mirror(int sq) { return sq ^ 56; }
 static constexpr int rank_of(int sq) { return sq / 8; }
 static constexpr int file_of(int sq) { return sq % 8; }
 
-
 float handcrafted_evaluate(const ChessBoard& board) {
-    if (board.is_checkmate())
-        return board.turn() == ChessBoard::WHITE ? -10000.0f : 10000.0f;
-    if (board.is_stalemate() || board.is_draw())
-        return 0.0f;
+    if (board.is_checkmate()) return board.turn() == ChessBoard::WHITE ? -10000.0f : 10000.0f;
+    if (board.is_stalemate() || board.is_draw()) return 0.0f;
 
     int mg_score = 0;
     int eg_score = 0;
@@ -173,8 +131,7 @@ float handcrafted_evaluate(const ChessBoard& board) {
     // Evaluate each piece
     static constexpr chess::PieceType PIECE_TYPES[] = {
         chess::PieceType::PAWN, chess::PieceType::KNIGHT, chess::PieceType::BISHOP,
-        chess::PieceType::ROOK, chess::PieceType::QUEEN, chess::PieceType::KING
-    };
+        chess::PieceType::ROOK, chess::PieceType::QUEEN,  chess::PieceType::KING};
 
     for (int color = 0; color < 2; ++color) {
         auto c = color == 0 ? chess::Color::WHITE : chess::Color::BLACK;
@@ -199,8 +156,10 @@ float handcrafted_evaluate(const ChessBoard& board) {
 
                 // Bishop pair tracking
                 if (pt == 2) {  // BISHOP
-                    if (color == 0) white_bishops++;
-                    else black_bishops++;
+                    if (color == 0)
+                        white_bishops++;
+                    else
+                        black_bishops++;
                 }
 
                 // Pawn structure bonuses
@@ -216,11 +175,9 @@ float handcrafted_evaluate(const ChessBoard& board) {
                         if (pawn_files[enemy][af] > 0) {
                             if (color == 0) {
                                 // White pawn: enemy pawn must be on higher rank
-                                if (pawn_rank_max[enemy][af] > r)
-                                    passed = false;
+                                if (pawn_rank_max[enemy][af] > r) passed = false;
                             } else {
-                                if (pawn_rank_min[enemy][af] < r)
-                                    passed = false;
+                                if (pawn_rank_min[enemy][af] < r) passed = false;
                             }
                         }
                     }
