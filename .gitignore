@@ -6,5 +6,6 @@ build/
 *.csv
 *.parquet
 *.joblib
-*.txt
 *.pkl
+*.txt
+!**/CMakeLists.txt
