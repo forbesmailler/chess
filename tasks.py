@@ -122,8 +122,8 @@ def run(c, token, time=1000, engine="negamax", weights="nnue.bin"):
         "weights": "NNUE weights path (default: nnue.bin)",
     }
 )
-def deploy(c, token, time=1000, engine="negamax", weights="nnue.bin"):
-    """Format, test, build, and run the bot."""
+def deploy_local(c, token, time=1000, engine="negamax", weights="nnue.bin"):
+    """Format, test, build, and run the bot locally."""
     print("=== Step 1/4: Format ===")
     format(c)
 
@@ -135,3 +135,48 @@ def deploy(c, token, time=1000, engine="negamax", weights="nnue.bin"):
 
     print("=== Step 4/4: Run ===")
     run(c, token=token, time=time, engine=engine, weights=weights)
+
+
+REPO_DIR = "/opt/chess-bot-src"
+INSTALL_DIR = "/opt/chess-bot"
+
+
+@task(
+    help={
+        "token": "Lichess API token",
+        "time": "Max search time in ms (default: 1000)",
+        "engine": "Search algorithm: negamax or mcts (default: negamax)",
+        "weights": "NNUE weights file name (default: nnue.bin)",
+    }
+)
+def deploy(c, token, time=1000, engine="negamax", weights="nnue.bin"):
+    """Deploy the bot on a Linux VPS: pull, build, install, restart service."""
+    service = f"chess-bot@{token}"
+
+    print("=== Step 1/5: Pull latest code ===")
+    with c.cd(REPO_DIR):
+        c.run("git pull")
+
+    print("=== Step 2/5: Build ===")
+    with c.cd(f"{REPO_DIR}/engine/build"):
+        c.run("cmake .. -DCMAKE_BUILD_TYPE=Release")
+        c.run("cmake --build . --config Release")
+
+    print("=== Step 3/5: Run tests ===")
+    with c.cd(f"{REPO_DIR}/engine/build"):
+        c.run("ctest --output-on-failure")
+
+    print("=== Step 4/5: Install ===")
+    c.run(f"mkdir -p {INSTALL_DIR}")
+    c.run(f"cp {REPO_DIR}/engine/build/lichess_bot {INSTALL_DIR}/")
+    if weights:
+        c.run(f"cp {REPO_DIR}/{weights} {INSTALL_DIR}/", warn=True)
+    c.run(
+        f"cp {REPO_DIR}/deploy/chess-bot.service /etc/systemd/system/chess-bot@.service"
+    )
+
+    print("=== Step 5/5: Restart service ===")
+    c.run("systemctl daemon-reload")
+    c.run(f"systemctl enable {service}")
+    c.run(f"systemctl restart {service}")
+    c.run(f"systemctl status {service}")
