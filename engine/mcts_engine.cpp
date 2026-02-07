@@ -7,9 +7,12 @@
 #include <random>
 
 #include "feature_extractor.h"
+#include "handcrafted_eval.h"
 
-MCTSEngine::MCTSEngine(std::shared_ptr<LogisticModel> model, int max_time_ms)
-    : BaseEngine(model, max_time_ms), rng(std::random_device{}()) {
+MCTSEngine::MCTSEngine(std::shared_ptr<LogisticModel> model, int max_time_ms,
+                        EvalMode eval_mode, std::shared_ptr<NNUEModel> nnue_model)
+    : BaseEngine(model, max_time_ms, eval_mode), rng(std::random_device{}()),
+      nnue_model(nnue_model) {
     eval_cache.reserve(CACHE_SIZE);
 }
 
@@ -217,9 +220,25 @@ float MCTSEngine::evaluate_position(const ChessBoard& board) {
         }
     }
 
-    auto features = FeatureExtractor::extract_features(board);
-    auto proba = model->predict_proba(features);
-    float eval = (proba[2] - proba[0]) * MATE_VALUE;
+    float eval = 0.0f;
+    switch (eval_mode) {
+        case EvalMode::HANDCRAFTED:
+            eval = handcrafted_evaluate(board);
+            break;
+        case EvalMode::NNUE:
+            if (nnue_model)
+                eval = nnue_model->predict(board);
+            else
+                eval = handcrafted_evaluate(board);
+            break;
+        case EvalMode::LOGISTIC:
+        default: {
+            auto features = FeatureExtractor::extract_features(board);
+            auto proba = model->predict_proba(features);
+            eval = (proba[2] - proba[0]) * MATE_VALUE;
+            break;
+        }
+    }
 
     {
         std::lock_guard<std::mutex> lock(eval_cache_mutex);

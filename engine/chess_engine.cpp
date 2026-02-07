@@ -6,9 +6,11 @@
 #include <sstream>
 
 #include "feature_extractor.h"
+#include "handcrafted_eval.h"
 
-ChessEngine::ChessEngine(std::shared_ptr<LogisticModel> model, int max_time_ms)
-    : BaseEngine(model, max_time_ms) {
+ChessEngine::ChessEngine(std::shared_ptr<LogisticModel> model, int max_time_ms,
+                          EvalMode eval_mode, std::shared_ptr<NNUEModel> nnue_model)
+    : BaseEngine(model, max_time_ms, eval_mode), nnue_model(nnue_model) {
     eval_cache.reserve(CACHE_SIZE / 2);
     transposition_table.reserve(CACHE_SIZE / 2);
 }
@@ -20,9 +22,25 @@ float ChessEngine::evaluate(const ChessBoard& board) {
     std::string pos_key = get_position_key(board);
     if (auto it = eval_cache.find(pos_key); it != eval_cache.end()) return it->second;
 
-    auto features = FeatureExtractor::extract_features(board);
-    auto proba = model->predict_proba(features);
-    float eval = (proba[2] - proba[0]) * MATE_VALUE;
+    float eval = 0.0f;
+    switch (eval_mode) {
+        case EvalMode::HANDCRAFTED:
+            eval = handcrafted_evaluate(board);
+            break;
+        case EvalMode::NNUE:
+            if (nnue_model)
+                eval = nnue_model->predict(board);
+            else
+                eval = handcrafted_evaluate(board);
+            break;
+        case EvalMode::LOGISTIC:
+        default: {
+            auto features = FeatureExtractor::extract_features(board);
+            auto proba = model->predict_proba(features);
+            eval = (proba[2] - proba[0]) * MATE_VALUE;
+            break;
+        }
+    }
 
     if (eval_cache.size() >= CACHE_SIZE / 2) clear_cache_if_needed();
     return eval_cache[pos_key] = eval;

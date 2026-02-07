@@ -11,10 +11,13 @@
 #include "base_engine.h"
 #include "chess_board.h"
 #include "logistic_model.h"
+#include "nnue_model.h"
 
 class MCTSEngine : public BaseEngine {
    public:
-    explicit MCTSEngine(std::shared_ptr<LogisticModel> model, int max_time_ms = 30000);
+    explicit MCTSEngine(std::shared_ptr<LogisticModel> model, int max_time_ms = 30000,
+                        EvalMode eval_mode = EvalMode::LOGISTIC,
+                        std::shared_ptr<NNUEModel> nnue_model = nullptr);
     ~MCTSEngine() = default;
 
     SearchResult get_best_move(const ChessBoard& board, const TimeControl& time_control) override;
@@ -72,4 +75,6 @@ class MCTSEngine : public BaseEngine {
     static constexpr int CACHE_SIZE = 100000;
 
     std::string get_position_key(const ChessBoard& board) const;
+
+    std::shared_ptr<NNUEModel> nnue_model;
 };

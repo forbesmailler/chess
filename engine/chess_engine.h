@@ -8,6 +8,7 @@
 #include "base_engine.h"
 #include "chess_board.h"
 #include "logistic_model.h"
+#include "nnue_model.h"
 
 struct TranspositionEntry {
     float score;
@@ -18,7 +19,9 @@ struct TranspositionEntry {
 
 class ChessEngine : public BaseEngine {
    public:
-    explicit ChessEngine(std::shared_ptr<LogisticModel> model, int max_time_ms = 1000);
+    explicit ChessEngine(std::shared_ptr<LogisticModel> model, int max_time_ms = 1000,
+                         EvalMode eval_mode = EvalMode::LOGISTIC,
+                         std::shared_ptr<NNUEModel> nnue_model = nullptr);
 
     float evaluate(const ChessBoard& board) override;
     SearchResult get_best_move(const ChessBoard& board, const TimeControl& time_control) override;
@@ -47,4 +50,6 @@ class ChessEngine : public BaseEngine {
     int score_move(const ChessBoard& board, const ChessBoard::Move& move);
     void clear_cache_if_needed();
     std::string get_position_key(const ChessBoard& board) const;
+
+    std::shared_ptr<NNUEModel> nnue_model;
 };

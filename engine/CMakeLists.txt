@@ -140,10 +140,17 @@ add_library(chess_engine_lib STATIC
     mcts_engine.cpp
     feature_extractor.cpp
     logistic_model.cpp
+    handcrafted_eval.cpp
+    nnue_model.cpp
+    self_play.cpp
     utils.cpp
 )
 
 target_link_libraries(chess_engine_lib PUBLIC chess-library)
+
+# Threading support (for self-play)
+find_package(Threads REQUIRED)
+target_link_libraries(chess_engine_lib PUBLIC Threads::Threads)
 
 # Create the main executable
 add_executable(lichess_bot
@@ -195,6 +202,9 @@ if(BUILD_TESTS)
         tests/test_chess_board.cpp
         tests/test_feature_extractor.cpp
         tests/test_chess_engine.cpp
+        tests/test_handcrafted_eval.cpp
+        tests/test_self_play.cpp
+        tests/test_nnue_model.cpp
     )
 
     target_link_libraries(chess_tests

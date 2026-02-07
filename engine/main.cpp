@@ -18,6 +18,8 @@
 #include "lichess_client.h"
 #include "logistic_model.h"
 #include "mcts_engine.h"
+#include "nnue_model.h"
+#include "self_play.h"
 #include "utils.h"
 #ifdef _WIN32
 #include <process.h>
@@ -60,25 +62,47 @@ class LichessBot {
     enum class EngineType { NEGAMAX, MCTS };
 
     LichessBot(const std::string& token, const std::string& model_path, int max_time_ms = 1000,
-               EngineType engine_type = EngineType::NEGAMAX)
-        : client(token), model_path(model_path), engine_type(engine_type), heartbeat_active(true) {
+               EngineType engine_type = EngineType::NEGAMAX,
+               EvalMode eval_mode = EvalMode::LOGISTIC,
+               const std::string& nnue_weights_path = "")
+        : client(token), model_path(model_path), engine_type(engine_type),
+          eval_mode(eval_mode), heartbeat_active(true) {
         // Setup signal handlers
         signal(SIGINT, signal_handler);
         signal(SIGTERM, signal_handler);
 
         model = std::make_shared<LogisticModel>();
-        if (!model->load_model(model_path)) {
-            Utils::log_warning("Failed to load model from " + model_path + ", using dummy model");
+        if (eval_mode == EvalMode::LOGISTIC) {
+            if (!model->load_model(model_path)) {
+                Utils::log_warning("Failed to load model from " + model_path +
+                                   ", using dummy model");
+            }
+        }
+
+        // Load NNUE weights if requested
+        if (eval_mode == EvalMode::NNUE && !nnue_weights_path.empty()) {
+            nnue_model = std::make_shared<NNUEModel>();
+            if (!nnue_model->load_weights(nnue_weights_path)) {
+                Utils::log_warning("Failed to load NNUE weights from " + nnue_weights_path +
+                                   ", falling back to handcrafted eval");
+                eval_mode = EvalMode::HANDCRAFTED;
+                this->eval_mode = eval_mode;
+            }
         }
 
         // Create engine based on type
         if (engine_type == EngineType::MCTS) {
-            engine = std::make_unique<MCTSEngine>(model, max_time_ms);
+            engine = std::make_unique<MCTSEngine>(model, max_time_ms, eval_mode, nnue_model);
             Utils::log_info("Using MCTS engine");
         } else {
-            engine = std::make_unique<ChessEngine>(model, max_time_ms);
+            engine = std::make_unique<ChessEngine>(model, max_time_ms, eval_mode, nnue_model);
             Utils::log_info("Using Negamax engine");
         }
+
+        std::string eval_name = eval_mode == EvalMode::NNUE ? "NNUE"
+                               : eval_mode == EvalMode::HANDCRAFTED ? "Handcrafted"
+                               : "Logistic";
+        Utils::log_info("Using " + eval_name + " evaluation");
 
         if (!get_account_info_with_retry()) {
             throw std::runtime_error("Failed to get account information after retries");
@@ -117,8 +141,10 @@ class LichessBot {
    private:
     LichessClient client;
     std::shared_ptr<LogisticModel> model;
+    std::shared_ptr<NNUEModel> nnue_model;
     std::unique_ptr<BaseEngine> engine;
     EngineType engine_type;
+    EvalMode eval_mode;
     LichessClient::AccountInfo account_info;
     std::string model_path;
 
@@ -299,10 +325,12 @@ class LichessBot {
                 try {
                     if (engine_type == EngineType::MCTS) {
                         game_state->engine =
-                            std::make_unique<MCTSEngine>(model, engine->get_max_time());
+                            std::make_unique<MCTSEngine>(model, engine->get_max_time(),
+                                                         eval_mode, nnue_model);
                     } else {
                         game_state->engine =
-                            std::make_unique<ChessEngine>(model, engine->get_max_time());
+                            std::make_unique<ChessEngine>(model, engine->get_max_time(),
+                                                          eval_mode, nnue_model);
                     }
                     game_state->last_move_time = std::chrono::steady_clock::now();
                     game_state->is_active.store(true);
@@ -639,10 +667,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Running chess board and engine tests..." << std::endl;
         std::cout << std::endl;
 
-        // Test ChessBoard implementation
-        std::cout << "Testing ChessBoard implementation..." << std::endl;
         ChessBoard board;
-
         std::cout << "Starting FEN: " << board.to_fen() << std::endl;
 
         auto moves = board.get_legal_moves();
@@ -653,67 +678,68 @@ int main(int argc, char* argv[]) {
             std::cout << "Making move: " << move.uci() << std::endl;
             board.make_move(move);
             std::cout << "FEN after move: " << board.to_fen() << std::endl;
-
             board.unmake_move(move);
             std::cout << "FEN after unmake: " << board.to_fen() << std::endl;
         }
 
-        // Test feature extraction
         std::vector<float> features = FeatureExtractor::extract_features(board);
         std::cout << "Feature vector size: " << features.size() << std::endl;
-
-        // Test piece counting - use the chess library's piece count method
-        int piece_count = board.piece_count();
-        std::cout << "Piece count: " << piece_count << std::endl;
-
-        // Test castling rights
-        auto rights = board.get_castling_rights();
-        std::string castling = "";
-        if (rights.white_kingside) castling += "K";
-        if (rights.white_queenside) castling += "Q";
-        if (rights.black_kingside) castling += "k";
-        if (rights.black_queenside) castling += "q";
-        if (castling.empty()) castling = "-";
-        std::cout << "Castling rights: " << castling << std::endl;
-
+        std::cout << "Piece count: " << board.piece_count() << std::endl;
         std::cout << "All tests passed!" << std::endl;
         std::cout << std::endl;
-        std::cout << "=== To run the actual bot ===" << std::endl;
         std::cout << "Usage: " << argv[0]
-                  << " <lichess_token> [max_time_ms] [--engine=negamax|mcts]" << std::endl;
-        std::cout << "Example: " << argv[0] << " lip_abc123... 1000 --engine=mcts" << std::endl;
-        std::cout << std::endl;
-        std::cout << "You'll also need:" << std::endl;
-        std::cout << "1. A valid Lichess API token with bot permissions" << std::endl;
-        std::cout << "2. model_coefficients.txt file in the cpp/train/ directory (run "
-                     "export_model.py to create it)"
+                  << " <lichess_token> [max_time_ms] [options]" << std::endl;
+        std::cout << "       " << argv[0]
+                  << " --selfplay [num_games] [search_depth] [output_file] [num_threads]"
                   << std::endl;
-        std::cout << "3. Network connectivity for Lichess API calls" << std::endl;
         std::cout << std::endl;
-        std::cout << "Optional max_time_ms parameter (default: 1000ms, recommended: 500-3000ms)"
+        std::cout << "Options:" << std::endl;
+        std::cout << "  --engine=negamax|mcts    Search algorithm (default: negamax)" << std::endl;
+        std::cout << "  --eval=handcrafted|logistic|nnue  Eval function (default: logistic)"
                   << std::endl;
+        std::cout << "  --nnue-weights=<path>    Path to NNUE binary weights" << std::endl;
         return 0;
     }
 
-    if (argc < 2 || argc > 4) {
+    // Check for --selfplay mode
+    std::string first_arg = argv[1];
+    if (first_arg == "--selfplay") {
+        SelfPlayGenerator::Config config;
+        if (argc > 2) config.num_games = std::stoi(argv[2]);
+        if (argc > 3) config.search_depth = std::stoi(argv[3]);
+        if (argc > 4) config.output_file = argv[4];
+        if (argc > 5) config.num_threads = std::stoi(argv[5]);
+
+        std::cout << "=== Self-Play Data Generation ===" << std::endl;
+        std::cout << "Games: " << config.num_games << std::endl;
+        std::cout << "Search depth (time budget): " << config.search_depth << std::endl;
+        std::cout << "Output: " << config.output_file << std::endl;
+        std::cout << "Threads: " << config.num_threads << std::endl;
+
+        SelfPlayGenerator generator(config);
+        generator.generate();
+        std::cout << "Total positions: " << generator.get_total_positions() << std::endl;
+        return 0;
+    }
+
+    if (argc < 2) {
         std::cerr << "Usage: " << argv[0]
-                  << " <lichess_token> [max_time_ms] [--engine=negamax|mcts]" << std::endl;
-        std::cerr << "Run without arguments to see test output" << std::endl;
-        std::cerr << "Max time parameter is optional (default: 1000ms)" << std::endl;
-        std::cerr << "Engine type is optional (default: negamax)" << std::endl;
+                  << " <lichess_token> [max_time_ms] [options]" << std::endl;
         return 1;
     }
 
     std::string token = argv[1];
-    int max_time_ms = 1000;                                                // Default to 1 second
-    LichessBot::EngineType engine_type = LichessBot::EngineType::NEGAMAX;  // Default engine
+    int max_time_ms = 1000;
+    LichessBot::EngineType engine_type = LichessBot::EngineType::NEGAMAX;
+    EvalMode eval_mode = EvalMode::LOGISTIC;
+    std::string nnue_weights_path;
 
     // Parse optional arguments
     for (int i = 2; i < argc; i++) {
         std::string arg = argv[i];
 
         if (arg.find("--engine=") == 0) {
-            std::string engine_str = arg.substr(9);  // Skip "--engine="
+            std::string engine_str = arg.substr(9);
             if (engine_str == "mcts") {
                 engine_type = LichessBot::EngineType::MCTS;
             } else if (engine_str == "negamax") {
@@ -722,18 +748,28 @@ int main(int argc, char* argv[]) {
                 std::cerr << "Unknown engine type: " << engine_str << ". Using negamax."
                           << std::endl;
             }
+        } else if (arg.find("--eval=") == 0) {
+            std::string eval_str = arg.substr(7);
+            if (eval_str == "handcrafted") {
+                eval_mode = EvalMode::HANDCRAFTED;
+            } else if (eval_str == "logistic") {
+                eval_mode = EvalMode::LOGISTIC;
+            } else if (eval_str == "nnue") {
+                eval_mode = EvalMode::NNUE;
+            } else {
+                std::cerr << "Unknown eval mode: " << eval_str << ". Using logistic." << std::endl;
+            }
+        } else if (arg.find("--nnue-weights=") == 0) {
+            nnue_weights_path = arg.substr(15);
         } else {
-            // Assume it's max_time_ms
             try {
                 max_time_ms = std::stoi(arg);
                 if (max_time_ms < 50 || max_time_ms > 30000) {
-                    std::cerr << "Warning: Max time should be between 50-30000ms. Using max_time "
+                    std::cerr << "Warning: Max time should be between 50-30000ms. Using "
                               << max_time_ms << "ms" << std::endl;
                 }
             } catch (const std::exception& e) {
-                std::cerr << "Invalid max_time parameter: " << arg << ", using default 1000ms"
-                          << std::endl;
-                max_time_ms = 1000;
+                std::cerr << "Invalid parameter: " << arg << ", ignoring" << std::endl;
             }
         }
     }
@@ -742,29 +778,24 @@ int main(int argc, char* argv[]) {
         "../../train/model_coefficients.txt";  // Relative to build/Release directory
 
     std::string engine_name = (engine_type == LichessBot::EngineType::MCTS) ? "MCTS" : "Negamax";
+    std::string eval_name = eval_mode == EvalMode::NNUE ? "NNUE"
+                           : eval_mode == EvalMode::HANDCRAFTED ? "Handcrafted"
+                           : "Logistic";
 
     std::cout << "=== Starting Lichess Bot ===" << std::endl;
     std::cout << "Token: " << token.substr(0, 8) << "..." << std::endl;
-    std::cout << "Model path: " << model_path << std::endl;
     std::cout << "Engine: " << engine_name << std::endl;
+    std::cout << "Eval: " << eval_name << std::endl;
     std::cout << "Max search time: " << max_time_ms << "ms" << std::endl;
     std::cout << "Process ID: " << getpid() << std::endl;
-    std::cout << std::endl;
-    std::cout << "Features:" << std::endl;
-    std::cout << "- Automatic retry on errors (max " << MAX_RETRIES << " attempts)" << std::endl;
-    std::cout << "- Heartbeat monitoring every " << HEARTBEAT_INTERVAL_MS / 1000 << " seconds"
-              << std::endl;
-    std::cout << "- Connection timeout: " << CONNECTION_TIMEOUT_MS / 1000 << " seconds"
-              << std::endl;
-    std::cout << "- Error threshold: " << MAX_CONSECUTIVE_ERRORS << " consecutive errors"
-              << std::endl;
     std::cout << std::endl;
     std::cout << "Press Ctrl+C to stop the bot gracefully" << std::endl;
     std::cout << std::endl;
 
     int exit_code = 0;
     try {
-        LichessBot bot(token, model_path, max_time_ms, engine_type);
+        LichessBot bot(token, model_path, max_time_ms, engine_type, eval_mode,
+                       nnue_weights_path);
         Utils::log_info("Bot initialized successfully, starting main loop...");
 
         bot.start();
