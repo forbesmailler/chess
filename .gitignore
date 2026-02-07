@@ -1,8 +1,10 @@
 __pycache__/
 build/
-token.txt
-*.csv
-*.parquet
 .pytest_cache/
 .ruff_cache/
 .vscode/
+*.csv
+*.parquet
+*.joblib
+*.txt
+*.pkl
