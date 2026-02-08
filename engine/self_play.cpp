@@ -153,12 +153,11 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
                 if (legal_moves.empty()) break;
 
                 std::vector<float> scores(legal_moves.size());
-                ChessBoard eval_board = board;
                 for (size_t i = 0; i < legal_moves.size(); ++i) {
-                    eval_board.make_move(legal_moves[i]);
-                    float eval = engine->evaluate(eval_board);
+                    board.board.makeMove(legal_moves[i].internal_move);
+                    float eval = engine->evaluate(board);
                     scores[i] = white_to_move ? eval : -eval;
-                    eval_board.unmake_move(legal_moves[i]);
+                    board.board.unmakeMove(legal_moves[i].internal_move);
                 }
 
                 // Softmax with temperature

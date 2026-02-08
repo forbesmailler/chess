@@ -66,14 +66,14 @@ void ChessEngine::score_moves(const ChessBoard& board, const chess::Movelist& mo
     for (int i = 0; i < moves.size(); ++i) {
         chess::Move move = moves[i];
         int score = 0;
-        bool is_capture = move.typeOf() == chess::Move::ENPASSANT ||
-                          board.board.at(move.to()) != chess::Piece::NONE;
+        chess::Piece to_piece = board.board.at(move.to());
+        bool is_capture =
+            move.typeOf() == chess::Move::ENPASSANT || to_piece != chess::Piece::NONE;
 
         if (has_tt_move && move == tt_move) {
             score = 1000000;
         } else if (is_capture) {
-            int victim =
-                PIECE_VALUES[static_cast<int>(board.board.at(move.to()).type())];
+            int victim = PIECE_VALUES[static_cast<int>(to_piece.type())];
             int attacker =
                 PIECE_VALUES[static_cast<int>(board.board.at(move.from()).type())];
             score = 100000 + victim * 10 - attacker;
@@ -121,11 +121,10 @@ float ChessEngine::negamax(ChessBoard& board, int depth, int ply, float alpha,
     if ((nodes_searched.fetch_add(1) & (TIME_CHECK_INTERVAL - 1)) == 0) check_time();
     if (should_stop.load()) return SEARCH_INTERRUPTED;
 
-    {
-        auto [go_reason, go_result] = board.board.isGameOver();
-        if (go_result != chess::GameResult::NONE) {
-            return go_reason == chess::GameResultReason::CHECKMATE ? -MATE_VALUE : 0.0f;
-        }
+    // Draw detection without legal move generation (cheap checks only)
+    if (board.board.isHalfMoveDraw() || board.board.isRepetition() ||
+        board.board.isInsufficientMaterial()) {
+        return 0.0f;
     }
 
     uint64_t pos_key = board.hash();
@@ -212,9 +211,10 @@ float ChessEngine::negamax(ChessBoard& board, int depth, int ply, float alpha,
     for (int mi = 0; mi < num_moves; ++mi) {
         pick_move(legal_moves, scores, mi, num_moves);
         chess::Move move = legal_moves[mi];
-        bool is_capture = move.typeOf() == chess::Move::ENPASSANT ||
+        auto move_type = move.typeOf();
+        bool is_capture = move_type == chess::Move::ENPASSANT ||
                           board.board.at(move.to()) != chess::Piece::NONE;
-        bool is_promo = move.typeOf() == chess::Move::PROMOTION;
+        bool is_promo = move_type == chess::Move::PROMOTION;
         bool is_quiet = !is_capture && !is_promo;
 
         // Futility pruning: skip quiet moves unlikely to raise alpha
@@ -343,9 +343,12 @@ float ChessEngine::quiescence_search(ChessBoard& board, float alpha, float beta,
                                              9000.0f, 0.0f,    0.0f};
         constexpr float QS_DELTA_MARGIN = 2000.0f;
 
-        order_moves(board, tactical_moves, chess::Move::NO_MOVE, 0);
+        int qs_scores[256];
+        int qs_n = tactical_moves.size();
+        score_moves(board, tactical_moves, qs_scores, chess::Move::NO_MOVE, 0);
 
-        for (int i = 0; i < tactical_moves.size(); ++i) {
+        for (int i = 0; i < qs_n; ++i) {
+            pick_move(tactical_moves, qs_scores, i, qs_n);
             chess::Move move = tactical_moves[i];
 
             // Delta pruning: skip captures that can't raise alpha
