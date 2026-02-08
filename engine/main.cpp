@@ -79,7 +79,8 @@ class LichessBot {
                 Utils::log_warning("Failed to load NNUE weights from " +
                                    nnue_weights_path +
                                    ", falling back to handcrafted eval");
-                eval_mode = EvalMode::HANDCRAFTED;
+                this->eval_mode = EvalMode::HANDCRAFTED;
+                nnue_model.reset();
             }
         }
 

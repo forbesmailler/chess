@@ -243,6 +243,9 @@ float ChessEngine::quiescence_search(const ChessBoard& board, float alpha, float
     }
 
     auto legal_moves = board.get_legal_moves();
+
+    if (in_check && legal_moves.empty()) return -MATE_VALUE;
+
     std::vector<ChessBoard::Move> tactical_moves;
 
     for (const auto& move : legal_moves) {

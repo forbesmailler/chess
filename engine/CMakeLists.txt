@@ -9,10 +9,11 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL "4.0")
     if(POLICY CMP0167)
         cmake_policy(SET CMP0167 NEW)
     endif()
-    # Additional policies for CMake 4.x
-    if(POLICY CMP0135)
-        cmake_policy(SET CMP0135 NEW)
-    endif()
+endif()
+
+# Prefer extraction timestamps for FetchContent downloads
+if(POLICY CMP0135)
+    cmake_policy(SET CMP0135 NEW)
 endif()
 
 # Debug information
