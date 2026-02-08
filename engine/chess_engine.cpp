@@ -24,8 +24,7 @@ float ChessEngine::evaluate(const ChessBoard& board) {
     return eval;
 }
 
-static void pick_move(std::vector<ChessBoard::Move>& moves, int* scores, int start,
-                      int count) {
+static void pick_move(chess::Movelist& moves, int* scores, int start, int count) {
     int best_idx = start;
     for (int i = start + 1; i < count; ++i) {
         if (scores[i] > scores[best_idx]) best_idx = i;
@@ -36,63 +35,63 @@ static void pick_move(std::vector<ChessBoard::Move>& moves, int* scores, int sta
     }
 }
 
-void ChessEngine::order_moves(const ChessBoard& board,
-                              std::vector<ChessBoard::Move>& moves,
-                              const ChessBoard::Move& tt_move, int ply,
-                              chess::Move prev_move) {
+void ChessEngine::order_moves(const ChessBoard& board, chess::Movelist& moves,
+                              chess::Move tt_move, int ply, chess::Move prev_move) {
     if (moves.size() <= 1) return;
 
     int scores[256];
-    int n = static_cast<int>(moves.size());
+    int n = moves.size();
     score_moves(board, moves, scores, tt_move, ply, prev_move);
 
-    // Index-based O(n log n) sort
     int idx[256];
     for (int i = 0; i < n; ++i) idx[i] = i;
     std::sort(idx, idx + n, [&scores](int a, int b) { return scores[a] > scores[b]; });
 
-    thread_local std::vector<ChessBoard::Move> temp;
-    temp.resize(n);
-    for (int i = 0; i < n; ++i) temp[i] = std::move(moves[idx[i]]);
-    for (int i = 0; i < n; ++i) moves[i] = std::move(temp[i]);
+    chess::Move temp[256];
+    for (int i = 0; i < n; ++i) temp[i] = moves[idx[i]];
+    for (int i = 0; i < n; ++i) moves[i] = temp[i];
 }
 
-void ChessEngine::score_moves(const ChessBoard& board,
-                              const std::vector<ChessBoard::Move>& moves, int* scores,
-                              const ChessBoard::Move& tt_move, int ply,
+void ChessEngine::score_moves(const ChessBoard& board, const chess::Movelist& moves,
+                              int* scores, chess::Move tt_move, int ply,
                               chess::Move prev_move) {
     constexpr int PIECE_VALUES[] = {100, 320, 330, 500, 900, 0, 0};
-    bool has_tt_move = tt_move.internal_move != chess::Move::NO_MOVE;
+    bool has_tt_move = tt_move != chess::Move::NO_MOVE;
     bool has_prev = prev_move != chess::Move::NO_MOVE;
     chess::Move cm = chess::Move::NO_MOVE;
     if (has_prev) {
         cm = countermoves[prev_move.from().index()][prev_move.to().index()];
     }
 
-    for (size_t i = 0; i < moves.size(); ++i) {
-        const auto& move = moves[i];
+    for (int i = 0; i < moves.size(); ++i) {
+        chess::Move move = moves[i];
         int score = 0;
-        if (has_tt_move && move.internal_move == tt_move.internal_move) {
+        bool is_capture = move.typeOf() == chess::Move::ENPASSANT ||
+                          board.board.at(move.to()) != chess::Piece::NONE;
+
+        if (has_tt_move && move == tt_move) {
             score = 1000000;
-        } else if (board.is_capture_move(move)) {
-            int victim = PIECE_VALUES[board.piece_type_at(move.to())];
-            int attacker = PIECE_VALUES[board.piece_type_at(move.from())];
+        } else if (is_capture) {
+            int victim =
+                PIECE_VALUES[static_cast<int>(board.board.at(move.to()).type())];
+            int attacker =
+                PIECE_VALUES[static_cast<int>(board.board.at(move.from()).type())];
             score = 100000 + victim * 10 - attacker;
-        } else if (move.is_promotion()) {
+        } else if (move.typeOf() == chess::Move::PROMOTION) {
             score = 90000;
         } else {
             if (ply < MAX_PLY) {
-                if (move.internal_move == killers[ply][0].internal_move) {
+                if (move == killers[ply][0]) {
                     score = 80000;
-                } else if (move.internal_move == killers[ply][1].internal_move) {
+                } else if (move == killers[ply][1]) {
                     score = 70000;
                 }
             }
-            if (score == 0 && cm != chess::Move::NO_MOVE && move.internal_move == cm) {
+            if (score == 0 && cm != chess::Move::NO_MOVE && move == cm) {
                 score = 60000;
             }
             if (score == 0) {
-                score = history[move.from()][move.to()];
+                score = history[move.from().index()][move.to().index()];
             }
         }
         scores[i] = score;
@@ -101,20 +100,23 @@ void ChessEngine::score_moves(const ChessBoard& board,
 
 SearchResult ChessEngine::get_best_move(const ChessBoard& board,
                                         const TimeControl& time_control) {
-    auto legal_moves = board.get_legal_moves();
+    chess::Movelist legal_moves;
+    chess::movegen::legalmoves(legal_moves, board.board);
 
     if (legal_moves.empty()) {
-        float score = board.is_in_check(board.turn()) ? -MATE_VALUE : 0.0f;
+        float score = board.board.inCheck() ? -MATE_VALUE : 0.0f;
         return {ChessBoard::Move{}, score, 0, std::chrono::milliseconds(0), 0};
     }
     if (legal_moves.size() == 1) {
-        return {legal_moves[0], 0.0f, 1, std::chrono::milliseconds(50), 1};
+        ChessBoard::Move m;
+        m.internal_move = legal_moves[0];
+        return {m, 0.0f, 1, std::chrono::milliseconds(50), 1};
     }
 
     return iterative_deepening_search(board, calculate_search_time(time_control));
 }
 
-float ChessEngine::negamax(const ChessBoard& board, int depth, int ply, float alpha,
+float ChessEngine::negamax(ChessBoard& board, int depth, int ply, float alpha,
                            float beta, bool is_pv, chess::Move prev_move) {
     if ((nodes_searched.fetch_add(1) & (TIME_CHECK_INTERVAL - 1)) == 0) check_time();
     if (should_stop.load()) return SEARCH_INTERRUPTED;
@@ -127,11 +129,11 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, int ply, float al
     }
 
     uint64_t pos_key = board.hash();
-    ChessBoard::Move tt_move;
+    chess::Move tt_move = chess::Move::NO_MOVE;
     const auto& tt_entry = transposition_table[pos_key & TT_MASK];
 
     if (tt_entry.key == pos_key) {
-        tt_move.internal_move = tt_entry.best_move;
+        tt_move = tt_entry.best_move;
 
         if (tt_entry.depth >= depth && !is_pv) {
             switch (tt_entry.type) {
@@ -150,7 +152,7 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, int ply, float al
         }
     }
 
-    bool in_check = board.is_in_check(board.turn());
+    bool in_check = board.board.inCheck();
 
     // Check extension — search deeper when in check
     if (in_check && depth == 0) depth = 1;
@@ -159,7 +161,8 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, int ply, float al
         return quiescence_search(board, alpha, beta, 0, in_check);
     }
 
-    auto legal_moves = board.get_legal_moves();
+    chess::Movelist legal_moves;
+    chess::movegen::legalmoves(legal_moves, board.board);
     if (legal_moves.empty()) {
         return in_check ? -MATE_VALUE : 0.0f;
     }
@@ -177,20 +180,20 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, int ply, float al
         }
     }
 
-    // Null Move Pruning
+    // Null Move Pruning — make/unmake in place (no board copy)
     if (depth > config::search::null_move::MIN_DEPTH && !is_pv && !in_check &&
         beta < MATE_VALUE - config::search::null_move::MATE_MARGIN &&
         alpha > -MATE_VALUE + config::search::null_move::MATE_MARGIN) {
-        ChessBoard null_board = board;
-        null_board.board.makeNullMove();
         int reduction = depth > config::search::null_move::DEEP_THRESHOLD
                             ? config::search::null_move::DEEP_REDUCTION
                             : config::search::null_move::SHALLOW_REDUCTION;
         int null_depth = depth - 1 - reduction;
 
         if (null_depth >= 0) {
+            board.board.makeNullMove();
             float null_score =
-                -negamax(null_board, null_depth, ply + 1, -beta, -beta + 1, false);
+                -negamax(board, null_depth, ply + 1, -beta, -beta + 1, false);
+            board.board.unmakeNullMove();
             if (null_score >= beta) {
                 return null_score;
             }
@@ -201,17 +204,17 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, int ply, float al
     int scores[256];
     score_moves(board, legal_moves, scores, tt_move, ply, prev_move);
     float best_score = -std::numeric_limits<float>::infinity();
-    ChessBoard::Move best_move;
+    chess::Move best_move = chess::Move::NO_MOVE;
     auto node_type = TranspositionEntry::UPPER_BOUND;
 
-    ChessBoard temp_board = board;
     int moves_searched = 0;
-    int num_moves = static_cast<int>(legal_moves.size());
+    int num_moves = legal_moves.size();
     for (int mi = 0; mi < num_moves; ++mi) {
         pick_move(legal_moves, scores, mi, num_moves);
-        const auto& move = legal_moves[mi];
-        bool is_capture = board.is_capture_move(move);
-        bool is_promo = move.is_promotion();
+        chess::Move move = legal_moves[mi];
+        bool is_capture = move.typeOf() == chess::Move::ENPASSANT ||
+                          board.board.at(move.to()) != chess::Piece::NONE;
+        bool is_promo = move.typeOf() == chess::Move::PROMOTION;
         bool is_quiet = !is_capture && !is_promo;
 
         // Futility pruning: skip quiet moves unlikely to raise alpha
@@ -225,79 +228,76 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, int ply, float al
             if (moves_searched >= 3 + depth * depth) continue;
         }
 
-        if (temp_board.make_move(move)) {
-            moves_searched++;
-            float score;
+        board.board.makeMove(move);
+        moves_searched++;
+        float score;
 
-            if (moves_searched == 1) {
-                // First move (PV): full window, full depth
-                score = -negamax(temp_board, depth - 1, ply + 1, -beta, -alpha, is_pv,
-                                 move.internal_move);
-            } else {
-                // LMR for late quiet moves
-                bool do_lmr =
-                    moves_searched > config::search::lmr::MIN_MOVES_SEARCHED &&
-                    depth > config::search::lmr::MIN_DEPTH && !in_check && is_quiet;
+        if (moves_searched == 1) {
+            // First move (PV): full window, full depth
+            score = -negamax(board, depth - 1, ply + 1, -beta, -alpha, is_pv, move);
+        } else {
+            // LMR for late quiet moves
+            bool do_lmr = moves_searched > config::search::lmr::MIN_MOVES_SEARCHED &&
+                          depth > config::search::lmr::MIN_DEPTH && !in_check &&
+                          is_quiet;
 
-                if (do_lmr) {
-                    int reduction =
-                        moves_searched > config::search::lmr::MANY_MOVES_THRESHOLD
-                            ? config::search::lmr::DEEP_REDUCTION
-                            : config::search::lmr::SHALLOW_REDUCTION;
-                    int reduced_depth = depth - 1 - reduction;
+            if (do_lmr) {
+                int reduction =
+                    moves_searched > config::search::lmr::MANY_MOVES_THRESHOLD
+                        ? config::search::lmr::DEEP_REDUCTION
+                        : config::search::lmr::SHALLOW_REDUCTION;
+                int reduced_depth = depth - 1 - reduction;
 
-                    if (reduced_depth >= 0) {
-                        score = -negamax(temp_board, reduced_depth, ply + 1, -alpha - 1,
-                                         -alpha, false, move.internal_move);
-                    } else {
-                        score = -negamax(temp_board, depth - 1, ply + 1, -alpha - 1,
-                                         -alpha, false, move.internal_move);
-                    }
+                if (reduced_depth >= 0) {
+                    score = -negamax(board, reduced_depth, ply + 1, -alpha - 1, -alpha,
+                                     false, move);
                 } else {
-                    score = -negamax(temp_board, depth - 1, ply + 1, -alpha - 1, -alpha,
-                                     false, move.internal_move);
+                    score = -negamax(board, depth - 1, ply + 1, -alpha - 1, -alpha,
+                                     false, move);
                 }
+            } else {
+                score = -negamax(board, depth - 1, ply + 1, -alpha - 1, -alpha, false,
+                                 move);
+            }
 
-                // PVS re-search: if null window failed high, re-search with full window
-                if (score > alpha && score < beta) {
-                    score = -negamax(temp_board, depth - 1, ply + 1, -beta, -alpha,
-                                     true, move.internal_move);
+            // PVS re-search: if null window failed high, re-search with full window
+            if (score > alpha && score < beta) {
+                score = -negamax(board, depth - 1, ply + 1, -beta, -alpha, true, move);
+            }
+        }
+
+        board.board.unmakeMove(move);
+
+        if (score == SEARCH_INTERRUPTED) {
+            return SEARCH_INTERRUPTED;
+        }
+
+        if (score > best_score) {
+            best_score = score;
+            best_move = move;
+        }
+
+        if (score >= beta) {
+            node_type = TranspositionEntry::LOWER_BOUND;
+
+            // Update killer moves, history, and countermoves for quiet cutoffs
+            if (is_quiet && ply < MAX_PLY) {
+                if (move != killers[ply][0]) {
+                    killers[ply][1] = killers[ply][0];
+                    killers[ply][0] = move;
+                }
+                history[move.from().index()][move.to().index()] += depth * depth;
+                if (prev_move != chess::Move::NO_MOVE) {
+                    countermoves[prev_move.from().index()][prev_move.to().index()] =
+                        move;
                 }
             }
+            break;
+        }
 
-            temp_board.unmake_move(move);
-
-            if (score == SEARCH_INTERRUPTED) {
-                return SEARCH_INTERRUPTED;
-            }
-
-            if (score > best_score) {
-                best_score = score;
-                best_move = move;
-            }
-
-            if (score >= beta) {
-                node_type = TranspositionEntry::LOWER_BOUND;
-
-                // Update killer moves, history, and countermoves for quiet cutoffs
-                if (is_quiet && ply < MAX_PLY) {
-                    if (move.internal_move != killers[ply][0].internal_move) {
-                        killers[ply][1] = killers[ply][0];
-                        killers[ply][0] = move;
-                    }
-                    history[move.from()][move.to()] += depth * depth;
-                    if (prev_move != chess::Move::NO_MOVE) {
-                        countermoves[prev_move.from().index()][prev_move.to().index()] =
-                            move.internal_move;
-                    }
-                }
-                break;
-            }
-
-            if (score > alpha) {
-                alpha = score;
-                node_type = TranspositionEntry::EXACT;
-            }
+        if (score > alpha) {
+            alpha = score;
+            node_type = TranspositionEntry::EXACT;
         }
     }
 
@@ -307,14 +307,14 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, int ply, float al
         int old_value =
             tt_slot.depth * 4 + (tt_slot.type == TranspositionEntry::EXACT ? 2 : 0);
         if (tt_slot.key == pos_key || new_value >= old_value) {
-            tt_slot = {pos_key, best_score, depth, node_type, best_move.internal_move};
+            tt_slot = {pos_key, best_score, depth, node_type, best_move};
         }
     }
 
     return best_score;
 }
 
-float ChessEngine::quiescence_search(const ChessBoard& board, float alpha, float beta,
+float ChessEngine::quiescence_search(ChessBoard& board, float alpha, float beta,
                                      int qs_depth, bool in_check) {
     if (should_stop.load()) return SEARCH_INTERRUPTED;
 
@@ -329,12 +329,13 @@ float ChessEngine::quiescence_search(const ChessBoard& board, float alpha, float
         if (stand_pat > alpha) alpha = stand_pat;
     }
 
-    std::vector<ChessBoard::Move> tactical_moves;
+    chess::Movelist tactical_moves;
     if (in_check) {
-        tactical_moves = board.get_legal_moves();
+        chess::movegen::legalmoves(tactical_moves, board.board);
         if (tactical_moves.empty()) return -MATE_VALUE;
     } else {
-        tactical_moves = board.get_capture_moves();
+        chess::movegen::legalmoves<chess::movegen::MoveGenType::CAPTURE>(tactical_moves,
+                                                                         board.board);
     }
 
     if (!tactical_moves.empty()) {
@@ -342,27 +343,28 @@ float ChessEngine::quiescence_search(const ChessBoard& board, float alpha, float
                                              9000.0f, 0.0f,    0.0f};
         constexpr float QS_DELTA_MARGIN = 2000.0f;
 
-        order_moves(board, tactical_moves, ChessBoard::Move{}, 0);
-        ChessBoard temp_board = board;
+        order_moves(board, tactical_moves, chess::Move::NO_MOVE, 0);
 
-        for (const auto& move : tactical_moves) {
+        for (int i = 0; i < tactical_moves.size(); ++i) {
+            chess::Move move = tactical_moves[i];
+
             // Delta pruning: skip captures that can't raise alpha
-            if (!in_check && !move.is_promotion()) {
-                float victim = QS_PIECE_VALUES[board.piece_type_at(move.to())];
+            if (!in_check && move.typeOf() != chess::Move::PROMOTION) {
+                int pt = static_cast<int>(board.board.at(move.to()).type());
+                float victim = QS_PIECE_VALUES[pt];
                 if (victim == 0.0f) victim = 1000.0f;  // en passant
                 if (stand_pat + victim + QS_DELTA_MARGIN < alpha) continue;
             }
 
-            if (temp_board.make_move(move)) {
-                bool child_in_check = temp_board.is_in_check(temp_board.turn());
-                float score = -quiescence_search(temp_board, -beta, -alpha,
-                                                 qs_depth + 1, child_in_check);
-                temp_board.unmake_move(move);
+            board.board.makeMove(move);
+            bool child_in_check = board.board.inCheck();
+            float score =
+                -quiescence_search(board, -beta, -alpha, qs_depth + 1, child_in_check);
+            board.board.unmakeMove(move);
 
-                if (score == SEARCH_INTERRUPTED) return SEARCH_INTERRUPTED;
-                if (score >= beta) return beta;
-                if (score > alpha) alpha = score;
-            }
+            if (score == SEARCH_INTERRUPTED) return SEARCH_INTERRUPTED;
+            if (score >= beta) return beta;
+            if (score > alpha) alpha = score;
         }
     }
 
@@ -375,27 +377,26 @@ void ChessEngine::check_time() {
     }
 }
 
-SearchResult ChessEngine::iterative_deepening_search(const ChessBoard& board,
+SearchResult ChessEngine::iterative_deepening_search(ChessBoard board,
                                                      int max_time_ms) {
     auto start_time = std::chrono::steady_clock::now();
     search_deadline = start_time + std::chrono::milliseconds(max_time_ms);
     should_stop.store(false);
     nodes_searched.store(0);
-    std::memset(eval_cache.data(), 0, EVAL_CACHE_SIZE * sizeof(EvalCacheEntry));
-    std::memset(killers, 0, sizeof(killers));
-    std::memset(history, 0, sizeof(history));
-    std::memset(countermoves, 0, sizeof(countermoves));
 
-    auto legal_moves = board.get_legal_moves();
+    chess::Movelist legal_moves;
+    chess::movegen::legalmoves(legal_moves, board.board);
     auto stm = board.turn();
     if (legal_moves.empty()) {
-        float score = board.is_in_check(stm) ? -MATE_VALUE : 0.0f;
+        float score = board.board.inCheck() ? -MATE_VALUE : 0.0f;
         return {ChessBoard::Move{}, score, 0, std::chrono::milliseconds(0), 0};
     }
 
     float static_eval = evaluate(board);
     static_eval = stm == ChessBoard::WHITE ? static_eval : -static_eval;
-    SearchResult best_result{legal_moves[0], static_eval, 0, {}, 0};
+    ChessBoard::Move first_move;
+    first_move.internal_move = legal_moves[0];
+    SearchResult best_result{first_move, static_eval, 0, {}, 0};
     uint64_t pos_key = board.hash();
     float prev_score = static_eval;
 
@@ -404,10 +405,10 @@ SearchResult ChessEngine::iterative_deepening_search(const ChessBoard& board,
             std::chrono::steady_clock::now() - start_time);
         if (elapsed.count() >= max_time_ms) break;
 
-        ChessBoard::Move tt_move;
+        chess::Move tt_move = chess::Move::NO_MOVE;
         {
             const auto& tt_entry = transposition_table[pos_key & TT_MASK];
-            if (tt_entry.key == pos_key) tt_move.internal_move = tt_entry.best_move;
+            if (tt_entry.key == pos_key) tt_move = tt_entry.best_move;
         }
 
         order_moves(board, legal_moves, tt_move, 0);
@@ -422,50 +423,48 @@ SearchResult ChessEngine::iterative_deepening_search(const ChessBoard& board,
             beta = std::numeric_limits<float>::infinity();
         }
 
-        ChessBoard temp_board = board;
         bool completed_depth = true;
 
         for (int attempt = 0;; ++attempt) {
-            ChessBoard::Move current_best_move = legal_moves[0];
+            chess::Move current_best_move = legal_moves[0];
             float current_best_score = -std::numeric_limits<float>::infinity();
             int move_count = 0;
 
-            for (const auto& move : legal_moves) {
+            for (int mi = 0; mi < legal_moves.size(); ++mi) {
                 if (should_stop.load()) {
                     completed_depth = false;
                     break;
                 }
 
-                if (temp_board.make_move(move)) {
-                    move_count++;
+                chess::Move move = legal_moves[mi];
+                board.board.makeMove(move);
+                move_count++;
 
-                    float score;
-                    if (move_count == 1) {
-                        score = -negamax(temp_board, depth - 1, 1, -beta, -alpha, true,
-                                         move.internal_move);
-                    } else {
-                        score = -negamax(temp_board, depth - 1, 1, -alpha - 1, -alpha,
-                                         false, move.internal_move);
-                        if (score > alpha && score < beta) {
-                            score = -negamax(temp_board, depth - 1, 1, -beta, -alpha,
-                                             true, move.internal_move);
-                        }
+                float score;
+                if (move_count == 1) {
+                    score = -negamax(board, depth - 1, 1, -beta, -alpha, true, move);
+                } else {
+                    score =
+                        -negamax(board, depth - 1, 1, -alpha - 1, -alpha, false, move);
+                    if (score > alpha && score < beta) {
+                        score =
+                            -negamax(board, depth - 1, 1, -beta, -alpha, true, move);
                     }
-                    temp_board.unmake_move(move);
-
-                    if (score == -SEARCH_INTERRUPTED || should_stop.load()) {
-                        completed_depth = false;
-                        break;
-                    }
-
-                    if (score > current_best_score) {
-                        current_best_score = score;
-                        current_best_move = move;
-                    }
-
-                    alpha = std::max(alpha, score);
-                    if (alpha >= beta) break;
                 }
+                board.board.unmakeMove(move);
+
+                if (score == -SEARCH_INTERRUPTED || should_stop.load()) {
+                    completed_depth = false;
+                    break;
+                }
+
+                if (score > current_best_score) {
+                    current_best_score = score;
+                    current_best_move = move;
+                }
+
+                alpha = std::max(alpha, score);
+                if (alpha >= beta) break;
             }
 
             if (!completed_depth || should_stop.load()) break;
@@ -481,7 +480,9 @@ SearchResult ChessEngine::iterative_deepening_search(const ChessBoard& board,
             }
 
             // Successful completion — save results
-            best_result = {current_best_move,
+            ChessBoard::Move best_move_wrapper;
+            best_move_wrapper.internal_move = current_best_move;
+            best_result = {best_move_wrapper,
                            current_best_score,
                            depth,
                            {},
@@ -490,7 +491,7 @@ SearchResult ChessEngine::iterative_deepening_search(const ChessBoard& board,
 
             transposition_table[pos_key & TT_MASK] = {pos_key, current_best_score,
                                                       depth, TranspositionEntry::EXACT,
-                                                      current_best_move.internal_move};
+                                                      current_best_move};
             break;
         }
 

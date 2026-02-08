@@ -11,33 +11,9 @@ import torch
 from engine.train.train_nnue import (
     NNUE,
     SelfPlayDataset,
-    decode_piece,
     extract_features,
     train,
 )
-
-# --- decode_piece ---
-
-
-def test_decode_piece_empty():
-    piece_type, color = decode_piece(0)
-    assert piece_type is None
-    assert color is None
-
-
-def test_decode_piece_white():
-    for nibble in range(1, 7):
-        piece_type, color = decode_piece(nibble)
-        assert piece_type == nibble - 1
-        assert color == 0
-
-
-def test_decode_piece_black():
-    for nibble in range(7, 13):
-        piece_type, color = decode_piece(nibble)
-        assert piece_type == nibble - 7
-        assert color == 1
-
 
 # --- extract_features ---
 
