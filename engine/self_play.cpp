@@ -105,11 +105,27 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
                                    int thread_id) {
     std::mt19937 rng(std::random_device{}() + thread_id);
 
+    // Load NNUE model once per thread if weights provided
+    std::shared_ptr<NNUEModel> model;
+    EvalMode eval_mode = EvalMode::HANDCRAFTED;
+    if (!config.nnue_weights.empty()) {
+        model = std::make_shared<NNUEModel>();
+        if (model->load_weights(config.nnue_weights)) {
+            eval_mode = EvalMode::NNUE;
+        } else {
+            std::cerr << "Thread " << thread_id
+                      << ": Failed to load NNUE weights, using handcrafted"
+                      << std::endl;
+            model = nullptr;
+        }
+    }
+
     for (int g = 0; g < num_games; ++g) {
         std::vector<TrainingPosition> positions;
         positions.reserve(config.max_game_ply);
 
-        auto engine = std::make_unique<ChessEngine>(config.search_time_ms);
+        auto engine =
+            std::make_unique<ChessEngine>(config.search_time_ms, eval_mode, model);
 
         ChessBoard board;
         uint16_t ply = 0;

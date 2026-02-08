@@ -39,6 +39,7 @@ class SelfPlayGenerator {
         int search_time_ms = config::self_play::SEARCH_TIME_MS;
         int softmax_plies = config::self_play::SOFTMAX_PLIES;
         float softmax_temperature = config::self_play::SOFTMAX_TEMPERATURE;
+        std::string nnue_weights;
     };
 
     explicit SelfPlayGenerator(const Config& config);

@@ -662,6 +662,7 @@ int main(int argc, char* argv[]) {
         std::cout
             << "       " << argv[0]
             << " --selfplay [num_games] [search_depth] [output_file] [num_threads]"
+               " [nnue_weights]"
             << std::endl;
         std::cout << "       " << argv[0]
                   << " --compare <old_weights|handcrafted> <new_weights>"
@@ -689,12 +690,17 @@ int main(int argc, char* argv[]) {
         if (argc > 3) config.search_depth = std::stoi(argv[3]);
         if (argc > 4) config.output_file = argv[4];
         if (argc > 5) config.num_threads = std::stoi(argv[5]);
+        if (argc > 6) config.nnue_weights = argv[6];
 
+        std::string eval_str = config.nnue_weights.empty()
+                                   ? "handcrafted"
+                                   : "NNUE (" + config.nnue_weights + ")";
         std::cout << "=== Self-Play Data Generation ===" << std::endl;
         std::cout << "Games: " << config.num_games << std::endl;
         std::cout << "Search depth (time budget): " << config.search_depth << std::endl;
         std::cout << "Output: " << config.output_file << std::endl;
         std::cout << "Threads: " << config.num_threads << std::endl;
+        std::cout << "Eval: " << eval_str << std::endl;
 
         SelfPlayGenerator generator(config);
         generator.generate();

@@ -17,7 +17,7 @@ training:
   val_split: 0.1
 
 invoke:
-  train_games: 10000
+  train_games: 50000
   train_threads: 16
   weights: "nnue.bin"
 
