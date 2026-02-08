@@ -10,8 +10,8 @@ static constexpr float MATE_VALUE = 10000.0f;
 
 namespace nnue {
 static constexpr int INPUT_SIZE = 773;
-static constexpr int HIDDEN1_SIZE = 128;
-static constexpr int HIDDEN2_SIZE = 16;
+static constexpr int HIDDEN1_SIZE = 256;
+static constexpr int HIDDEN2_SIZE = 32;
 static constexpr int OUTPUT_SIZE = 3;
 }  // namespace nnue
 
@@ -47,7 +47,7 @@ static constexpr int CACHE_SIZE = 100000;
 static constexpr int DEFAULT_MAX_TIME_MS = 30000;
 static constexpr int EVAL_FREQUENCY = 10;
 static constexpr float EARLY_TERMINATION_FACTOR = 0.8f;
-static constexpr float PRIOR_SIGMOID_SCALE = 1000.0f;
+static constexpr float PRIOR_SIGMOID_SCALE = 5000.0f;
 }  // namespace mcts
 
 namespace bot {
@@ -163,6 +163,8 @@ static constexpr int BONUS_EG = 50;
 namespace king_safety {
 static constexpr int SHIELD_BONUS_MG = 10;
 }  // namespace king_safety
+
+static constexpr float SIGMOID_SCALE = 400.0f;
 }  // namespace eval
 
 namespace self_play {
@@ -171,8 +173,6 @@ static constexpr int SEARCH_DEPTH = 6;
 static constexpr int NUM_THREADS = 1;
 static constexpr int MAX_GAME_PLY = 400;
 static constexpr int SEARCH_TIME_MS = 200;
-static constexpr int RESIGN_THRESHOLD = 5000;
-static constexpr int RESIGN_COUNT = 3;
 static constexpr int SOFTMAX_PLIES = 10;
 static constexpr float SOFTMAX_TEMPERATURE = 200.0f;
 }  // namespace self_play

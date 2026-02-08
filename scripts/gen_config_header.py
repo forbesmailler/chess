@@ -283,6 +283,10 @@ def generate() -> str:
         f"{ind}    static constexpr int SHIELD_BONUS_MG = {ks['shield_bonus_mg']};"
     )
     lines.append(f"{ind}}}  // namespace king_safety")
+    lines.append("")
+    lines.append(
+        f"{ind}static constexpr float SIGMOID_SCALE = {evl['sigmoid_scale']:.1f}f;"
+    )
     lines.append("}  // namespace eval")
     lines.append("")
 
@@ -294,10 +298,6 @@ def generate() -> str:
     lines.append(f"    static constexpr int NUM_THREADS = {sp['num_threads']};")
     lines.append(f"    static constexpr int MAX_GAME_PLY = {sp['max_game_ply']};")
     lines.append(f"    static constexpr int SEARCH_TIME_MS = {sp['search_time_ms']};")
-    lines.append(
-        f"    static constexpr int RESIGN_THRESHOLD = {sp['resign_threshold']};"
-    )
-    lines.append(f"    static constexpr int RESIGN_COUNT = {sp['resign_count']};")
     lines.append(f"    static constexpr int SOFTMAX_PLIES = {sp['softmax_plies']};")
     lines.append(
         f"    static constexpr float SOFTMAX_TEMPERATURE = {sp['softmax_temperature']:.1f}f;"

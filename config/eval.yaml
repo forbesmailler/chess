@@ -27,6 +27,8 @@ bishop_pair:
 king_safety:
   shield_bonus_mg: 10
 
+sigmoid_scale: 400.0
+
 pst_pawn_mg:
   - [  0,   0,   0,   0,   0,   0,   0,   0]
   - [  5,  10,  10, -20, -20,  10,  10,   5]

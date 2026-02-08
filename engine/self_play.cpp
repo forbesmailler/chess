@@ -113,7 +113,6 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
 
         ChessBoard board;
         uint16_t ply = 0;
-        int consecutive_resign = 0;
         int white_result = 1;
 
         while (ply < config.max_game_ply) {
@@ -170,21 +169,6 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
             }
 
             positions.push_back(encode_position(board, stm_eval, 1, ply));
-
-            // Resign adjudication
-            if (std::abs(stm_eval) > config.resign_threshold) {
-                consecutive_resign++;
-                if (consecutive_resign >= config.resign_count) {
-                    if (stm_eval < 0) {
-                        white_result = board.turn() == ChessBoard::WHITE ? 0 : 2;
-                    } else {
-                        white_result = board.turn() == ChessBoard::WHITE ? 2 : 0;
-                    }
-                    break;
-                }
-            } else {
-                consecutive_resign = 0;
-            }
 
             if (chosen_move.uci().empty()) break;
             board.make_move(chosen_move);
@@ -313,7 +297,6 @@ void ModelComparator::play_games(int num_games, int thread_id) {
 
         ChessBoard board;
         uint16_t ply = 0;
-        int consecutive_resign = 0;
         int white_result = 1;  // 0=black wins, 1=draw, 2=white wins
 
         while (ply < config.max_game_ply) {
@@ -337,21 +320,6 @@ void ModelComparator::play_games(int num_games, int thread_id) {
 
             positions.push_back(
                 SelfPlayGenerator::encode_position(board, stm_eval, 1, ply));
-
-            // Resign adjudication
-            if (std::abs(stm_eval) > config.resign_threshold) {
-                consecutive_resign++;
-                if (consecutive_resign >= config.resign_count) {
-                    if (stm_eval < 0) {
-                        white_result = white_to_move ? 0 : 2;
-                    } else {
-                        white_result = white_to_move ? 2 : 0;
-                    }
-                    break;
-                }
-            } else {
-                consecutive_resign = 0;
-            }
 
             if (result.best_move.uci().empty()) break;
             board.make_move(result.best_move);

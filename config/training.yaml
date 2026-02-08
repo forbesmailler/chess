@@ -5,8 +5,6 @@ self_play:
   output_file: "training_data.bin"
   max_game_ply: 400
   search_time_ms: 200
-  resign_threshold: 5000
-  resign_count: 3
   softmax_plies: 10
   softmax_temperature: 200.0
 
@@ -17,15 +15,11 @@ training:
   patience: 10
   eval_weight: 0.75
   val_split: 0.1
-  sigmoid_scale: 400.0
-  scheduler:
-    patience: 3
-    factor: 0.5
 
 invoke:
-  train_games: 1000
+  train_games: 10000
   train_threads: 16
   weights: "nnue.bin"
 
 compare:
-  num_games: 1000
+  num_games: 100

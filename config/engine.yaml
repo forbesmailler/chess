@@ -2,8 +2,8 @@ mate_value: 10000.0
 
 nnue:
   input_size: 773
-  hidden1_size: 128
-  hidden2_size: 16
+  hidden1_size: 256
+  hidden2_size: 32
   output_size: 3
 
 search:
@@ -33,7 +33,7 @@ mcts:
   default_max_time_ms: 30000
   eval_frequency: 10
   early_termination_factor: 0.8
-  prior_sigmoid_scale: 1000.0
+  prior_sigmoid_scale: 5000.0
 
 bot:
   max_retries: 3

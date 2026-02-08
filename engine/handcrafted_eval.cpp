@@ -228,6 +228,7 @@ float handcrafted_evaluate(const ChessBoard& board) {
 
     // Scale to NNUE-compatible range: [-MATE_VALUE, +MATE_VALUE]
     float scaled =
-        (2.0f / (1.0f + std::exp(-eval / 400.0f)) - 1.0f) * config::MATE_VALUE;
+        (2.0f / (1.0f + std::exp(-eval / config::eval::SIGMOID_SCALE)) - 1.0f) *
+        config::MATE_VALUE;
     return scaled;
 }

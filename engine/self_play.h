@@ -13,6 +13,7 @@
 #include "generated_config.h"
 
 // Binary format for training data: 42 bytes per position
+#pragma pack(push, 1)
 struct TrainingPosition {
     uint8_t piece_placement[32];  // 64 nibbles (4 bits per square)
     uint8_t side_to_move;         // 0=white, 1=black
@@ -22,9 +23,10 @@ struct TrainingPosition {
     uint8_t game_result;          // 0=loss, 1=draw, 2=win (from STM perspective)
     uint16_t ply_number;
 };
+#pragma pack(pop)
 
-static_assert(sizeof(TrainingPosition) == 42 || sizeof(TrainingPosition) <= 48,
-              "TrainingPosition should be compact");
+static_assert(sizeof(TrainingPosition) == 42,
+              "TrainingPosition must be exactly 42 bytes");
 
 class SelfPlayGenerator {
    public:
@@ -35,8 +37,6 @@ class SelfPlayGenerator {
         std::string output_file = "training_data.bin";
         int max_game_ply = config::self_play::MAX_GAME_PLY;
         int search_time_ms = config::self_play::SEARCH_TIME_MS;
-        int resign_threshold = config::self_play::RESIGN_THRESHOLD;
-        int resign_count = config::self_play::RESIGN_COUNT;
         int softmax_plies = config::self_play::SOFTMAX_PLIES;
         float softmax_temperature = config::self_play::SOFTMAX_TEMPERATURE;
     };
@@ -74,8 +74,6 @@ class ModelComparator {
         std::string output_file;
         int max_game_ply = 400;
         int search_time_ms = 200;
-        int resign_threshold = 5000;
-        int resign_count = 3;
     };
 
     struct Result {

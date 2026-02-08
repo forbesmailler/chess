@@ -143,8 +143,9 @@ class SelfPlayDataset(Dataset):
             piece_placement, side_to_move, castling, en_passant_file
         )
 
-        # Eval target: sigmoid scaling of centipawn eval to [P(win), P(draw), P(loss)]
-        p_win = 1.0 / (1.0 + np.exp(-search_eval / _trn["training"]["sigmoid_scale"]))
+        # Eval is already (P(win) - P(loss)) * MATE_VALUE; recover P(win) linearly
+        mate_value = float(_eng["mate_value"])
+        p_win = np.clip((search_eval / mate_value + 1.0) / 2.0, 0.0, 1.0)
         eval_target = np.array([p_win, 0.0, 1.0 - p_win], dtype=np.float32)
 
         # Result target: one-hot [win, draw, loss] from game_result (0=loss, 1=draw, 2=win)
@@ -186,11 +187,6 @@ def train(args):
 
     model = NNUE().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer,
-        patience=_trn["training"]["scheduler"]["patience"],
-        factor=_trn["training"]["scheduler"]["factor"],
-    )
 
     best_val_loss = float("inf")
     patience_counter = 0
@@ -224,12 +220,10 @@ def train(args):
                 val_loss += loss.item() * features.size(0)
 
         val_loss /= val_size
-        scheduler.step(val_loss)
 
         print(
             f"Epoch {epoch + 1}/{args.epochs} - "
-            f"train_loss: {train_loss:.4f}, val_loss: {val_loss:.4f}, "
-            f"lr: {optimizer.param_groups[0]['lr']:.2e}"
+            f"train_loss: {train_loss:.4f}, val_loss: {val_loss:.4f}"
         )
 
         # Early stopping
