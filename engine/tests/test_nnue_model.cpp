@@ -13,7 +13,7 @@ namespace {
 std::string create_test_weights(unsigned int seed = 42) {
     std::string path = "test_nnue_weights.bin";
 
-    constexpr int INPUT = 768;
+    constexpr int INPUT = 773;
     constexpr int H1 = 256;
     constexpr int H2 = 32;
     constexpr int OUTPUT = 3;

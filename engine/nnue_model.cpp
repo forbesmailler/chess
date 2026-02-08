@@ -67,8 +67,8 @@ std::vector<float> NNUEModel::extract_features(const ChessBoard& board) {
     const auto& b = board.board;
     bool white_to_move = b.sideToMove() == chess::Color::WHITE;
 
-    // Feature layout: 0-383 = own pieces (P/N/B/R/Q/K x 64), 384-767 = opponent pieces
-    // When black to move, flip board vertically and swap colors
+    // Feature layout: 0-383 = own pieces, 384-767 = opponent pieces,
+    // 768-771 = castling (own KS, own QS, opp KS, opp QS), 772 = en passant available
     static constexpr chess::PieceType PIECE_TYPES[] = {
         chess::PieceType::PAWN, chess::PieceType::KNIGHT, chess::PieceType::BISHOP,
         chess::PieceType::ROOK, chess::PieceType::QUEEN,  chess::PieceType::KING};
@@ -93,6 +93,23 @@ std::vector<float> NNUEModel::extract_features(const ChessBoard& board) {
             features[384 + pt * 64 + sq] = 1.0f;
         }
     }
+
+    // Castling rights from STM perspective
+    auto rights = board.get_castling_rights();
+    if (white_to_move) {
+        features[768] = rights.white_kingside ? 1.0f : 0.0f;
+        features[769] = rights.white_queenside ? 1.0f : 0.0f;
+        features[770] = rights.black_kingside ? 1.0f : 0.0f;
+        features[771] = rights.black_queenside ? 1.0f : 0.0f;
+    } else {
+        features[768] = rights.black_kingside ? 1.0f : 0.0f;
+        features[769] = rights.black_queenside ? 1.0f : 0.0f;
+        features[770] = rights.white_kingside ? 1.0f : 0.0f;
+        features[771] = rights.white_queenside ? 1.0f : 0.0f;
+    }
+
+    // En passant available
+    features[772] = (b.enpassantSq() != chess::Square::NO_SQ) ? 1.0f : 0.0f;
 
     return features;
 }

@@ -18,7 +18,8 @@ class NNUEModel {
     bool is_loaded() const { return loaded; }
 
    private:
-    static constexpr int INPUT_SIZE = 768;
+    // 768 piece-square + 4 castling + 1 en passant
+    static constexpr int INPUT_SIZE = 773;
     static constexpr int HIDDEN1_SIZE = 256;
     static constexpr int HIDDEN2_SIZE = 32;
     static constexpr int OUTPUT_SIZE = 3;
@@ -34,7 +35,7 @@ class NNUEModel {
 
     bool loaded = false;
 
-    // Extract 768 piece-square features (flipped for side-to-move perspective)
+    // Extract piece-square, castling, and en passant features (STM perspective)
     static std::vector<float> extract_features(const ChessBoard& board);
 
     static float clipped_relu(float x);

@@ -71,14 +71,16 @@ invoke deploy             # deploy to Linux VPS (reads LICHESS_TOKEN env var)
 
 - **Handcrafted**: Tapered middlegame/endgame blend. Material, PSTs, pawn structure (passed/isolated/doubled), rook on open files, bishop pair, mobility, king pawn shield.
 - **Logistic**: 1542-dim features → P(win)/P(draw)/P(loss).
-- **NNUE**: 768 piece-square features (STM perspective) → 256 → 32 → 3 with ClippedReLU. eval = (P(win) - P(loss)) × MATE_VALUE.
+- **NNUE**: 773 features (STM perspective) → 256 → 32 → 3 with ClippedReLU. eval = (P(win) - P(loss)) × MATE_VALUE.
 
 ## NNUE Feature Encoding
 
-768 features from side-to-move perspective:
+773 features from side-to-move perspective:
 - 0–383: own pieces (6 types × 64 squares, one-hot)
 - 384–767: opponent pieces (6 types × 64 squares, one-hot)
-- When black to move: board vertically flipped, colors swapped
+- 768–771: castling rights (own KS, own QS, opponent KS, opponent QS)
+- 772: en passant available
+- When black to move: board vertically flipped, colors swapped, castling reoriented
 
 ## Self-Play Binary Format
 
