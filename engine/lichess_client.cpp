@@ -89,8 +89,8 @@ bool LichessClient::test_connectivity() {
     if (!curl) return false;
 
     std::string response_data;
-    curl_easy_setopt(curl, CURLOPT_URL,
-                     std::string(config::bot::CONNECTIVITY_TEST_URL).c_str());
+    std::string connectivity_url(config::bot::CONNECTIVITY_TEST_URL);
+    curl_easy_setopt(curl, CURLOPT_URL, connectivity_url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_data);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, config::curl::CONNECTIVITY_TIMEOUT);
@@ -234,8 +234,8 @@ LichessClient::HttpResponse LichessClient::make_request(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
 
     // Set User-Agent
-    curl_easy_setopt(curl, CURLOPT_USERAGENT,
-                     std::string(config::bot::USER_AGENT).c_str());
+    std::string user_agent(config::bot::USER_AGENT);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, user_agent.c_str());
 
     // Set headers
     struct curl_slist* headers = nullptr;

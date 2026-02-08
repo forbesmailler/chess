@@ -180,7 +180,7 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
                 TimeControl tc{60000, 0, 0};
                 engine->set_max_time(config.search_time_ms);
                 auto result = engine->get_best_move(board, tc);
-                stm_eval = white_to_move ? result.score : -result.score;
+                stm_eval = result.score;
                 chosen_move = result.best_move;
             }
 
@@ -333,7 +333,7 @@ void ModelComparator::play_games(int num_games, int thread_id) {
             TimeControl tc{60000, 0, 0};
             active->set_max_time(config.search_time_ms);
             auto result = active->get_best_move(board, tc);
-            float stm_eval = white_to_move ? result.score : -result.score;
+            float stm_eval = result.score;
 
             positions.push_back(
                 SelfPlayGenerator::encode_position(board, stm_eval, 1, ply));

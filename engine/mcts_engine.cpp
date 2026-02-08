@@ -185,7 +185,8 @@ float MCTSEngine::simulate(const ChessBoard& board) {
         depth++;
     }
 
-    // Evaluate final position (White-perspective); convert to board.turn()'s perspective
+    // Evaluate final position (White-perspective); convert to board.turn()'s
+    // perspective
     float eval = evaluate_position(sim_board);
     return board.turn() == ChessBoard::WHITE ? eval : -eval;
 }
