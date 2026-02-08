@@ -133,8 +133,9 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
         int white_result = 1;
 
         while (ply < config.max_game_ply) {
-            if (board.is_game_over()) {
-                if (board.is_checkmate()) {
+            auto [reason, result] = board.board.isGameOver();
+            if (result != chess::GameResult::NONE) {
+                if (reason == chess::GameResultReason::CHECKMATE) {
                     white_result = board.turn() == ChessBoard::WHITE ? 0 : 2;
                 } else {
                     white_result = 1;
@@ -144,6 +145,7 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
 
             float stm_eval;
             ChessBoard::Move chosen_move;
+            bool white_to_move = board.turn() == ChessBoard::WHITE;
 
             if (ply < config.softmax_plies) {
                 // Softmax move selection for opening diversity
@@ -155,7 +157,7 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
                 for (size_t i = 0; i < legal_moves.size(); ++i) {
                     eval_board.make_move(legal_moves[i]);
                     float eval = engine->evaluate(eval_board);
-                    scores[i] = board.turn() == ChessBoard::WHITE ? eval : -eval;
+                    scores[i] = white_to_move ? eval : -eval;
                     eval_board.unmake_move(legal_moves[i]);
                 }
 
@@ -179,8 +181,7 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
                 TimeControl tc{60000, 0, 0};
                 engine->set_max_time(config.search_time_ms);
                 auto result = engine->get_best_move(board, tc);
-                stm_eval =
-                    board.turn() == ChessBoard::WHITE ? result.score : -result.score;
+                stm_eval = white_to_move ? result.score : -result.score;
                 chosen_move = result.best_move;
             }
 
@@ -316,8 +317,9 @@ void ModelComparator::play_games(int num_games, int thread_id) {
         int white_result = 1;  // 0=black wins, 1=draw, 2=white wins
 
         while (ply < config.max_game_ply) {
-            if (board.is_game_over()) {
-                if (board.is_checkmate()) {
+            auto [go_reason, go_result] = board.board.isGameOver();
+            if (go_result != chess::GameResult::NONE) {
+                if (go_reason == chess::GameResultReason::CHECKMATE) {
                     white_result = board.turn() == ChessBoard::WHITE ? 0 : 2;
                 } else {
                     white_result = 1;

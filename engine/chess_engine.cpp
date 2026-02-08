@@ -107,7 +107,7 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, floa
     if (in_check && depth == 0) depth = 1;
 
     if (depth == 0) {
-        return quiescence_search(board, alpha, beta);
+        return quiescence_search(board, alpha, beta, 0, in_check);
     }
 
     auto legal_moves = board.get_legal_moves();
@@ -208,15 +208,14 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, floa
 }
 
 float ChessEngine::quiescence_search(const ChessBoard& board, float alpha, float beta,
-                                     int qs_depth) {
+                                     int qs_depth, bool in_check) {
     if (should_stop.load()) return SEARCH_INTERRUPTED;
 
     float stand_pat = evaluate(board);
-    stand_pat = board.turn() == ChessBoard::WHITE ? stand_pat : -stand_pat;
+    auto stm = board.turn();
+    stand_pat = stm == ChessBoard::WHITE ? stand_pat : -stand_pat;
 
     if (qs_depth >= config::search::QUIESCENCE_MAX_DEPTH) return stand_pat;
-
-    bool in_check = board.is_in_check(board.turn());
 
     if (!in_check) {
         if (stand_pat >= beta) return beta;
@@ -245,8 +244,9 @@ float ChessEngine::quiescence_search(const ChessBoard& board, float alpha, float
 
         for (const auto& move : tactical_moves) {
             if (temp_board.make_move(move)) {
-                float score =
-                    -quiescence_search(temp_board, -beta, -alpha, qs_depth + 1);
+                bool child_in_check = temp_board.is_in_check(temp_board.turn());
+                float score = -quiescence_search(temp_board, -beta, -alpha,
+                                                 qs_depth + 1, child_in_check);
                 temp_board.unmake_move(move);
 
                 if (score == SEARCH_INTERRUPTED) return SEARCH_INTERRUPTED;
@@ -274,13 +274,14 @@ SearchResult ChessEngine::iterative_deepening_search(const ChessBoard& board,
     eval_cache.clear();
 
     auto legal_moves = board.get_legal_moves();
+    auto stm = board.turn();
     if (legal_moves.empty()) {
-        float score = board.is_in_check(board.turn()) ? -MATE_VALUE : 0.0f;
+        float score = board.is_in_check(stm) ? -MATE_VALUE : 0.0f;
         return {ChessBoard::Move{}, score, 0, std::chrono::milliseconds(0), 0};
     }
 
     float static_eval = evaluate(board);
-    static_eval = board.turn() == ChessBoard::WHITE ? static_eval : -static_eval;
+    static_eval = stm == ChessBoard::WHITE ? static_eval : -static_eval;
     SearchResult best_result{legal_moves[0], static_eval, 0, {}, 0};
     uint64_t pos_key = board.hash();
 

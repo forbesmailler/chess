@@ -64,9 +64,12 @@ float handcrafted_evaluate(const ChessBoard& board) {
         chess::PieceType::PAWN, chess::PieceType::KNIGHT, chess::PieceType::BISHOP,
         chess::PieceType::ROOK, chess::PieceType::QUEEN,  chess::PieceType::KING};
 
+    auto occ = b.occ();
+
     for (int color = 0; color < 2; ++color) {
         auto c = color == 0 ? chess::Color::WHITE : chess::Color::BLACK;
         int sign = color == 0 ? 1 : -1;
+        auto own_pieces = b.us(c);
 
         for (int pt = 0; pt < 6; ++pt) {
             auto pieces = b.pieces(PIECE_TYPES[pt], c);
@@ -142,12 +145,12 @@ float handcrafted_evaluate(const ChessBoard& board) {
                 // Rook on open/semi-open file
                 if (pt == 3) {  // ROOK
                     int f = file_of(sq);
-                    bool own_pawns = pawn_files[color][f] > 0;
+                    bool own_pawns_on_file = pawn_files[color][f] > 0;
                     bool enemy_pawns = pawn_files[1 - color][f] > 0;
-                    if (!own_pawns && !enemy_pawns) {
+                    if (!own_pawns_on_file && !enemy_pawns) {
                         mg_score += sign * config::eval::rook_file::OPEN_MG;
                         eg_score += sign * config::eval::rook_file::OPEN_EG;
-                    } else if (!own_pawns) {
+                    } else if (!own_pawns_on_file) {
                         mg_score += sign * config::eval::rook_file::SEMI_OPEN_MG;
                         eg_score += sign * config::eval::rook_file::SEMI_OPEN_EG;
                     }
@@ -157,7 +160,6 @@ float handcrafted_evaluate(const ChessBoard& board) {
                 if (pt >= 1 && pt <= 4) {
                     chess::Bitboard attacks;
                     auto sq_typed = static_cast<chess::Square>(sq);
-                    auto occ = b.occ();
                     switch (pt) {
                         case 1:
                             attacks = chess::attacks::knight(sq_typed);
@@ -172,8 +174,6 @@ float handcrafted_evaluate(const ChessBoard& board) {
                             attacks = chess::attacks::queen(sq_typed, occ);
                             break;
                     }
-                    // Don't count squares occupied by own pieces
-                    auto own_pieces = b.us(c);
                     attacks &= ~own_pieces;
                     int mob = attacks.count();
                     mg_score += sign * mob * config::eval::MOBILITY_BONUS[pt];

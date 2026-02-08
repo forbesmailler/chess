@@ -40,7 +40,7 @@ class ChessEngine : public BaseEngine {
     float negamax(const ChessBoard& board, int depth, float alpha, float beta,
                   bool is_pv = false);
     float quiescence_search(const ChessBoard& board, float alpha, float beta,
-                            int depth = 0);
+                            int depth = 0, bool in_check = false);
     void order_moves(const ChessBoard& board, std::vector<ChessBoard::Move>& moves,
                      const ChessBoard::Move& tt_move = ChessBoard::Move{});
 };

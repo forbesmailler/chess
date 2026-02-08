@@ -522,7 +522,7 @@ class LichessBot {
             auto search_result =
                 game_state->engine->get_best_move(game_state->board, time_control);
 
-            if (search_result.best_move.uci_string.empty()) {
+            if (search_result.best_move.uci().empty()) {
                 Utils::log_error("Game " + game_id + ": No valid move found!");
                 return false;
             }
