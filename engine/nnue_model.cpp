@@ -119,15 +119,6 @@ void NNUEModel::extract_features(const ChessBoard& board, std::vector<int>& acti
 float NNUEModel::predict(const ChessBoard& board) const {
     if (!loaded) return 0.0f;
 
-    {
-        auto [reason, result] = board.board.isGameOver();
-        if (result != chess::GameResult::NONE) {
-            if (reason == chess::GameResultReason::CHECKMATE)
-                return board.turn() == ChessBoard::WHITE ? -MATE_VALUE : MATE_VALUE;
-            return 0.0f;
-        }
-    }
-
     thread_local std::vector<int> active;
     float h1[HIDDEN1_SIZE];
     float h2[HIDDEN2_SIZE];

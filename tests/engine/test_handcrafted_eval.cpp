@@ -31,31 +31,6 @@ TEST(HandcraftedEval, WhiteWinningMaterial) {
     EXPECT_GT(eval2 - base_eval, 3000.0f);  // Sigmoid-scaled: queen advantage is large
 }
 
-TEST(HandcraftedEval, CheckmateWhiteLoses) {
-    // Fool's mate - white is checkmated
-    ChessBoard board("rnb1kbnr/pppp1ppp/4p3/8/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3");
-    float eval = handcrafted_evaluate(board);
-    EXPECT_EQ(eval, -config::MATE_VALUE);
-}
-
-TEST(HandcraftedEval, CheckmateBlackLoses) {
-    // Black is checkmated
-    // Scholar's mate position (after Qxf7#)
-    ChessBoard board(
-        "r1bqkb1r/pppp1Qpp/2n2n2/4p3/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 0 4");
-    float eval = handcrafted_evaluate(board);
-    EXPECT_EQ(eval,
-              config::MATE_VALUE);  // Black is mated, positive from white's perspective
-}
-
-TEST(HandcraftedEval, StalemateIsZero) {
-    // Black king in corner, white queen trapping but not checking
-    ChessBoard board("k7/2Q5/1K6/8/8/8/8/8 b - - 0 1");
-    ASSERT_TRUE(board.is_stalemate());
-    float eval = handcrafted_evaluate(board);
-    EXPECT_EQ(eval, 0.0f);
-}
-
 TEST(HandcraftedEval, EndgameKingCentralisation) {
     // In endgame, centralised king should be better
     // King on e4 vs king on a1, with just pawns

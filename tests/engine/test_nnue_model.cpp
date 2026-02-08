@@ -107,9 +107,3 @@ TEST(NNUEModel, UnloadedModelReturnsZero) {
     float eval = model.predict(board);
     EXPECT_FLOAT_EQ(eval, 0.0f);
 }
-
-TEST_F(NNUEModelTest, CheckmateReturnsExtreme) {
-    ChessBoard board("rnb1kbnr/pppp1ppp/4p3/8/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3");
-    float eval = model.predict(board);
-    EXPECT_EQ(eval, -config::MATE_VALUE);
-}

@@ -79,6 +79,60 @@ void ChessEngine::order_moves(const ChessBoard& board,
     for (size_t i = 0; i < moves.size(); ++i) moves[i] = scored[i].first;
 }
 
+static void pick_move(std::vector<ChessBoard::Move>& moves, int* scores, int start,
+                      int count) {
+    int best_idx = start;
+    for (int i = start + 1; i < count; ++i) {
+        if (scores[i] > scores[best_idx]) best_idx = i;
+    }
+    if (best_idx != start) {
+        std::swap(moves[start], moves[best_idx]);
+        std::swap(scores[start], scores[best_idx]);
+    }
+}
+
+void ChessEngine::score_moves(const ChessBoard& board,
+                              const std::vector<ChessBoard::Move>& moves, int* scores,
+                              const ChessBoard::Move& tt_move, int ply,
+                              chess::Move prev_move) {
+    constexpr int PIECE_VALUES[] = {100, 320, 330, 500, 900, 0, 0};
+    bool has_tt_move = tt_move.internal_move != chess::Move::NO_MOVE;
+    bool has_prev = prev_move != chess::Move::NO_MOVE;
+    chess::Move cm = chess::Move::NO_MOVE;
+    if (has_prev) {
+        cm = countermoves[prev_move.from().index()][prev_move.to().index()];
+    }
+
+    for (size_t i = 0; i < moves.size(); ++i) {
+        const auto& move = moves[i];
+        int score = 0;
+        if (has_tt_move && move.internal_move == tt_move.internal_move) {
+            score = 1000000;
+        } else if (board.is_capture_move(move)) {
+            int victim = PIECE_VALUES[board.piece_type_at(move.to())];
+            int attacker = PIECE_VALUES[board.piece_type_at(move.from())];
+            score = 100000 + victim * 10 - attacker;
+        } else if (move.is_promotion()) {
+            score = 90000;
+        } else {
+            if (ply < MAX_PLY) {
+                if (move.internal_move == killers[ply][0].internal_move) {
+                    score = 80000;
+                } else if (move.internal_move == killers[ply][1].internal_move) {
+                    score = 70000;
+                }
+            }
+            if (score == 0 && cm != chess::Move::NO_MOVE && move.internal_move == cm) {
+                score = 60000;
+            }
+            if (score == 0) {
+                score = history[move.from()][move.to()];
+            }
+        }
+        scores[i] = score;
+    }
+}
+
 SearchResult ChessEngine::get_best_move(const ChessBoard& board,
                                         const TimeControl& time_control) {
     auto legal_moves = board.get_legal_moves();
@@ -144,6 +198,19 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, int ply, float al
         return in_check ? -MATE_VALUE : 0.0f;
     }
 
+    // Static eval for pruning decisions (reverse futility + futility)
+    float static_eval = 0.0f;
+    bool have_static_eval = !in_check && !is_pv;
+    if (have_static_eval) {
+        static_eval = evaluate(board);
+        static_eval = board.turn() == ChessBoard::WHITE ? static_eval : -static_eval;
+
+        // Reverse futility pruning (static null move pruning)
+        if (depth <= 3 && static_eval - depth * 1500.0f >= beta) {
+            return static_eval;
+        }
+    }
+
     // Null Move Pruning
     if (depth > config::search::null_move::MIN_DEPTH && !is_pv && !in_check &&
         beta < MATE_VALUE - config::search::null_move::MATE_MARGIN &&
@@ -164,30 +231,32 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, int ply, float al
         }
     }
 
-    order_moves(board, legal_moves, tt_move, ply, prev_move);
+    // Score moves for incremental selection (avoid full sort)
+    int scores[256];
+    score_moves(board, legal_moves, scores, tt_move, ply, prev_move);
     float best_score = -std::numeric_limits<float>::infinity();
     ChessBoard::Move best_move;
     auto node_type = TranspositionEntry::UPPER_BOUND;
 
-    // Futility pruning setup
-    float static_eval = 0.0f;
-    bool can_futility = !in_check && !is_pv && depth <= 2;
-    if (can_futility) {
-        static_eval = evaluate(board);
-        static_eval = board.turn() == ChessBoard::WHITE ? static_eval : -static_eval;
-    }
-
     ChessBoard temp_board = board;
     int moves_searched = 0;
-    for (const auto& move : legal_moves) {
+    int num_moves = static_cast<int>(legal_moves.size());
+    for (int mi = 0; mi < num_moves; ++mi) {
+        pick_move(legal_moves, scores, mi, num_moves);
+        const auto& move = legal_moves[mi];
         bool is_capture = board.is_capture_move(move);
         bool is_promo = move.is_promotion();
         bool is_quiet = !is_capture && !is_promo;
 
         // Futility pruning: skip quiet moves unlikely to raise alpha
-        if (can_futility && is_quiet && moves_searched > 0) {
+        if (have_static_eval && depth <= 2 && is_quiet && moves_searched > 0) {
             float margin = depth == 1 ? 1500.0f : 3000.0f;
             if (static_eval + margin <= alpha) continue;
+        }
+
+        // Late move pruning: skip quiet late moves at shallow depth
+        if (!in_check && !is_pv && depth <= 3 && is_quiet && moves_searched > 0) {
+            if (moves_searched >= 3 + depth * depth) continue;
         }
 
         if (temp_board.make_move(move)) {
@@ -266,8 +335,12 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, int ply, float al
         }
     }
 
-    transposition_table[pos_key & TT_MASK] = {pos_key, best_score, depth, node_type,
-                                              best_move.internal_move};
+    {
+        auto& tt_slot = transposition_table[pos_key & TT_MASK];
+        if (tt_slot.key == pos_key || depth >= tt_slot.depth) {
+            tt_slot = {pos_key, best_score, depth, node_type, best_move.internal_move};
+        }
+    }
 
     return best_score;
 }

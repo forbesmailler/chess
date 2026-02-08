@@ -69,4 +69,8 @@ class ChessEngine : public BaseEngine {
     void order_moves(const ChessBoard& board, std::vector<ChessBoard::Move>& moves,
                      const ChessBoard::Move& tt_move, int ply,
                      chess::Move prev_move = chess::Move::NO_MOVE);
+    void score_moves(const ChessBoard& board,
+                     const std::vector<ChessBoard::Move>& moves, int* scores,
+                     const ChessBoard::Move& tt_move, int ply,
+                     chess::Move prev_move = chess::Move::NO_MOVE);
 };

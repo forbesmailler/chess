@@ -11,7 +11,7 @@ search:
   time_check_interval: 2048
   max_depth: 50
   quiescence_max_depth: 8
-  default_max_time_ms: 1000
+  default_max_time_ms: 2000
   time_allocation_divisor: 40
   null_move:
     min_depth: 3
@@ -30,7 +30,7 @@ mcts:
   exploration_constant: 1.4
   max_simulation_depth: 100
   cache_size: 100000
-  default_max_time_ms: 30000
+  default_max_time_ms: 2000
   eval_frequency: 10
   early_termination_factor: 0.8
   prior_sigmoid_scale: 5000.0
