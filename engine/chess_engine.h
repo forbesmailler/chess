@@ -1,4 +1,5 @@
 #pragma once
+#include <cstring>
 #include <unordered_map>
 #include <vector>
 
@@ -36,11 +37,21 @@ class ChessEngine : public BaseEngine {
     mutable std::unordered_map<uint64_t, float> eval_cache;
     bool tt_full = false;
 
+    // Killer move heuristic: 2 killer moves per ply (indexed by remaining depth)
+    static constexpr int MAX_PLY = config::search::MAX_DEPTH + 10;
+    ChessBoard::Move killers[MAX_PLY][2];
+
+    // History heuristic: indexed by [from_square][to_square]
+    int history[64][64];
+
+    // Aspiration window
+    static constexpr float ASPIRATION_DELTA = 50.0f;
+
     SearchResult iterative_deepening_search(const ChessBoard& board, int max_time_ms);
-    float negamax(const ChessBoard& board, int depth, float alpha, float beta,
+    float negamax(const ChessBoard& board, int depth, int ply, float alpha, float beta,
                   bool is_pv = false);
     float quiescence_search(const ChessBoard& board, float alpha, float beta,
                             int depth = 0, bool in_check = false);
     void order_moves(const ChessBoard& board, std::vector<ChessBoard::Move>& moves,
-                     const ChessBoard::Move& tt_move = ChessBoard::Move{});
+                     const ChessBoard::Move& tt_move, int ply);
 };

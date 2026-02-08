@@ -46,18 +46,6 @@ class NNUE(nn.Module):
         return torch.tanh(self.fc3(x)).squeeze(-1)  # range [-1, 1]
 
 
-def decode_piece(nibble):
-    """Decode 4-bit piece encoding to (piece_type_0_5, is_own_piece).
-
-    Encoding: 0=empty, 1-6=white P/N/B/R/Q/K, 7-12=black P/N/B/R/Q/K.
-    """
-    if nibble == 0:
-        return None, None
-    if nibble <= 6:
-        return nibble - 1, 0  # white piece, piece_type 0-5
-    return nibble - 7, 1  # black piece, piece_type 0-5
-
-
 def extract_features(piece_placement, side_to_move, castling=0, en_passant_file=255):
     """Extract 773 features from binary position data.
 
@@ -72,42 +60,41 @@ def extract_features(piece_placement, side_to_move, castling=0, en_passant_file=
     features = np.zeros(INPUT_SIZE, dtype=np.float32)
     white_to_move = side_to_move == 0
 
-    for sq in range(64):
-        byte_idx = sq // 2
-        if sq % 2 == 0:
-            nibble = (piece_placement[byte_idx] >> 4) & 0x0F
+    # Vectorized nibble extraction: decode all 64 squares at once
+    raw = np.frombuffer(piece_placement, dtype=np.uint8)
+    high = (raw >> 4) & 0x0F  # even squares
+    low = raw & 0x0F  # odd squares
+    nibbles = np.empty(64, dtype=np.uint8)
+    nibbles[0::2] = high
+    nibbles[1::2] = low
+
+    # Find non-empty squares
+    occupied = np.nonzero(nibbles)[0]
+    for sq in occupied:
+        nibble = int(nibbles[sq])
+        if nibble <= 6:
+            piece_type, piece_color = nibble - 1, 0
         else:
-            nibble = piece_placement[byte_idx] & 0x0F
+            piece_type, piece_color = nibble - 7, 1
 
-        if nibble == 0:
-            continue
-
-        piece_type, piece_color = decode_piece(nibble)
-
-        # Determine if this is our piece or opponent's
         is_own = (piece_color == 0) == white_to_move
-
-        # Flip square if black to move
         feature_sq = sq if white_to_move else (sq ^ 56)
-
         offset = 0 if is_own else 384
-        idx = offset + piece_type * 64 + feature_sq
-        features[idx] = 1.0
+        features[offset + piece_type * 64 + feature_sq] = 1.0
 
     # Castling rights from STM perspective
     # Binary encoding: bit3=WK, bit2=WQ, bit1=BK, bit0=BQ
     if white_to_move:
-        features[768] = float((castling >> 3) & 1)  # own kingside
-        features[769] = float((castling >> 2) & 1)  # own queenside
-        features[770] = float((castling >> 1) & 1)  # opp kingside
-        features[771] = float(castling & 1)  # opp queenside
+        features[768] = float((castling >> 3) & 1)
+        features[769] = float((castling >> 2) & 1)
+        features[770] = float((castling >> 1) & 1)
+        features[771] = float(castling & 1)
     else:
-        features[768] = float((castling >> 1) & 1)  # own kingside
-        features[769] = float(castling & 1)  # own queenside
-        features[770] = float((castling >> 3) & 1)  # opp kingside
-        features[771] = float((castling >> 2) & 1)  # opp queenside
+        features[768] = float((castling >> 1) & 1)
+        features[769] = float(castling & 1)
+        features[770] = float((castling >> 3) & 1)
+        features[771] = float((castling >> 2) & 1)
 
-    # En passant available
     features[772] = float(en_passant_file != 255)
 
     return features
