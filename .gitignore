@@ -13,3 +13,4 @@ build/
 *.pyc
 .env
 nul
+training_data.bin

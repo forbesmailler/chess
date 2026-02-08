@@ -43,9 +43,11 @@ TrainingPosition SelfPlayGenerator::encode_position(const ChessBoard& board, flo
     pos.side_to_move = b.sideToMove() == chess::Color::WHITE ? 0 : 1;
 
     auto rights = board.get_castling_rights();
-    pos.castling = static_cast<uint8_t>(
-        (rights.white_kingside << 3) | (rights.white_queenside << 2) |
-        (rights.black_kingside << 1) | rights.black_queenside);
+    pos.castling =
+        static_cast<uint8_t>((static_cast<int>(rights.white_kingside) << 3) |
+                             (static_cast<int>(rights.white_queenside) << 2) |
+                             (static_cast<int>(rights.black_kingside) << 1) |
+                             static_cast<int>(rights.black_queenside));
 
     // En passant
     auto ep = b.enpassantSq();

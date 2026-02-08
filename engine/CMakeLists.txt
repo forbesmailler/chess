@@ -94,6 +94,7 @@ FetchContent_Declare(
 
 # Set additional options that might help with CMake 4.x
 set(BUILD_TESTING ${BUILD_TESTS} CACHE BOOL "" FORCE)
+set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 
 # Google Test for unit testing
 if(BUILD_TESTS)
@@ -105,34 +106,11 @@ if(BUILD_TESTS)
     FetchContent_MakeAvailable(googletest)
     enable_testing()
 endif()
-set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 
-# Populate the chess library (header-only)
-message(STATUS "Fetching chess library (this may take a moment)...")
-
-FetchContent_GetProperties(chess-library)
-if(NOT chess-library_POPULATED)
-    message(STATUS "Populating chess-library...")
-    FetchContent_Populate(chess-library)
-    
-    # Check if the source was downloaded and create interface library
-    if(EXISTS "${chess-library_SOURCE_DIR}/include/chess.hpp")
-        message(STATUS "Chess library (header-only) downloaded successfully to: ${chess-library_SOURCE_DIR}")
-        
-        # Create an interface library since it's header-only
-        add_library(chess-library INTERFACE)
-        target_include_directories(chess-library INTERFACE ${chess-library_SOURCE_DIR}/include)
-        
-        # Add alias for compatibility
-        add_library(chess::chess ALIAS chess-library)
-        
-        message(STATUS "Chess library configured successfully as header-only")
-    else()
-        message(FATAL_ERROR "Chess library header not found at: ${chess-library_SOURCE_DIR}/include/chess.hpp")
-    endif()
-else()
-    message(STATUS "Chess library already populated")
-endif()
+# Chess library is header-only with no CMakeLists.txt — download and create target
+FetchContent_MakeAvailable(chess-library)
+add_library(chess-library-iface INTERFACE)
+target_include_directories(chess-library-iface INTERFACE ${chess-library_SOURCE_DIR}/include)
 
 # Create library for engine code (used by both main executable and tests)
 add_library(chess_engine_lib STATIC
@@ -146,7 +124,7 @@ add_library(chess_engine_lib STATIC
     utils.cpp
 )
 
-target_link_libraries(chess_engine_lib PUBLIC chess-library)
+target_link_libraries(chess_engine_lib PUBLIC chess-library-iface)
 
 # Threading support (for self-play)
 find_package(Threads REQUIRED)

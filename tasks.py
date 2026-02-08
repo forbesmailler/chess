@@ -11,7 +11,7 @@ _trn = training()
 _dep = deploy()
 
 CPP_FILES = "engine/*.cpp engine/*.h tests/engine/*.cpp"
-BOT_EXE = _dep["paths"]["bot_exe"]
+BOT_EXE = str(Path(_dep["paths"]["bot_exe"]))
 
 _sp = _trn["self_play"]
 _train_cfg = _trn["training"]
@@ -38,23 +38,40 @@ def format(c):
 
 
 @task
-def test(c):
-    """Run all tests (Python + C++)."""
-    c.run("pytest", warn=True)
+def test_cpp(c):
+    """Run C++ tests via ctest."""
     with c.cd("engine/build"):
         c.run("ctest -C Release --output-on-failure")
 
 
 @task
+def test(c):
+    """Run all tests (Python + C++)."""
+    c.run("pytest", warn=True)
+    test_cpp(c)
+
+
+@task
+def build(c):
+    """Build the C++ engine."""
+    with c.cd("engine/build"):
+        c.run("cmake .. -DCMAKE_BUILD_TYPE=Release")
+        c.run("cmake --build . --config Release")
+
+
+@task
 def prepare(c):
-    """Regenerate config, format, and test."""
-    print("=== Step 1/3: Gen config ===")
+    """Regenerate config, format, build, and test."""
+    print("=== Step 1/4: Gen config ===")
     gen_config(c)
 
-    print("=== Step 2/3: Format ===")
+    print("=== Step 2/4: Format ===")
     format(c)
 
-    print("=== Step 3/3: Test ===")
+    print("=== Step 3/4: Build ===")
+    build(c)
+
+    print("=== Step 4/4: Test ===")
     test(c)
 
 
@@ -148,13 +165,10 @@ def deploy(c, weights=_inv["weights"]):
         c.run("git pull")
 
     print("=== Step 2/5: Build ===")
-    with c.cd(f"{repo_dir}/engine/build"):
-        c.run("cmake .. -DCMAKE_BUILD_TYPE=Release")
-        c.run("cmake --build . --config Release")
+    build(c)
 
     print("=== Step 3/5: Test ===")
-    with c.cd(f"{repo_dir}/engine/build"):
-        c.run("ctest -C Release --output-on-failure")
+    test_cpp(c)
 
     print("=== Step 4/5: Install ===")
     c.run(f"systemctl stop {service}", warn=True)
