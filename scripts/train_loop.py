@@ -51,6 +51,16 @@ def main():
     p.add_argument("--batch-size", type=int, default=_train_cfg["batch_size"])
     p.add_argument("--eval-weight", type=float, default=_train_cfg["eval_weight"])
     p.add_argument("--compare-games", type=int, default=_cmp.get("num_games", 1000))
+    p.add_argument(
+        "--compare-only",
+        action="store_true",
+        help="Skip self-play and training; just compare candidate vs current best and archive.",
+    )
+    p.add_argument(
+        "--train-only",
+        action="store_true",
+        help="Skip self-play; just train, export, compare, and archive.",
+    )
     args = p.parse_args()
 
     weights_path = Path(args.weights)
@@ -68,40 +78,48 @@ def main():
         print(f"=== Iteration {iteration} ===")
         print(f"{'=' * 60}")
 
-        # 1. Self-play using current best model (or handcrafted)
-        weights_arg = str(weights_path) if weights_path.exists() else ""
-        eval_label = (
-            f"NNUE ({args.weights})" if weights_path.exists() else "handcrafted"
-        )
-        print(f"\n--- Self-play ({args.games} games, eval: {eval_label}) ---")
-        selfplay_cmd = (
-            f"{BOT_EXE} --selfplay {args.games} {args.depth} {args.data} {args.threads}"
-        )
-        if weights_arg:
-            selfplay_cmd += f" {weights_arg}"
-        run(selfplay_cmd)
+        if not args.compare_only and not args.train_only:
+            # 1. Self-play using current best model (or handcrafted)
+            weights_arg = str(weights_path) if weights_path.exists() else ""
+            eval_label = (
+                f"NNUE ({args.weights})" if weights_path.exists() else "handcrafted"
+            )
+            print(f"\n--- Self-play ({args.games} games, eval: {eval_label}) ---")
+            selfplay_cmd = (
+                f"{BOT_EXE} --selfplay {args.games} {args.depth}"
+                f" {args.data} {args.threads}"
+            )
+            if weights_arg:
+                selfplay_cmd += f" {weights_arg}"
+            run(selfplay_cmd)
 
-        total_positions = data_path.stat().st_size // POSITION_BYTES
-        print(f"Total accumulated positions: {total_positions}")
+        if not args.compare_only:
+            total_positions = data_path.stat().st_size // POSITION_BYTES
+            print(f"Total accumulated positions: {total_positions}")
 
-        # 2. Train NNUE from full accumulated data
-        print(
-            f"\n--- Train NNUE ({args.epochs} epochs, {total_positions} positions) ---"
-        )
-        run(
-            f"python engine/train/train_nnue.py --data {args.data}"
-            f" --output engine/train/nnue_weights.pt"
-            f" --epochs {args.epochs} --batch-size {args.batch_size}"
-            f" --eval-weight {args.eval_weight}"
-        )
+            # 2. Train NNUE from full accumulated data
+            print(
+                f"\n--- Train NNUE"
+                f" ({args.epochs} epochs, {total_positions} positions) ---"
+            )
+            run(
+                f"python engine/train/train_nnue.py --data {args.data}"
+                f" --output engine/train/nnue_weights.pt"
+                f" --epochs {args.epochs} --batch-size {args.batch_size}"
+                f" --eval-weight {args.eval_weight}"
+            )
 
-        # 3. Export to candidate
-        print("\n--- Export candidate ---")
-        run(
-            f"python engine/train/export_nnue.py"
-            f" --model engine/train/nnue_weights.pt"
-            f" --output {candidate_path}"
-        )
+            # 3. Export to candidate
+            print("\n--- Export candidate ---")
+            run(
+                f"python engine/train/export_nnue.py"
+                f" --model engine/train/nnue_weights.pt"
+                f" --output {candidate_path}"
+            )
+
+        if not candidate_path.exists():
+            print(f"Error: candidate not found at {candidate_path}")
+            break
 
         # 4. Compare candidate vs current best
         old_arg = str(weights_path) if weights_path.exists() else "handcrafted"
@@ -113,6 +131,9 @@ def main():
 
         # 5. Archive
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        total_positions = (
+            data_path.stat().st_size // POSITION_BYTES if data_path.exists() else 0
+        )
         archive_name = f"nnue_{timestamp}_{total_positions}pos.bin"
 
         if improved:

@@ -248,6 +248,7 @@ ModelComparator::Result ModelComparator::run() {
     int games_per_thread = config.num_games / threads;
     int remainder = config.num_games % threads;
 
+    std::cout << "Loading models on " << threads << " thread(s)..." << std::endl;
     std::vector<std::thread> thread_pool;
     for (int t = 0; t < threads; ++t) {
         int n = games_per_thread + (t < remainder ? 1 : 0);

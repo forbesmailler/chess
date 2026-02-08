@@ -75,7 +75,9 @@ class LichessBot {
         // Load NNUE weights if requested
         if (eval_mode == EvalMode::NNUE && !nnue_weights_path.empty()) {
             nnue_model = std::make_shared<NNUEModel>();
-            if (!nnue_model->load_weights(nnue_weights_path)) {
+            if (nnue_model->load_weights(nnue_weights_path)) {
+                std::cout << "Loaded NNUE model: " << nnue_weights_path << std::endl;
+            } else {
                 Utils::log_warning("Failed to load NNUE weights from " +
                                    nnue_weights_path +
                                    ", falling back to handcrafted eval");

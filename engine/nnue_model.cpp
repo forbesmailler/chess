@@ -68,9 +68,6 @@ bool NNUEModel::load_weights(const std::string& path) {
     }
 
     loaded = true;
-    std::cout << "Loaded NNUE model (v" << version << "): " << INPUT_SIZE << " -> "
-              << HIDDEN1_SIZE << " -> " << HIDDEN2_SIZE << " -> " << OUTPUT_SIZE
-              << std::endl;
     return true;
 }
 

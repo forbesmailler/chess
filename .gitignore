@@ -11,6 +11,8 @@ build/
 *.txt
 !**/CMakeLists.txt
 *.pyc
-.env
+*.env
+*.bin
+!**.nnue.bin
+*.pt
 nul
-training_data.bin

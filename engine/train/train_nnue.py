@@ -8,8 +8,10 @@ blended target of search eval and game result.
 """
 
 import argparse
+import os
 import struct
 import sys
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -20,6 +22,9 @@ from torch.utils.data import DataLoader, Dataset, random_split
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from config.load_config import engine, training
+
+warnings.filterwarnings("ignore", message="Cannot set number of intraop threads")
+torch.set_num_threads(os.cpu_count())
 
 _eng = engine()
 _trn = training()
@@ -148,7 +153,8 @@ class SelfPlayDataset(Dataset):
 
 def train(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
+    num_cores = os.cpu_count()
+    print(f"Using device: {device}, threads: {num_cores}")
 
     dataset = SelfPlayDataset(args.data, eval_weight=args.eval_weight)
     print(f"Loaded {len(dataset)} positions from {args.data}")
@@ -163,19 +169,22 @@ def train(args):
     )
 
     use_cuda = device.type == "cuda"
+    num_workers = min(4, num_cores) if not use_cuda else 0
     train_loader = DataLoader(
         train_set,
         batch_size=args.batch_size,
         shuffle=True,
-        num_workers=0,
+        num_workers=num_workers,
         pin_memory=use_cuda,
+        persistent_workers=num_workers > 0,
     )
     val_loader = DataLoader(
         val_set,
         batch_size=args.batch_size,
         shuffle=False,
-        num_workers=0,
+        num_workers=num_workers,
         pin_memory=use_cuda,
+        persistent_workers=num_workers > 0,
     )
 
     model = NNUE().to(device)
