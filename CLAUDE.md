@@ -32,7 +32,7 @@ invoke test-cpp           # C++ tests only
 invoke test-py            # Python tests only
 invoke format             # format all (ruff + clang-format)
 invoke train              # self-play → train NNUE → export weights
-invoke run              # run bot with NNUE (reads LICHESS_TOKEN env var)
+invoke run                # run bot with NNUE (reads LICHESS_TOKEN env var)
 invoke deploy             # deploy to Linux VPS (reads LICHESS_TOKEN env var)
 ```
 
@@ -46,7 +46,7 @@ invoke deploy             # deploy to Linux VPS (reads LICHESS_TOKEN env var)
 | `chess_engine.h/cpp` | Negamax with alpha-beta, transposition tables, quiescence search, iterative deepening |
 | `mcts_engine.h/cpp` | Monte Carlo Tree Search with UCT selection |
 | `handcrafted_eval.h/cpp` | Tapered eval: material, PSTs, pawn structure, mobility, king safety |
-| `nnue_model.h/cpp` | NNUE inference: binary weights, 768→256→32→3 with ClippedReLU |
+| `nnue_model.h/cpp` | NNUE inference: binary weights, 773→256→32→3 with ClippedReLU |
 | `feature_extractor.h/cpp` | 1542-dim feature vector for logistic model |
 | `logistic_model.h/cpp` | Loads exported coefficients from `model_coefficients.txt` |
 | `self_play.h/cpp` | Multi-threaded self-play data generator (binary output) |
@@ -65,7 +65,6 @@ invoke deploy             # deploy to Linux VPS (reads LICHESS_TOKEN env var)
 ### Tests
 
 - C++: `engine/tests/test_*.cpp` (GTest, run via ctest)
-- Python: `tests/` (pytest)
 
 ## Evaluation Modes
 

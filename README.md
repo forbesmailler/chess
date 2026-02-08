@@ -5,7 +5,7 @@ A Lichess chess bot written in C++ with a Python training pipeline.
 ## Features
 
 - **Search**: Negamax (alpha-beta pruning, transposition tables, quiescence search, iterative deepening) and MCTS (UCT selection)
-- **Evaluation**: Handcrafted tapered eval, logistic regression, or NNUE (768→256→32→3)
+- **Evaluation**: Handcrafted tapered eval, logistic regression, or NNUE (773→256→32→3)
 - **Training**: Self-play data generation → PyTorch NNUE training → binary weight export
 - **Deployment**: Connects to Lichess API; runs as a systemd service on Linux
 
@@ -30,9 +30,11 @@ cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build .
 
 ### Run
 
+Set the `LICHESS_TOKEN` environment variable, then:
+
 ```bash
 # Play on Lichess
-./lichess_bot <token> [max_time_ms] [--engine=negamax|mcts] [--eval=handcrafted|logistic|nnue] [--nnue-weights=path]
+./lichess_bot [max_time_ms] [--engine=negamax|mcts] [--eval=handcrafted|logistic|nnue] [--nnue-weights=path]
 
 # Generate self-play training data
 ./lichess_bot --selfplay [num_games] [search_depth] [output_file] [num_threads]
@@ -42,7 +44,6 @@ cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build .
 
 ```bash
 ctest -C Release --output-on-failure   # C++ tests
-pytest                                  # Python tests
 ```
 
 ## NNUE Training Pipeline
@@ -59,7 +60,7 @@ python train_nnue.py --data ../../training_data.bin --output nnue_weights.pt --e
 python export_nnue.py --model nnue_weights.pt --output nnue.bin
 
 # 4. Run with NNUE
-./lichess_bot <token> 1000 --eval=nnue --nnue-weights=nnue.bin
+./lichess_bot 1000 --eval=nnue --nnue-weights=nnue.bin
 ```
 
 Or use the all-in-one invoke task:
@@ -76,7 +77,8 @@ pip install -e ".[dev]"       # install dev dependencies
 invoke build-cpp              # build engine
 invoke test                   # run all tests
 invoke format                 # format Python (ruff) + C++ (clang-format)
-invoke deploy --token=TOKEN   # deploy to Linux VPS
+invoke run                    # run bot (reads LICHESS_TOKEN env var)
+invoke deploy                 # deploy to Linux VPS
 ```
 
 ## Project Structure
