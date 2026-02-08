@@ -217,9 +217,13 @@ def generate() -> str:
         ("pst_pawn_mg", "PST_PAWN_MG"),
         ("pst_pawn_eg", "PST_PAWN_EG"),
         ("pst_knight_mg", "PST_KNIGHT_MG"),
+        ("pst_knight_eg", "PST_KNIGHT_EG"),
         ("pst_bishop_mg", "PST_BISHOP_MG"),
+        ("pst_bishop_eg", "PST_BISHOP_EG"),
         ("pst_rook_mg", "PST_ROOK_MG"),
+        ("pst_rook_eg", "PST_ROOK_EG"),
         ("pst_queen_mg", "PST_QUEEN_MG"),
+        ("pst_queen_eg", "PST_QUEEN_EG"),
         ("pst_king_mg", "PST_KING_MG"),
         ("pst_king_eg", "PST_KING_EG"),
     ]
@@ -234,10 +238,10 @@ def generate() -> str:
         f"{ind}                                         PST_ROOK_MG, PST_QUEEN_MG, PST_KING_MG}};"
     )
     lines.append(
-        f"{ind}static constexpr const int* PST_EG[] = {{PST_PAWN_EG, PST_KNIGHT_MG, PST_BISHOP_MG,"
+        f"{ind}static constexpr const int* PST_EG[] = {{PST_PAWN_EG, PST_KNIGHT_EG, PST_BISHOP_EG,"
     )
     lines.append(
-        f"{ind}                                         PST_ROOK_MG, PST_QUEEN_MG, PST_KING_EG}};"
+        f"{ind}                                         PST_ROOK_EG, PST_QUEEN_EG, PST_KING_EG}};"
     )
     lines.append("")
 

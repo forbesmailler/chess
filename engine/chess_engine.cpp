@@ -286,7 +286,9 @@ float ChessEngine::negamax(ChessBoard& board, int depth, int ply, float alpha,
                     killers[ply][1] = killers[ply][0];
                     killers[ply][0] = move;
                 }
-                history[move.from().index()][move.to().index()] += depth * depth;
+                int& h = history[move.from().index()][move.to().index()];
+                h += depth * depth;
+                if (h > 1000000) h = 1000000;
                 if (prev_move != chess::Move::NO_MOVE) {
                     countermoves[prev_move.from().index()][prev_move.to().index()] =
                         move;

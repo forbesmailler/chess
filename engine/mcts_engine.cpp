@@ -169,7 +169,8 @@ float MCTSEngine::simulate(const ChessBoard& board) {
             float eval = evaluate_position(sim_board);
             // Early termination if position is very good/bad
             if (std::abs(eval) > MATE_VALUE * config::mcts::EARLY_TERMINATION_FACTOR) {
-                return sim_board.turn() == board.turn() ? -eval : eval;
+                // eval is White-perspective; convert to board.turn()'s perspective
+                return board.turn() == ChessBoard::WHITE ? eval : -eval;
             }
         }
 
@@ -184,9 +185,9 @@ float MCTSEngine::simulate(const ChessBoard& board) {
         depth++;
     }
 
-    // Evaluate final position
+    // Evaluate final position (White-perspective); convert to board.turn()'s perspective
     float eval = evaluate_position(sim_board);
-    return sim_board.turn() == board.turn() ? -eval : eval;
+    return board.turn() == ChessBoard::WHITE ? eval : -eval;
 }
 
 void MCTSEngine::backpropagate(MCTSNode* node, float score) {
