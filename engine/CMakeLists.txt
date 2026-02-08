@@ -139,8 +139,6 @@ add_library(chess_engine_lib STATIC
     chess_board.cpp
     chess_engine.cpp
     mcts_engine.cpp
-    feature_extractor.cpp
-    logistic_model.cpp
     handcrafted_eval.cpp
     nnue_model.cpp
     self_play.cpp
@@ -201,7 +199,6 @@ endif()
 if(BUILD_TESTS)
     add_executable(chess_tests
         tests/test_chess_board.cpp
-        tests/test_feature_extractor.cpp
         tests/test_chess_engine.cpp
         tests/test_handcrafted_eval.cpp
         tests/test_self_play.cpp

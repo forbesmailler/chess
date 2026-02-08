@@ -7,8 +7,8 @@ The chess engine and Lichess bot. See the [top-level README](../README.md) for b
 Set `LICHESS_TOKEN` environment variable, then:
 
 ```bash
-# Bot mode (defaults: 1000ms search time, negamax, logistic eval)
-./lichess_bot [max_time_ms] [--engine=negamax|mcts] [--eval=handcrafted|logistic|nnue] [--nnue-weights=path]
+# Bot mode (defaults: 1000ms search time, negamax, handcrafted eval)
+./lichess_bot [max_time_ms] [--engine=negamax|mcts] [--eval=handcrafted|nnue] [--nnue-weights=path]
 
 # Self-play data generation
 ./lichess_bot --selfplay [num_games] [search_depth] [output_file] [num_threads]
@@ -32,6 +32,5 @@ Test files in `tests/`:
 - `test_chess_board.cpp` — board operations, FEN parsing, move generation
 - `test_chess_engine.cpp` — negamax search, time management
 - `test_handcrafted_eval.cpp` — evaluation terms
-- `test_feature_extractor.cpp` — logistic model feature extraction
 - `test_nnue_model.cpp` — NNUE forward pass
 - `test_self_play.cpp` — self-play data generation

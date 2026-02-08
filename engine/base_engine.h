@@ -7,10 +7,9 @@
 
 #include "chess_board.h"
 #include "generated_config.h"
-#include "logistic_model.h"
 #include "nnue_model.h"
 
-enum class EvalMode { HANDCRAFTED, LOGISTIC, NNUE };
+enum class EvalMode { HANDCRAFTED, NNUE };
 
 struct TimeControl {
     int time_left_ms;
@@ -28,11 +27,9 @@ struct SearchResult {
 
 class BaseEngine {
    public:
-    explicit BaseEngine(std::shared_ptr<LogisticModel> model, int max_time_ms = 1000,
-                        EvalMode eval_mode = EvalMode::LOGISTIC,
+    explicit BaseEngine(int max_time_ms = 1000, EvalMode eval_mode = EvalMode::HANDCRAFTED,
                         std::shared_ptr<NNUEModel> nnue_model = nullptr)
-        : model(model),
-          nnue_model(std::move(nnue_model)),
+        : nnue_model(std::move(nnue_model)),
           max_search_time_ms(max_time_ms),
           eval_mode(eval_mode) {}
 
@@ -50,7 +47,6 @@ class BaseEngine {
    protected:
     static constexpr float MATE_VALUE = config::MATE_VALUE;
 
-    std::shared_ptr<LogisticModel> model;
     std::shared_ptr<NNUEModel> nnue_model;
     int max_search_time_ms;
     EvalMode eval_mode;

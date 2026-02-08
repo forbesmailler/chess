@@ -2,7 +2,6 @@
 
 #include <algorithm>
 
-#include "feature_extractor.h"
 #include "handcrafted_eval.h"
 
 std::string BaseEngine::get_position_key(const ChessBoard& board) const {
@@ -27,16 +26,11 @@ float BaseEngine::raw_evaluate(const ChessBoard& board) {
     if (board.is_stalemate() || board.is_draw()) return 0.0f;
 
     switch (eval_mode) {
-        case EvalMode::HANDCRAFTED:
-            return handcrafted_evaluate(board);
         case EvalMode::NNUE:
             if (nnue_model) return nnue_model->predict(board);
             return handcrafted_evaluate(board);
-        case EvalMode::LOGISTIC:
-        default: {
-            auto features = FeatureExtractor::extract_features(board);
-            auto proba = model->predict_proba(features);
-            return (proba[2] - proba[0]) * MATE_VALUE;
-        }
+        case EvalMode::HANDCRAFTED:
+        default:
+            return handcrafted_evaluate(board);
     }
 }

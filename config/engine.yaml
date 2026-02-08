@@ -2,8 +2,8 @@ mate_value: 10000.0
 
 nnue:
   input_size: 773
-  hidden1_size: 256
-  hidden2_size: 32
+  hidden1_size: 128
+  hidden2_size: 16
   output_size: 3
 
 search:
@@ -57,7 +57,3 @@ curl:
   stream_keepalive_idle: 120
   stream_keepalive_interval: 60
   max_redirects: 5
-
-features:
-  feature_size: 1542
-  piece_count_divisor: 30.0

@@ -4,7 +4,7 @@ Guidance for Claude Code when working in this repository.
 
 ## Project Overview
 
-Lichess chess bot: C++ engine with Python training pipeline. Three eval modes (handcrafted, logistic, NNUE), two search algorithms (negamax alpha-beta, MCTS), self-play data generation, and NNUE training.
+Lichess chess bot: C++ engine with Python training pipeline. Two eval modes (handcrafted, NNUE), two search algorithms (negamax alpha-beta, MCTS), self-play data generation, and NNUE training.
 
 ## Build & Test
 
@@ -48,8 +48,6 @@ invoke gen-config         # regenerate engine/generated_config.h from YAML
 | `mcts_engine.h/cpp` | Monte Carlo Tree Search with UCT selection |
 | `handcrafted_eval.h/cpp` | Tapered eval: material, PSTs, pawn structure, mobility, king safety |
 | `nnue_model.h/cpp` | NNUE inference: binary weights, 773→256→32→3 with ClippedReLU |
-| `feature_extractor.h/cpp` | 1542-dim feature vector for logistic model |
-| `logistic_model.h/cpp` | Loads exported coefficients from `model_coefficients.txt` |
 | `self_play.h/cpp` | Multi-threaded self-play data generator (binary output) |
 | `chess_board.h/cpp` | Board wrapper utilities |
 | `utils.h/cpp` | Shared helper functions |
@@ -61,7 +59,7 @@ invoke gen-config         # regenerate engine/generated_config.h from YAML
 
 | File | Purpose |
 |------|---------|
-| `engine.yaml` | Search, MCTS, NNUE architecture, bot/curl, logistic, features |
+| `engine.yaml` | Search, MCTS, NNUE architecture, bot/curl |
 | `eval.yaml` | Material, PSTs, pawn/rook/bishop/king bonuses |
 | `training.yaml` | Self-play defaults, training hyperparams, invoke task defaults |
 | `deploy.yaml` | File paths, VPS paths, service config |
@@ -82,7 +80,6 @@ invoke gen-config         # regenerate engine/generated_config.h from YAML
 ## Evaluation Modes
 
 - **Handcrafted**: Tapered middlegame/endgame blend. Material, PSTs, pawn structure (passed/isolated/doubled), rook on open files, bishop pair, mobility, king pawn shield.
-- **Logistic**: 1542-dim features → P(win)/P(draw)/P(loss).
 - **NNUE**: 773 features (STM perspective) → 256 → 32 → 3 with ClippedReLU. eval = (P(win) - P(loss)) × MATE_VALUE.
 
 ## NNUE Feature Encoding

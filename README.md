@@ -5,7 +5,7 @@ A Lichess chess bot written in C++ with a Python training pipeline.
 ## Features
 
 - **Search**: Negamax (alpha-beta pruning, transposition tables, quiescence search, iterative deepening) and MCTS (UCT selection)
-- **Evaluation**: Handcrafted tapered eval, logistic regression, or NNUE (773→256→32→3)
+- **Evaluation**: Handcrafted tapered eval or NNUE (773→256→32→3)
 - **Training**: Self-play data generation → PyTorch NNUE training → binary weight export
 - **Deployment**: Connects to Lichess API; runs as a systemd service on Linux
 
@@ -34,7 +34,7 @@ Set the `LICHESS_TOKEN` environment variable, then:
 
 ```bash
 # Play on Lichess
-./lichess_bot [max_time_ms] [--engine=negamax|mcts] [--eval=handcrafted|logistic|nnue] [--nnue-weights=path]
+./lichess_bot [max_time_ms] [--engine=negamax|mcts] [--eval=handcrafted|nnue] [--nnue-weights=path]
 
 # Generate self-play training data
 ./lichess_bot --selfplay [num_games] [search_depth] [output_file] [num_threads]
@@ -90,8 +90,6 @@ engine/
 ├── mcts_engine.h/cpp       # MCTS search
 ├── handcrafted_eval.h/cpp  # Tapered evaluation
 ├── nnue_model.h/cpp        # NNUE inference
-├── feature_extractor.h/cpp # Logistic model features
-├── logistic_model.h/cpp    # Logistic model loading
 ├── self_play.h/cpp         # Self-play data generator
 ├── lichess_client.h/cpp    # Lichess API client (libcurl)
 ├── main.cpp                # Entry point

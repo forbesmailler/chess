@@ -5,9 +5,8 @@
 #include <limits>
 #include <sstream>
 
-ChessEngine::ChessEngine(std::shared_ptr<LogisticModel> model, int max_time_ms, EvalMode eval_mode,
-                         std::shared_ptr<NNUEModel> nnue_model)
-    : BaseEngine(model, max_time_ms, eval_mode, std::move(nnue_model)) {
+ChessEngine::ChessEngine(int max_time_ms, EvalMode eval_mode, std::shared_ptr<NNUEModel> nnue_model)
+    : BaseEngine(max_time_ms, eval_mode, std::move(nnue_model)) {
     eval_cache.reserve(CACHE_SIZE / 2);
     transposition_table.reserve(CACHE_SIZE / 2);
 }

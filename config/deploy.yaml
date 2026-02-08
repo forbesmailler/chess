@@ -1,6 +1,5 @@
 paths:
   bot_exe: "engine/build/Release/lichess_bot.exe"
-  model_coefficients: "../../train/model_coefficients.txt"
 
 vps:
   repo_dir: "/opt/chess-bot-src"

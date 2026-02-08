@@ -9,8 +9,7 @@
 
 class MCTSEngine : public BaseEngine {
    public:
-    explicit MCTSEngine(std::shared_ptr<LogisticModel> model, int max_time_ms = 30000,
-                        EvalMode eval_mode = EvalMode::LOGISTIC,
+    explicit MCTSEngine(int max_time_ms = 30000, EvalMode eval_mode = EvalMode::HANDCRAFTED,
                         std::shared_ptr<NNUEModel> nnue_model = nullptr);
 
     SearchResult get_best_move(const ChessBoard& board, const TimeControl& time_control) override;

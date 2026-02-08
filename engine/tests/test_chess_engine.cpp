@@ -4,21 +4,12 @@
 
 #include "../chess_board.h"
 #include "../chess_engine.h"
-#include "../logistic_model.h"
 #include "../mcts_engine.h"
 
-class ChessEngineTest : public ::testing::Test {
-   protected:
-    void SetUp() override {
-        model = std::make_shared<LogisticModel>();
-        // Model may not load (no file), but engine should still work with dummy evaluation
-    }
-
-    std::shared_ptr<LogisticModel> model;
-};
+class ChessEngineTest : public ::testing::Test {};
 
 TEST_F(ChessEngineTest, NegamaxFindsMove) {
-    ChessEngine engine(model, 100);  // 100ms max time
+    ChessEngine engine(100);  // 100ms max time
     ChessBoard board;
 
     TimeControl tc{60000, 0, 0};
@@ -29,7 +20,7 @@ TEST_F(ChessEngineTest, NegamaxFindsMove) {
 }
 
 TEST_F(ChessEngineTest, NegamaxFindsMateInOne) {
-    ChessEngine engine(model, 1000);
+    ChessEngine engine(1000);
     // White to move, Qh7# is mate in one
     ChessBoard board("r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4");
 
@@ -40,7 +31,7 @@ TEST_F(ChessEngineTest, NegamaxFindsMateInOne) {
 }
 
 TEST_F(ChessEngineTest, EvaluateReturnsFinite) {
-    ChessEngine engine(model, 100);
+    ChessEngine engine(100);
     ChessBoard board;
 
     float eval = engine.evaluate(board);
@@ -48,7 +39,7 @@ TEST_F(ChessEngineTest, EvaluateReturnsFinite) {
 }
 
 TEST_F(ChessEngineTest, EvaluateCheckmate) {
-    ChessEngine engine(model, 100);
+    ChessEngine engine(100);
     // Fool's mate - white is checkmated
     ChessBoard board("rnb1kbnr/pppp1ppp/4p3/8/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3");
 
@@ -58,7 +49,7 @@ TEST_F(ChessEngineTest, EvaluateCheckmate) {
 }
 
 TEST_F(ChessEngineTest, MCTSFindsMove) {
-    MCTSEngine engine(model, 100);  // 100ms max time
+    MCTSEngine engine(100);  // 100ms max time
     ChessBoard board;
 
     TimeControl tc{60000, 0, 0};
@@ -69,7 +60,7 @@ TEST_F(ChessEngineTest, MCTSFindsMove) {
 }
 
 TEST_F(ChessEngineTest, MCTSEvaluateReturnsFinite) {
-    MCTSEngine engine(model, 100);
+    MCTSEngine engine(100);
     ChessBoard board;
 
     float eval = engine.evaluate(board);
@@ -77,7 +68,7 @@ TEST_F(ChessEngineTest, MCTSEvaluateReturnsFinite) {
 }
 
 TEST_F(ChessEngineTest, TimeControlRespected) {
-    ChessEngine engine(model, 500);  // 500ms max
+    ChessEngine engine(500);  // 500ms max
     ChessBoard board;
 
     auto start = std::chrono::steady_clock::now();
@@ -91,7 +82,7 @@ TEST_F(ChessEngineTest, TimeControlRespected) {
 }
 
 TEST_F(ChessEngineTest, SearchResultHasValidDepth) {
-    ChessEngine engine(model, 200);
+    ChessEngine engine(200);
     ChessBoard board;
 
     TimeControl tc{60000, 0, 0};

@@ -8,7 +8,6 @@
 
 #include "chess_engine.h"
 #include "handcrafted_eval.h"
-#include "logistic_model.h"
 
 SelfPlayGenerator::SelfPlayGenerator(const Config& config) : config(config) {}
 
@@ -97,10 +96,8 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
         std::vector<TrainingPosition> positions;
         positions.reserve(config.max_game_ply);
 
-        // Create a local engine for this game (handcrafted eval, no model needed)
-        auto dummy_model = std::make_shared<LogisticModel>();
-        auto engine = std::make_unique<ChessEngine>(dummy_model, config.search_time_ms,
-                                                    EvalMode::HANDCRAFTED);
+        // Create a local engine for this game (handcrafted eval)
+        auto engine = std::make_unique<ChessEngine>(config.search_time_ms);
 
         ChessBoard board;
         uint16_t ply = 0;

@@ -10,8 +10,8 @@ static constexpr float MATE_VALUE = 10000.0f;
 
 namespace nnue {
 static constexpr int INPUT_SIZE = 773;
-static constexpr int HIDDEN1_SIZE = 256;
-static constexpr int HIDDEN2_SIZE = 32;
+static constexpr int HIDDEN1_SIZE = 128;
+static constexpr int HIDDEN2_SIZE = 16;
 static constexpr int OUTPUT_SIZE = 3;
 }  // namespace nnue
 
@@ -74,11 +74,6 @@ static constexpr long STREAM_KEEPALIVE_IDLE = 120L;
 static constexpr long STREAM_KEEPALIVE_INTERVAL = 60L;
 static constexpr long MAX_REDIRECTS = 5L;
 }  // namespace curl
-
-namespace features {
-static constexpr int FEATURE_SIZE = 1542;
-static constexpr float PIECE_COUNT_DIVISOR = 30.0f;
-}  // namespace features
 
 namespace eval {
 static constexpr int MATERIAL_MG[] = {100, 320, 330, 500, 900, 0};
@@ -177,9 +172,5 @@ static constexpr int SEARCH_TIME_MS = 200;
 static constexpr int RESIGN_THRESHOLD = 5000;
 static constexpr int RESIGN_COUNT = 3;
 }  // namespace self_play
-
-namespace paths {
-static constexpr std::string_view MODEL_COEFFICIENTS = "../../train/model_coefficients.txt";
-}  // namespace paths
 
 }  // namespace config

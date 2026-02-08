@@ -13,8 +13,7 @@ struct TranspositionEntry {
 
 class ChessEngine : public BaseEngine {
    public:
-    explicit ChessEngine(std::shared_ptr<LogisticModel> model, int max_time_ms = 1000,
-                         EvalMode eval_mode = EvalMode::LOGISTIC,
+    explicit ChessEngine(int max_time_ms = 1000, EvalMode eval_mode = EvalMode::HANDCRAFTED,
                          std::shared_ptr<NNUEModel> nnue_model = nullptr);
 
     float evaluate(const ChessBoard& board) override;
