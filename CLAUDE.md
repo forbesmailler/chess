@@ -61,11 +61,6 @@ invoke deploy             # deploy to Linux VPS (reads LICHESS_TOKEN env var)
 |------|---------|
 | `engine/train/train_nnue.py` | PyTorch NNUE training from self-play binary data |
 | `engine/train/export_nnue.py` | Export PyTorch model → binary for C++ loading |
-| `engine/train/process_pgn.py` | PGN → feature CSVs for logistic regression |
-| `engine/train/train_logistic_model.py` | Logistic regression training |
-| `engine/train/export_model.py` | Export logistic coefficients for C++ loading |
-| `experimental/lichess.py` | Legacy Python bot (berserk library) |
-| `experimental/self_play/` | PyTorch MCTS self-play training (`ChessNet`, `MCTS`) |
 
 ### Tests
 
@@ -102,4 +97,4 @@ invoke deploy             # deploy to Linux VPS (reads LICHESS_TOKEN env var)
 ## Dependencies
 
 - **C++**: CMake 3.16+, C++17, libcurl, nlohmann-json, [chess-library](https://github.com/Disservin/chess-library) (FetchContent)
-- **Python**: see `pyproject.toml` — chess, numpy, pandas, scikit-learn, joblib, tqdm, berserk; optional: torch (NNUE training), invoke/pytest/ruff (dev)
+- **Python**: see `pyproject.toml` — chess, numpy, tqdm; optional: torch (NNUE training), invoke/pytest/ruff (dev)

@@ -5,11 +5,7 @@ requires-python = ">=3.10"
 dependencies = [
     "chess",
     "numpy",
-    "pandas",
-    "scikit-learn",
-    "joblib",
     "tqdm",
-    "berserk",
 ]
 
 [project.optional-dependencies]
