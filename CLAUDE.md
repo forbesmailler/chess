@@ -44,7 +44,7 @@ invoke deploy             # pull → test → build → install → restart serv
 | `chess_engine.h/cpp` | Negamax with alpha-beta, transposition tables, quiescence search, iterative deepening |
 | `mcts_engine.h/cpp` | Monte Carlo Tree Search with UCT selection |
 | `handcrafted_eval.h/cpp` | Tapered eval: material, PSTs, pawn structure, mobility, king safety |
-| `nnue_model.h/cpp` | NNUE inference: binary weights, 773→256→32→3 with ClippedReLU |
+| `nnue_model.h/cpp` | NNUE inference: binary weights, 773→256→32→1 with ClippedReLU and tanh output |
 | `self_play.h/cpp` | Multi-threaded self-play data generator and model comparator (binary output) |
 | `chess_board.h/cpp` | Board wrapper utilities |
 | `utils.h/cpp` | Shared helper functions |
@@ -79,7 +79,7 @@ invoke deploy             # pull → test → build → install → restart serv
 ## Evaluation Modes
 
 - **Handcrafted**: Tapered middlegame/endgame blend. Material, PSTs, pawn structure (passed/isolated/doubled), rook on open files, bishop pair, mobility, king pawn shield.
-- **NNUE**: 773 features (STM perspective) → 256 → 32 → 3 with ClippedReLU. eval = (P(win) - P(loss)) × MATE_VALUE.
+- **NNUE**: 773 features (STM perspective) → 256 → 32 → 1 with ClippedReLU and tanh output. eval = tanh(logit) × MATE_VALUE.
 
 ## NNUE Feature Encoding
 

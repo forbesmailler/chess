@@ -12,7 +12,7 @@ namespace nnue {
 static constexpr int INPUT_SIZE = 773;
 static constexpr int HIDDEN1_SIZE = 256;
 static constexpr int HIDDEN2_SIZE = 32;
-static constexpr int OUTPUT_SIZE = 3;
+static constexpr int OUTPUT_SIZE = 1;
 }  // namespace nnue
 
 namespace search {

@@ -1,8 +1,6 @@
 #include "utils.h"
 
-#include <algorithm>
 #include <chrono>
-#include <cmath>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -54,16 +52,4 @@ void Utils::log_error(const std::string& message) {
 
 void Utils::log_warning(const std::string& message) {
     std::cout << "[WARNING " << get_timestamp() << "] " << message << std::endl;
-}
-
-std::vector<float> Utils::softmax(const std::vector<float>& logits) {
-    float max_val = *std::max_element(logits.begin(), logits.end());
-    std::vector<float> result(logits.size());
-    float sum = 0.0f;
-    for (size_t i = 0; i < logits.size(); ++i) {
-        result[i] = std::exp(logits[i] - max_val);
-        sum += result[i];
-    }
-    for (auto& v : result) v /= sum;
-    return result;
 }

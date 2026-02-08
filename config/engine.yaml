@@ -4,7 +4,7 @@ nnue:
   input_size: 773
   hidden1_size: 256
   hidden2_size: 32
-  output_size: 3
+  output_size: 1
 
 search:
   cache_size: 1000000

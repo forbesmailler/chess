@@ -6,8 +6,6 @@
 #include <fstream>
 #include <iostream>
 
-#include "utils.h"
-
 bool NNUEModel::load_weights(const std::string& path) {
     std::ifstream file(path, std::ios::binary);
     if (!file.is_open()) {
@@ -143,18 +141,10 @@ float NNUEModel::predict(const ChessBoard& board) const {
         h2[j] = clipped_relu(sum);
     }
 
-    // Layer 3: hidden2 -> output (softmax)
-    std::vector<float> logits(OUTPUT_SIZE);
-    for (int j = 0; j < OUTPUT_SIZE; ++j) {
-        float sum = b3[j];
-        for (int i = 0; i < HIDDEN2_SIZE; ++i) sum += h2[i] * w3[i * OUTPUT_SIZE + j];
-        logits[j] = sum;
-    }
-
-    auto proba = Utils::softmax(logits);
-    // proba[0] = P(win), proba[1] = P(draw), proba[2] = P(loss)
-    // from side-to-move's perspective
-    float stm_eval = (proba[0] - proba[2]) * MATE_VALUE;
+    // Layer 3: hidden2 -> single output (tanh)
+    float logit = b3[0];
+    for (int i = 0; i < HIDDEN2_SIZE; ++i) logit += h2[i] * w3[i];
+    float stm_eval = std::tanh(logit) * MATE_VALUE;
 
     // Convert to white's perspective
     bool white_to_move = board.turn() == ChessBoard::WHITE;
