@@ -13,11 +13,13 @@ struct TranspositionEntry {
 
 class ChessEngine : public BaseEngine {
    public:
-    explicit ChessEngine(int max_time_ms = 1000, EvalMode eval_mode = EvalMode::HANDCRAFTED,
+    explicit ChessEngine(int max_time_ms = 1000,
+                         EvalMode eval_mode = EvalMode::HANDCRAFTED,
                          std::shared_ptr<NNUEModel> nnue_model = nullptr);
 
     float evaluate(const ChessBoard& board) override;
-    SearchResult get_best_move(const ChessBoard& board, const TimeControl& time_control) override;
+    SearchResult get_best_move(const ChessBoard& board,
+                               const TimeControl& time_control) override;
 
    private:
     static constexpr float SEARCH_INTERRUPTED = -99999.0f;
@@ -31,11 +33,11 @@ class ChessEngine : public BaseEngine {
     mutable std::unordered_map<std::string, float> eval_cache;
 
     SearchResult iterative_deepening_search(const ChessBoard& board, int max_time_ms);
-    float negamax(const ChessBoard& board, int depth, float alpha, float beta, bool is_pv = false);
-    float quiescence_search(const ChessBoard& board, float alpha, float beta, int depth = 0);
-    std::vector<ChessBoard::Move> order_moves(const ChessBoard& board,
-                                              const std::vector<ChessBoard::Move>& moves,
-                                              const ChessBoard::Move& tt_move = ChessBoard::Move{});
-    int score_move(const ChessBoard& board, const ChessBoard::Move& move);
-    void clear_cache_if_needed();
+    float negamax(const ChessBoard& board, int depth, float alpha, float beta,
+                  bool is_pv = false);
+    float quiescence_search(const ChessBoard& board, float alpha, float beta,
+                            int depth = 0);
+    std::vector<ChessBoard::Move> order_moves(
+        const ChessBoard& board, const std::vector<ChessBoard::Move>& moves,
+        const ChessBoard::Move& tt_move = ChessBoard::Move{});
 };

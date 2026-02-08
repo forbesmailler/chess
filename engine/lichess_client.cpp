@@ -13,7 +13,9 @@ using json = nlohmann::json;
 
 LichessClient::CurlGlobalInit LichessClient::curl_init;
 
-LichessClient::CurlGlobalInit::CurlGlobalInit() { curl_global_init(CURL_GLOBAL_DEFAULT); }
+LichessClient::CurlGlobalInit::CurlGlobalInit() {
+    curl_global_init(CURL_GLOBAL_DEFAULT);
+}
 
 LichessClient::CurlGlobalInit::~CurlGlobalInit() { curl_global_cleanup(); }
 
@@ -26,7 +28,8 @@ bool LichessClient::get_account_info(AccountInfo& info) {
     auto response = make_request(base_url + "/account");
 
     if (response.status_code != 200) {
-        std::cerr << "Failed to get account info: " << response.status_code << std::endl;
+        std::cerr << "Failed to get account info: " << response.status_code
+                  << std::endl;
         return false;
     }
 
@@ -44,16 +47,18 @@ bool LichessClient::get_account_info(AccountInfo& info) {
 }
 
 bool LichessClient::accept_challenge(const std::string& challenge_id) {
-    auto response = make_request(base_url + "/challenge/" + challenge_id + "/accept", "POST");
+    auto response =
+        make_request(base_url + "/challenge/" + challenge_id + "/accept", "POST");
     if (response.status_code != 200) {
-        std::cout << "Challenge accept failed with status " << response.status_code << ": "
-                  << response.data << std::endl;
+        std::cout << "Challenge accept failed with status " << response.status_code
+                  << ": " << response.data << std::endl;
     }
     return response.status_code == 200;
 }
 
 bool LichessClient::make_move(const std::string& game_id, const std::string& uci_move) {
-    auto response = make_request(base_url + "/bot/game/" + game_id + "/move/" + uci_move, "POST");
+    auto response =
+        make_request(base_url + "/bot/game/" + game_id + "/move/" + uci_move, "POST");
     if (response.status_code != 200) {
         std::cout << "Make move failed with status " << response.status_code << ": "
                   << response.data << std::endl;
@@ -62,17 +67,20 @@ bool LichessClient::make_move(const std::string& game_id, const std::string& uci
 }
 
 bool LichessClient::accept_draw(const std::string& game_id) {
-    auto response = make_request(base_url + "/bot/game/" + game_id + "/draw/yes", "POST");
+    auto response =
+        make_request(base_url + "/bot/game/" + game_id + "/draw/yes", "POST");
     return response.status_code == 200;
 }
 
 bool LichessClient::decline_draw(const std::string& game_id) {
-    auto response = make_request(base_url + "/bot/game/" + game_id + "/draw/no", "POST");
+    auto response =
+        make_request(base_url + "/bot/game/" + game_id + "/draw/no", "POST");
     return response.status_code == 200;
 }
 
 bool LichessClient::offer_draw(const std::string& game_id) {
-    auto response = make_request(base_url + "/bot/game/" + game_id + "/draw/yes", "POST");
+    auto response =
+        make_request(base_url + "/bot/game/" + game_id + "/draw/yes", "POST");
     return response.status_code == 200;
 }
 
@@ -81,11 +89,13 @@ bool LichessClient::test_connectivity() {
     if (!curl) return false;
 
     std::string response_data;
-    curl_easy_setopt(curl, CURLOPT_URL, std::string(config::bot::CONNECTIVITY_TEST_URL).c_str());
+    curl_easy_setopt(curl, CURLOPT_URL,
+                     std::string(config::bot::CONNECTIVITY_TEST_URL).c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_data);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, config::curl::CONNECTIVITY_TIMEOUT);
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, config::curl::CONNECTIVITY_CONNECT_TIMEOUT);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT,
+                     config::curl::CONNECTIVITY_CONNECT_TIMEOUT);
     curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);  // HEAD request only
 
     CURLcode res = curl_easy_perform(curl);
@@ -124,49 +134,52 @@ void LichessClient::stream_events(std::function<void(const GameEvent&)> callback
 
 void LichessClient::stream_game(const std::string& game_id,
                                 std::function<void(const GameEvent&)> callback) {
-    stream_lines(base_url + "/bot/game/stream/" + game_id, [callback](const std::string& line) {
-        if (line.empty()) return;
+    stream_lines(
+        base_url + "/bot/game/stream/" + game_id, [callback](const std::string& line) {
+            if (line.empty()) return;
 
-        try {
-            auto j = json::parse(line);
-            GameEvent event;
-            event.type = j["type"];
+            try {
+                auto j = json::parse(line);
+                GameEvent event;
+                event.type = j["type"];
 
-            if (event.type == "gameState") {
-                event.moves = j.value("moves", "");
-                event.status = j.value("status", "started");
-                event.draw_offer = j.value("wdraw", false) || j.value("bdraw", false);
-                event.wtime = j.value("wtime", 0);
-                event.btime = j.value("btime", 0);
-                event.winc = j.value("winc", 0);
-                event.binc = j.value("binc", 0);
-            } else if (event.type == "gameFull") {
-                if (j.contains("state")) {
-                    event.moves = j["state"].value("moves", "");
-                    event.status = j["state"].value("status", "started");
+                if (event.type == "gameState") {
+                    event.moves = j.value("moves", "");
+                    event.status = j.value("status", "started");
                     event.draw_offer =
-                        j["state"].value("wdraw", false) || j["state"].value("bdraw", false);
-                    event.wtime = j["state"].value("wtime", 0);
-                    event.btime = j["state"].value("btime", 0);
-                    event.winc = j["state"].value("winc", 0);
-                    event.binc = j["state"].value("binc", 0);
+                        j.value("wdraw", false) || j.value("bdraw", false);
+                    event.wtime = j.value("wtime", 0);
+                    event.btime = j.value("btime", 0);
+                    event.winc = j.value("winc", 0);
+                    event.binc = j.value("binc", 0);
+                } else if (event.type == "gameFull") {
+                    if (j.contains("state")) {
+                        event.moves = j["state"].value("moves", "");
+                        event.status = j["state"].value("status", "started");
+                        event.draw_offer = j["state"].value("wdraw", false) ||
+                                           j["state"].value("bdraw", false);
+                        event.wtime = j["state"].value("wtime", 0);
+                        event.btime = j["state"].value("btime", 0);
+                        event.winc = j["state"].value("winc", 0);
+                        event.binc = j["state"].value("binc", 0);
+                    }
+                    if (j.contains("white")) {
+                        event.white_id = j["white"].value("id", "");
+                    }
+                    if (j.contains("black")) {
+                        event.black_id = j["black"].value("id", "");
+                    }
                 }
-                if (j.contains("white")) {
-                    event.white_id = j["white"].value("id", "");
-                }
-                if (j.contains("black")) {
-                    event.black_id = j["black"].value("id", "");
-                }
-            }
 
-            callback(event);
-        } catch (const std::exception& e) {
-            std::cerr << "Error parsing game event: " << e.what() << std::endl;
-        }
-    });
+                callback(event);
+            } catch (const std::exception& e) {
+                std::cerr << "Error parsing game event: " << e.what() << std::endl;
+            }
+        });
 }
 
-size_t LichessClient::write_callback(void* contents, size_t size, size_t nmemb, std::string* data) {
+size_t LichessClient::write_callback(void* contents, size_t size, size_t nmemb,
+                                     std::string* data) {
     size_t total_size = size * nmemb;
     data->append(static_cast<char*>(contents), total_size);
     return total_size;
@@ -197,7 +210,8 @@ size_t LichessClient::stream_callback(void* contents, size_t size, size_t nmemb,
 
 LichessClient::HttpResponse LichessClient::make_request(const std::string& url,
                                                         const std::string& method,
-                                                        const std::string& data, bool stream) {
+                                                        const std::string& data,
+                                                        bool stream) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         std::cout << "CURL init failed" << std::endl;
@@ -213,13 +227,15 @@ LichessClient::HttpResponse LichessClient::make_request(const std::string& url,
 
     // Set timeouts
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, config::curl::REQUEST_TIMEOUT);
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, config::curl::REQUEST_CONNECT_TIMEOUT);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT,
+                     config::curl::REQUEST_CONNECT_TIMEOUT);
 
     // Enable keep-alive for regular requests too
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
 
     // Set User-Agent
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, std::string(config::bot::USER_AGENT).c_str());
+    curl_easy_setopt(curl, CURLOPT_USERAGENT,
+                     std::string(config::bot::USER_AGENT).c_str());
 
     // Set headers
     struct curl_slist* headers = nullptr;
@@ -251,7 +267,8 @@ LichessClient::HttpResponse LichessClient::make_request(const std::string& url,
     if (res == CURLE_OK) {
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
     } else {
-        std::cerr << "CURL error for " << url << ": " << curl_easy_strerror(res) << std::endl;
+        std::cerr << "CURL error for " << url << ": " << curl_easy_strerror(res)
+                  << std::endl;
         response_code = 0;
     }
 
@@ -275,14 +292,17 @@ void LichessClient::stream_lines(const std::string& url,
 
     // Set longer timeouts for streaming connections
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 0L);
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, config::curl::STREAM_CONNECT_TIMEOUT);
-    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, config::curl::STREAM_LOW_SPEED_LIMIT);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT,
+                     config::curl::STREAM_CONNECT_TIMEOUT);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT,
+                     config::curl::STREAM_LOW_SPEED_LIMIT);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, config::curl::STREAM_LOW_SPEED_TIME);
 
     // Enable keep-alive
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPIDLE, config::curl::STREAM_KEEPALIVE_IDLE);
-    curl_easy_setopt(curl, CURLOPT_TCP_KEEPINTVL, config::curl::STREAM_KEEPALIVE_INTERVAL);
+    curl_easy_setopt(curl, CURLOPT_TCP_KEEPINTVL,
+                     config::curl::STREAM_KEEPALIVE_INTERVAL);
 
     // Set headers
     struct curl_slist* headers = nullptr;

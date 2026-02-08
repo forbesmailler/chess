@@ -42,7 +42,8 @@ class LichessClient {
     bool test_connectivity();
 
     void stream_events(std::function<void(const GameEvent&)> callback);
-    void stream_game(const std::string& game_id, std::function<void(const GameEvent&)> callback);
+    void stream_game(const std::string& game_id,
+                     std::function<void(const GameEvent&)> callback);
 
    private:
     std::string token;
@@ -68,9 +69,11 @@ class LichessClient {
     HttpResponse make_request(const std::string& url, const std::string& method = "GET",
                               const std::string& data = "", bool stream = false);
 
-    void stream_lines(const std::string& url, std::function<void(const std::string&)> callback);
+    void stream_lines(const std::string& url,
+                      std::function<void(const std::string&)> callback);
 
-    static size_t write_callback(void* contents, size_t size, size_t nmemb, std::string* data);
+    static size_t write_callback(void* contents, size_t size, size_t nmemb,
+                                 std::string* data);
     static size_t stream_callback(void* contents, size_t size, size_t nmemb,
                                   StreamData* stream_data);
 };

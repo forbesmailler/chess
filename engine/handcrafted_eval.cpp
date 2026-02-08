@@ -13,7 +13,8 @@ static constexpr int file_of(int sq) { return sq % 8; }
 
 float handcrafted_evaluate(const ChessBoard& board) {
     if (board.is_checkmate())
-        return board.turn() == ChessBoard::WHITE ? -config::MATE_VALUE : config::MATE_VALUE;
+        return board.turn() == ChessBoard::WHITE ? -config::MATE_VALUE
+                                                 : config::MATE_VALUE;
     if (board.is_stalemate() || board.is_draw()) return 0.0f;
 
     int mg_score = 0;
@@ -114,9 +115,11 @@ float handcrafted_evaluate(const ChessBoard& board) {
                     if (passed) {
                         int dist = color == 0 ? r : (7 - r);
                         int bonus = config::eval::pawn_structure::PASSED_BASE +
-                                    dist * dist * config::eval::pawn_structure::PASSED_RANK_SCALE;
+                                    dist * dist *
+                                        config::eval::pawn_structure::PASSED_RANK_SCALE;
                         mg_score +=
-                            sign * (bonus / config::eval::pawn_structure::PASSED_MG_DIVISOR);
+                            sign *
+                            (bonus / config::eval::pawn_structure::PASSED_MG_DIVISOR);
                         eg_score += sign * bonus;
                     }
 
@@ -220,10 +223,11 @@ float handcrafted_evaluate(const ChessBoard& board) {
     int mg_phase = phase;
     int eg_phase = config::eval::TOTAL_PHASE - phase;
 
-    float eval =
-        static_cast<float>(mg_score * mg_phase + eg_score * eg_phase) / config::eval::TOTAL_PHASE;
+    float eval = static_cast<float>(mg_score * mg_phase + eg_score * eg_phase) /
+                 config::eval::TOTAL_PHASE;
 
     // Scale to NNUE-compatible range: [-MATE_VALUE, +MATE_VALUE]
-    float scaled = (2.0f / (1.0f + std::exp(-eval / 400.0f)) - 1.0f) * config::MATE_VALUE;
+    float scaled =
+        (2.0f / (1.0f + std::exp(-eval / 400.0f)) - 1.0f) * config::MATE_VALUE;
     return scaled;
 }

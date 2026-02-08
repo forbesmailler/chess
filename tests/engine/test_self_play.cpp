@@ -13,8 +13,8 @@
 
 namespace {
 
-SelfPlayGenerator::Config make_test_config(const std::string& output_file, int num_games = 1,
-                                           int num_threads = 1) {
+SelfPlayGenerator::Config make_test_config(const std::string& output_file,
+                                           int num_games = 1, int num_threads = 1) {
     SelfPlayGenerator::Config config;
     config.num_games = num_games;
     config.num_threads = num_threads;

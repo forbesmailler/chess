@@ -4,12 +4,15 @@
 #include <cmath>
 #include <limits>
 
-MCTSEngine::MCTSEngine(int max_time_ms, EvalMode eval_mode, std::shared_ptr<NNUEModel> nnue_model)
-    : BaseEngine(max_time_ms, eval_mode, std::move(nnue_model)), rng(std::random_device{}()) {
+MCTSEngine::MCTSEngine(int max_time_ms, EvalMode eval_mode,
+                       std::shared_ptr<NNUEModel> nnue_model)
+    : BaseEngine(max_time_ms, eval_mode, std::move(nnue_model)),
+      rng(std::random_device{}()) {
     eval_cache.reserve(CACHE_SIZE);
 }
 
-SearchResult MCTSEngine::get_best_move(const ChessBoard& board, const TimeControl& time_control) {
+SearchResult MCTSEngine::get_best_move(const ChessBoard& board,
+                                       const TimeControl& time_control) {
     auto legal_moves = board.get_legal_moves();
 
     if (legal_moves.empty()) {
@@ -218,7 +221,8 @@ float MCTSEngine::evaluate_position(const ChessBoard& board) {
     return eval;
 }
 
-float MCTSEngine::get_move_prior(const ChessBoard& board, const ChessBoard::Move& move) {
+float MCTSEngine::get_move_prior(const ChessBoard& board,
+                                 const ChessBoard::Move& move) {
     // Simple heuristic for move priors - could be improved
     ChessBoard temp_board = board;
     if (!temp_board.make_move(move)) return 0.0f;
@@ -227,24 +231,27 @@ float MCTSEngine::get_move_prior(const ChessBoard& board, const ChessBoard::Move
     float eval_before = evaluate_position(board);
 
     // Normalize the improvement
-    float improvement =
-        board.turn() == ChessBoard::WHITE ? eval_after - eval_before : eval_before - eval_after;
+    float improvement = board.turn() == ChessBoard::WHITE ? eval_after - eval_before
+                                                          : eval_before - eval_after;
 
     // Convert to probability (sigmoid-like function)
     return 1.0f / (1.0f + std::exp(-improvement / config::mcts::PRIOR_SIGMOID_SCALE));
 }
 
-float MCTSEngine::MCTSNode::get_uct_value(float exploration_constant, int parent_visits) const {
+float MCTSEngine::MCTSNode::get_uct_value(float exploration_constant,
+                                          int parent_visits) const {
     if (visits == 0) {
-        return std::numeric_limits<float>::infinity();  // Unvisited nodes have highest priority
+        return std::numeric_limits<float>::infinity();  // Unvisited nodes have highest
+                                                        // priority
     }
 
     float exploitation = get_average_score();
-    float exploration = exploration_constant * std::sqrt(std::log(parent_visits) / visits);
+    float exploration =
+        exploration_constant * std::sqrt(std::log(parent_visits) / visits);
 
     // Add prior knowledge
-    float prior_bonus =
-        prior_probability * exploration_constant * std::sqrt(parent_visits) / (1 + visits);
+    float prior_bonus = prior_probability * exploration_constant *
+                        std::sqrt(parent_visits) / (1 + visits);
 
     return exploitation + exploration + prior_bonus;
 }

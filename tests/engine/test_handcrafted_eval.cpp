@@ -41,9 +41,11 @@ TEST(HandcraftedEval, CheckmateWhiteLoses) {
 TEST(HandcraftedEval, CheckmateBlackLoses) {
     // Black is checkmated
     // Scholar's mate position (after Qxf7#)
-    ChessBoard board("r1bqkb1r/pppp1Qpp/2n2n2/4p3/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 0 4");
+    ChessBoard board(
+        "r1bqkb1r/pppp1Qpp/2n2n2/4p3/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 0 4");
     float eval = handcrafted_evaluate(board);
-    EXPECT_EQ(eval, config::MATE_VALUE);  // Black is mated, positive from white's perspective
+    EXPECT_EQ(eval,
+              config::MATE_VALUE);  // Black is mated, positive from white's perspective
 }
 
 TEST(HandcraftedEval, StalemateIsZero) {
@@ -75,14 +77,16 @@ TEST(HandcraftedEval, PassedPawnBonus) {
     float passed_eval = handcrafted_evaluate(with_passed);
     float blocked_eval = handcrafted_evaluate(blocked);
 
-    // Passed pawn should be valued higher (accounting for black's missing pawn material)
-    // The passed pawn bonus should outweigh the material difference from black having a pawn
+    // Passed pawn should be valued higher (accounting for black's missing pawn
+    // material) The passed pawn bonus should outweigh the material difference from
+    // black having a pawn
     EXPECT_GT(passed_eval, blocked_eval);
 }
 
 TEST(HandcraftedEval, SymmetricPositionNearZero) {
     // A symmetric position should evaluate near zero
-    ChessBoard board("r1bqkb1r/pppppppp/2n2n2/8/8/2N2N2/PPPPPPPP/R1BQKB1R w KQkq - 4 3");
+    ChessBoard board(
+        "r1bqkb1r/pppppppp/2n2n2/8/8/2N2N2/PPPPPPPP/R1BQKB1R w KQkq - 4 3");
     float eval = handcrafted_evaluate(board);
     EXPECT_NEAR(eval, 0.0f, 300.0f);  // Sigmoid-scaled, near 0
 }

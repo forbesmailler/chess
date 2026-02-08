@@ -22,7 +22,8 @@ TEST_F(ChessEngineTest, NegamaxFindsMove) {
 TEST_F(ChessEngineTest, NegamaxFindsMateInOne) {
     ChessEngine engine(1000);
     // White to move, Qh7# is mate in one
-    ChessBoard board("r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4");
+    ChessBoard board(
+        "r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4");
 
     TimeControl tc{60000, 0, 0};
     auto result = engine.get_best_move(board, tc);
@@ -76,7 +77,8 @@ TEST_F(ChessEngineTest, TimeControlRespected) {
     auto result = engine.get_best_move(board, tc);
     auto elapsed = std::chrono::steady_clock::now() - start;
 
-    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+    auto elapsed_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
     // Should complete within reasonable time (allow some overhead)
     EXPECT_LT(elapsed_ms, 2000);
 }

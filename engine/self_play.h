@@ -47,8 +47,8 @@ class SelfPlayGenerator {
     int get_total_positions() const { return total_positions; }
 
     // Encode/decode for binary format
-    static TrainingPosition encode_position(const ChessBoard& board, float eval, uint8_t result,
-                                            uint16_t ply);
+    static TrainingPosition encode_position(const ChessBoard& board, float eval,
+                                            uint8_t result, uint16_t ply);
     static void write_position(std::ofstream& out, const TrainingPosition& pos);
     static bool read_position(std::ifstream& in, TrainingPosition& pos);
 

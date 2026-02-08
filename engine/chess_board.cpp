@@ -112,7 +112,8 @@ ChessBoard::PieceType ChessBoard::piece_type_at(int square) const {
     if (piece == chess::Piece::NONE) return NONE;
 
     chess::PieceType pt = piece.type();
-    static const PieceType piece_map[] = {PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING, NONE};
+    static const PieceType piece_map[] = {PAWN,  KNIGHT, BISHOP, ROOK,
+                                          QUEEN, KING,   NONE};
     return piece_map[static_cast<int>(pt)];
 }
 
@@ -133,4 +134,6 @@ bool ChessBoard::is_capture_move(const Move& move) const {
            board.at(move.internal_move.to()) != chess::Piece::NONE;
 }
 
-ChessBoard::PieceType ChessBoard::piece_at(int square) const { return piece_type_at(square); }
+ChessBoard::PieceType ChessBoard::piece_at(int square) const {
+    return piece_type_at(square);
+}

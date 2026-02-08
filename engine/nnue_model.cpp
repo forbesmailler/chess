@@ -30,11 +30,12 @@ bool NNUEModel::load_weights(const std::string& path) {
     file.read(reinterpret_cast<char*>(&hidden2_size), 4);
     file.read(reinterpret_cast<char*>(&output_size), 4);
 
-    if (input_size != INPUT_SIZE || hidden1_size != HIDDEN1_SIZE || hidden2_size != HIDDEN2_SIZE ||
-        output_size != OUTPUT_SIZE) {
-        std::cerr << "NNUE architecture mismatch: expected " << INPUT_SIZE << "/" << HIDDEN1_SIZE
-                  << "/" << HIDDEN2_SIZE << "/" << OUTPUT_SIZE << ", got " << input_size << "/"
-                  << hidden1_size << "/" << hidden2_size << "/" << output_size << std::endl;
+    if (input_size != INPUT_SIZE || hidden1_size != HIDDEN1_SIZE ||
+        hidden2_size != HIDDEN2_SIZE || output_size != OUTPUT_SIZE) {
+        std::cerr << "NNUE architecture mismatch: expected " << INPUT_SIZE << "/"
+                  << HIDDEN1_SIZE << "/" << HIDDEN2_SIZE << "/" << OUTPUT_SIZE
+                  << ", got " << input_size << "/" << hidden1_size << "/"
+                  << hidden2_size << "/" << output_size << std::endl;
         return false;
     }
 
@@ -57,8 +58,9 @@ bool NNUEModel::load_weights(const std::string& path) {
     }
 
     loaded = true;
-    std::cout << "Loaded NNUE model (v" << version << "): " << INPUT_SIZE << " -> " << HIDDEN1_SIZE
-              << " -> " << HIDDEN2_SIZE << " -> " << OUTPUT_SIZE << std::endl;
+    std::cout << "Loaded NNUE model (v" << version << "): " << INPUT_SIZE << " -> "
+              << HIDDEN1_SIZE << " -> " << HIDDEN2_SIZE << " -> " << OUTPUT_SIZE
+              << std::endl;
     return true;
 }
 
@@ -119,7 +121,8 @@ float NNUEModel::clipped_relu(float x) { return std::max(0.0f, std::min(1.0f, x)
 float NNUEModel::predict(const ChessBoard& board) const {
     if (!loaded) return 0.0f;
 
-    if (board.is_checkmate()) return board.turn() == ChessBoard::WHITE ? -MATE_VALUE : MATE_VALUE;
+    if (board.is_checkmate())
+        return board.turn() == ChessBoard::WHITE ? -MATE_VALUE : MATE_VALUE;
     if (board.is_stalemate() || board.is_draw()) return 0.0f;
 
     auto input = extract_features(board);

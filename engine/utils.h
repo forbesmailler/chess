@@ -4,7 +4,8 @@
 
 class Utils {
    public:
-    static std::vector<std::string> split_string(const std::string& str, char delimiter);
+    static std::vector<std::string> split_string(const std::string& str,
+                                                 char delimiter);
     static std::string trim(const std::string& str);
     static bool string_ends_with(const std::string& str, const std::string& suffix);
     static void log_info(const std::string& message);

@@ -4,7 +4,8 @@
 
 TEST(ChessBoardTest, DefaultConstructor) {
     ChessBoard board;
-    EXPECT_EQ(board.to_fen(), "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    EXPECT_EQ(board.to_fen(),
+              "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
 }
 
 TEST(ChessBoardTest, FenConstructor) {

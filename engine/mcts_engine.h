@@ -9,10 +9,12 @@
 
 class MCTSEngine : public BaseEngine {
    public:
-    explicit MCTSEngine(int max_time_ms = 30000, EvalMode eval_mode = EvalMode::HANDCRAFTED,
+    explicit MCTSEngine(int max_time_ms = 30000,
+                        EvalMode eval_mode = EvalMode::HANDCRAFTED,
                         std::shared_ptr<NNUEModel> nnue_model = nullptr);
 
-    SearchResult get_best_move(const ChessBoard& board, const TimeControl& time_control) override;
+    SearchResult get_best_move(const ChessBoard& board,
+                               const TimeControl& time_control) override;
     float evaluate(const ChessBoard& board) override;
 
    private:
@@ -31,7 +33,9 @@ class MCTSEngine : public BaseEngine {
         mutable std::vector<ChessBoard::Move> legal_moves_cache;
         mutable bool legal_moves_cached = false;
 
-        float get_average_score() const { return visits > 0 ? total_score / visits : 0.0f; }
+        float get_average_score() const {
+            return visits > 0 ? total_score / visits : 0.0f;
+        }
 
         float get_uct_value(float exploration_constant, int parent_visits) const;
         const std::vector<ChessBoard::Move>& get_legal_moves() const;

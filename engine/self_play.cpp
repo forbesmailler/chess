@@ -32,7 +32,8 @@ TrainingPosition SelfPlayGenerator::encode_position(const ChessBoard& board, flo
 
     const auto& b = board.board;
 
-    // Encode piece placement: 2 squares per byte (high nibble = even sq, low nibble = odd sq)
+    // Encode piece placement: 2 squares per byte (high nibble = even sq, low nibble =
+    // odd sq)
     for (int sq = 0; sq < 64; sq += 2) {
         uint8_t p0 = encode_piece(b.at(static_cast<chess::Square>(sq)));
         uint8_t p1 = encode_piece(b.at(static_cast<chess::Square>(sq + 1)));
@@ -42,9 +43,9 @@ TrainingPosition SelfPlayGenerator::encode_position(const ChessBoard& board, flo
     pos.side_to_move = b.sideToMove() == chess::Color::WHITE ? 0 : 1;
 
     auto rights = board.get_castling_rights();
-    pos.castling =
-        static_cast<uint8_t>((rights.white_kingside << 3) | (rights.white_queenside << 2) |
-                             (rights.black_kingside << 1) | rights.black_queenside);
+    pos.castling = static_cast<uint8_t>(
+        (rights.white_kingside << 3) | (rights.white_queenside << 2) |
+        (rights.black_kingside << 1) | rights.black_queenside);
 
     // En passant
     auto ep = b.enpassantSq();
@@ -61,7 +62,8 @@ TrainingPosition SelfPlayGenerator::encode_position(const ChessBoard& board, flo
     return pos;
 }
 
-void SelfPlayGenerator::write_position(std::ofstream& out, const TrainingPosition& pos) {
+void SelfPlayGenerator::write_position(std::ofstream& out,
+                                       const TrainingPosition& pos) {
     out.write(reinterpret_cast<const char*>(&pos), sizeof(pos));
 }
 
@@ -84,18 +86,21 @@ void SelfPlayGenerator::generate() {
     for (int t = 0; t < threads; ++t) {
         int n = games_per_thread + (t < remainder ? 1 : 0);
         if (n == 0) continue;
-        thread_pool.emplace_back(&SelfPlayGenerator::play_games, this, n, config.output_file, t);
+        thread_pool.emplace_back(&SelfPlayGenerator::play_games, this, n,
+                                 config.output_file, t);
     }
 
     for (auto& t : thread_pool) t.join();
 
-    auto elapsed =
-        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - start);
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::steady_clock::now() - start);
     std::cout << "Self-play complete: " << games_completed.load() << " games, "
-              << total_positions.load() << " positions in " << elapsed.count() << "s" << std::endl;
+              << total_positions.load() << " positions in " << elapsed.count() << "s"
+              << std::endl;
 }
 
-void SelfPlayGenerator::play_games(int num_games, const std::string& output_file, int thread_id) {
+void SelfPlayGenerator::play_games(int num_games, const std::string& output_file,
+                                   int thread_id) {
     std::mt19937 rng(std::random_device{}() + thread_id);
 
     for (int g = 0; g < num_games; ++g) {
@@ -142,7 +147,8 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
                 std::vector<float> probs(scores.size());
                 float sum = 0.0f;
                 for (size_t i = 0; i < scores.size(); ++i) {
-                    probs[i] = std::exp((scores[i] - max_score) / config.softmax_temperature);
+                    probs[i] =
+                        std::exp((scores[i] - max_score) / config.softmax_temperature);
                     sum += probs[i];
                 }
                 for (auto& p : probs) p /= sum;
@@ -156,7 +162,8 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
                 TimeControl tc{60000, 0, 0};
                 engine->set_max_time(config.search_time_ms);
                 auto result = engine->get_best_move(board, tc);
-                stm_eval = board.turn() == ChessBoard::WHITE ? result.score : -result.score;
+                stm_eval =
+                    board.turn() == ChessBoard::WHITE ? result.score : -result.score;
                 chosen_move = result.best_move;
             }
 
@@ -215,8 +222,8 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
             auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::steady_clock::now() - start_time);
             std::cout << "Self-play progress: " << completed << "/" << config.num_games
-                      << " games, " << total_positions.load() << " positions, " << elapsed.count()
-                      << "s elapsed" << std::endl;
+                      << " games, " << total_positions.load() << " positions, "
+                      << elapsed.count() << "s elapsed" << std::endl;
         }
     }
 }
@@ -267,7 +274,8 @@ void ModelComparator::play_games(int num_games, int thread_id) {
     // Load models once per thread
     auto new_model = std::make_shared<NNUEModel>();
     if (!new_model->load_weights(new_weights_path)) {
-        std::cerr << "Thread " << thread_id << ": Failed to load new weights" << std::endl;
+        std::cerr << "Thread " << thread_id << ": Failed to load new weights"
+                  << std::endl;
         return;
     }
 
@@ -276,7 +284,8 @@ void ModelComparator::play_games(int num_games, int thread_id) {
     if (!old_is_handcrafted) {
         old_model = std::make_shared<NNUEModel>();
         if (!old_model->load_weights(old_weights_path)) {
-            std::cerr << "Thread " << thread_id << ": Failed to load old weights" << std::endl;
+            std::cerr << "Thread " << thread_id << ": Failed to load old weights"
+                      << std::endl;
             return;
         }
     }
@@ -291,13 +300,13 @@ void ModelComparator::play_games(int num_games, int thread_id) {
         std::unique_ptr<ChessEngine> new_engine;
         std::unique_ptr<ChessEngine> old_engine;
 
-        new_engine =
-            std::make_unique<ChessEngine>(config.search_time_ms, EvalMode::NNUE, new_model);
+        new_engine = std::make_unique<ChessEngine>(config.search_time_ms,
+                                                   EvalMode::NNUE, new_model);
         if (old_is_handcrafted) {
             old_engine = std::make_unique<ChessEngine>(config.search_time_ms);
         } else {
-            old_engine =
-                std::make_unique<ChessEngine>(config.search_time_ms, EvalMode::NNUE, old_model);
+            old_engine = std::make_unique<ChessEngine>(config.search_time_ms,
+                                                       EvalMode::NNUE, old_model);
         }
 
         ChessBoard board;
@@ -324,7 +333,8 @@ void ModelComparator::play_games(int num_games, int thread_id) {
             auto result = active->get_best_move(board, tc);
             float stm_eval = white_to_move ? result.score : -result.score;
 
-            positions.push_back(SelfPlayGenerator::encode_position(board, stm_eval, 1, ply));
+            positions.push_back(
+                SelfPlayGenerator::encode_position(board, stm_eval, 1, ply));
 
             // Resign adjudication
             if (std::abs(stm_eval) > config.resign_threshold) {
@@ -368,8 +378,10 @@ void ModelComparator::play_games(int num_games, int thread_id) {
         }
 
         // Update counters
-        bool new_won = (new_is_white && white_result == 2) || (!new_is_white && white_result == 0);
-        bool old_won = (new_is_white && white_result == 0) || (!new_is_white && white_result == 2);
+        bool new_won =
+            (new_is_white && white_result == 2) || (!new_is_white && white_result == 0);
+        bool old_won =
+            (new_is_white && white_result == 0) || (!new_is_white && white_result == 2);
 
         if (new_won)
             new_wins.fetch_add(1);
@@ -383,15 +395,16 @@ void ModelComparator::play_games(int num_games, int thread_id) {
 
         std::string result_str = new_won ? "new wins" : old_won ? "old wins" : "draw";
         std::string color_str = new_is_white ? "new as white" : "new as black";
-        std::cout << "Compare game " << completed << "/" << config.num_games << ": " << ply
-                  << " plies, " << result_str << " (" << color_str << ")" << std::endl;
+        std::cout << "Compare game " << completed << "/" << config.num_games << ": "
+                  << ply << " plies, " << result_str << " (" << color_str << ")"
+                  << std::endl;
 
         if (completed % 10 == 0) {
             auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::steady_clock::now() - start_time);
-            std::cout << "Compare progress: " << completed << "/" << config.num_games << " games, "
-                      << total_positions.load() << " positions, " << elapsed.count() << "s elapsed"
-                      << std::endl;
+            std::cout << "Compare progress: " << completed << "/" << config.num_games
+                      << " games, " << total_positions.load() << " positions, "
+                      << elapsed.count() << "s elapsed" << std::endl;
         }
     }
 }
