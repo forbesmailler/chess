@@ -17,7 +17,8 @@ std::string BaseEngine::get_position_key(const ChessBoard& board) const {
 int BaseEngine::calculate_search_time(const TimeControl& time_control) {
     if (time_control.time_left_ms <= 0) return max_search_time_ms;
 
-    int allocated_time = time_control.increment_ms + (time_control.time_left_ms / 40);
+    int allocated_time = time_control.increment_ms +
+                         (time_control.time_left_ms / config::search::TIME_ALLOCATION_DIVISOR);
     return std::min(allocated_time, max_search_time_ms);
 }
 

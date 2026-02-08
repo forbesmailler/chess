@@ -115,8 +115,10 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, floa
     }
 
     // Null Move Pruning
-    if (depth > 2 && !is_pv && !board.is_in_check(board.turn()) && beta < MATE_VALUE - 1000 &&
-        alpha > -MATE_VALUE + 1000) {
+    if (depth > config::search::null_move::MIN_DEPTH && !is_pv &&
+        !board.is_in_check(board.turn()) &&
+        beta < MATE_VALUE - config::search::null_move::MATE_MARGIN &&
+        alpha > -MATE_VALUE + config::search::null_move::MATE_MARGIN) {
         std::string fen = board.to_fen();
         std::istringstream iss(fen);
         std::string board_str, turn_str, castling_str, ep_str, halfmove_str, fullmove_str;
@@ -131,7 +133,9 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, floa
 
         ChessBoard null_board(null_fen);
         if (!null_board.is_game_over()) {
-            int reduction = depth > 6 ? 4 : 3;
+            int reduction = depth > config::search::null_move::DEEP_THRESHOLD
+                                ? config::search::null_move::DEEP_REDUCTION
+                                : config::search::null_move::SHALLOW_REDUCTION;
             int null_depth = depth - 1 - reduction;
 
             if (null_depth >= 0) {
@@ -158,9 +162,13 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, floa
             float score;
 
             // Late Move Reduction (LMR)
-            if (moves_searched > 1 && depth > 2 && !is_pv && !board.is_in_check(board.turn()) &&
-                !board.is_capture_move(move) && !move.is_promotion()) {
-                int reduction = moves_searched > 6 ? 2 : 1;
+            if (moves_searched > config::search::lmr::MIN_MOVES_SEARCHED &&
+                depth > config::search::lmr::MIN_DEPTH && !is_pv &&
+                !board.is_in_check(board.turn()) && !board.is_capture_move(move) &&
+                !move.is_promotion()) {
+                int reduction = moves_searched > config::search::lmr::MANY_MOVES_THRESHOLD
+                                    ? config::search::lmr::DEEP_REDUCTION
+                                    : config::search::lmr::SHALLOW_REDUCTION;
                 int reduced_depth = depth - 1 - reduction;
 
                 if (reduced_depth >= 0) {
@@ -212,7 +220,7 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, floa
 float ChessEngine::quiescence_search(const ChessBoard& board, float alpha, float beta,
                                      int qs_depth) {
     if (should_stop.load()) return SEARCH_INTERRUPTED;
-    if (qs_depth >= 8) {
+    if (qs_depth >= config::search::QUIESCENCE_MAX_DEPTH) {
         float eval = evaluate(board);
         return board.turn() == ChessBoard::WHITE ? eval : -eval;
     }
@@ -286,7 +294,7 @@ SearchResult ChessEngine::iterative_deepening_search(const ChessBoard& board, in
     SearchResult best_result{legal_moves[0], -std::numeric_limits<float>::infinity(), 0, {}, 0};
     std::string pos_key = get_position_key(board);
 
-    for (int depth = 1; depth <= 50; ++depth) {
+    for (int depth = 1; depth <= config::search::MAX_DEPTH; ++depth) {
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - start_time);
         if (elapsed.count() >= max_time_ms) break;

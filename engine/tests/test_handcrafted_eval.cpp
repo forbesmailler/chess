@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "../chess_board.h"
+#include "../generated_config.h"
 #include "../handcrafted_eval.h"
 
 TEST(HandcraftedEval, StartingPositionNearZero) {
@@ -34,7 +35,7 @@ TEST(HandcraftedEval, CheckmateWhiteLoses) {
     // Fool's mate - white is checkmated
     ChessBoard board("rnb1kbnr/pppp1ppp/4p3/8/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3");
     float eval = handcrafted_evaluate(board);
-    EXPECT_EQ(eval, -10000.0f);
+    EXPECT_EQ(eval, -config::MATE_VALUE);
 }
 
 TEST(HandcraftedEval, CheckmateBlackLoses) {
@@ -42,7 +43,7 @@ TEST(HandcraftedEval, CheckmateBlackLoses) {
     // Scholar's mate position (after Qxf7#)
     ChessBoard board("r1bqkb1r/pppp1Qpp/2n2n2/4p3/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 0 4");
     float eval = handcrafted_evaluate(board);
-    EXPECT_EQ(eval, 10000.0f);  // Black is mated, positive from white's perspective
+    EXPECT_EQ(eval, config::MATE_VALUE);  // Black is mated, positive from white's perspective
 }
 
 TEST(HandcraftedEval, StalemateIsZero) {

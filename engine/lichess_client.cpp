@@ -7,6 +7,8 @@
 #include <sstream>
 #include <thread>
 
+#include "generated_config.h"
+
 using json = nlohmann::json;
 
 LichessClient::CurlGlobalInit LichessClient::curl_init;
@@ -16,7 +18,7 @@ LichessClient::CurlGlobalInit::CurlGlobalInit() { curl_global_init(CURL_GLOBAL_D
 LichessClient::CurlGlobalInit::~CurlGlobalInit() { curl_global_cleanup(); }
 
 LichessClient::LichessClient(const std::string& token)
-    : token(token), base_url("https://lichess.org/api") {}
+    : token(token), base_url(config::bot::LICHESS_BASE_URL) {}
 
 LichessClient::~LichessClient() = default;
 
@@ -79,11 +81,11 @@ bool LichessClient::test_connectivity() {
     if (!curl) return false;
 
     std::string response_data;
-    curl_easy_setopt(curl, CURLOPT_URL, "http://www.google.com");
+    curl_easy_setopt(curl, CURLOPT_URL, std::string(config::bot::CONNECTIVITY_TEST_URL).c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_data);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, config::curl::CONNECTIVITY_TIMEOUT);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, config::curl::CONNECTIVITY_CONNECT_TIMEOUT);
     curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);  // HEAD request only
 
     CURLcode res = curl_easy_perform(curl);
@@ -209,15 +211,15 @@ LichessClient::HttpResponse LichessClient::make_request(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_data);
 
-    // Set timeouts - longer for better reliability
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);         // 30 seconds total timeout
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);  // 10 seconds to connect
+    // Set timeouts
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, config::curl::REQUEST_TIMEOUT);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, config::curl::REQUEST_CONNECT_TIMEOUT);
 
     // Enable keep-alive for regular requests too
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
 
     // Set User-Agent
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "Lichess-Bot-CPP/1.0");
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, std::string(config::bot::USER_AGENT).c_str());
 
     // Set headers
     struct curl_slist* headers = nullptr;
@@ -241,7 +243,7 @@ LichessClient::HttpResponse LichessClient::make_request(const std::string& url,
 
     // Follow redirects
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 5L);
+    curl_easy_setopt(curl, CURLOPT_MAXREDIRS, config::curl::MAX_REDIRECTS);
 
     // Perform the request
     CURLcode res = curl_easy_perform(curl);
@@ -272,15 +274,15 @@ void LichessClient::stream_lines(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &stream_data);
 
     // Set longer timeouts for streaming connections
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 0L);           // No timeout for streaming
-    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 30L);   // 30 seconds to connect
-    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);   // Minimum 1 byte/sec
-    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 300L);  // For 5 minutes
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 0L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, config::curl::STREAM_CONNECT_TIMEOUT);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, config::curl::STREAM_LOW_SPEED_LIMIT);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, config::curl::STREAM_LOW_SPEED_TIME);
 
     // Enable keep-alive
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
-    curl_easy_setopt(curl, CURLOPT_TCP_KEEPIDLE, 120L);
-    curl_easy_setopt(curl, CURLOPT_TCP_KEEPINTVL, 60L);
+    curl_easy_setopt(curl, CURLOPT_TCP_KEEPIDLE, config::curl::STREAM_KEEPALIVE_IDLE);
+    curl_easy_setopt(curl, CURLOPT_TCP_KEEPINTVL, config::curl::STREAM_KEEPALIVE_INTERVAL);
 
     // Set headers
     struct curl_slist* headers = nullptr;

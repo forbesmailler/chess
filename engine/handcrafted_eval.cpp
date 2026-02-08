@@ -3,78 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-// Material values (centipawns)
-static constexpr int MATERIAL_MG[] = {100, 320, 330, 500, 900, 0};
-static constexpr int MATERIAL_EG[] = {110, 310, 330, 520, 950, 0};
-
-// Piece-Square Tables from white's perspective (a1=0, h8=63)
-
-static constexpr int PST_PAWN_MG[64] = {
-    0,  0,  0,  0,  0,  0,  0,  0,  5,  10, 10, -20, -20, 10, 10, 5,  5, -5, -10, 0,  0,  -10,
-    -5, 5,  0,  0,  0,  20, 20, 0,  0,  0,  5,  5,   10,  25, 25, 10, 5, 5,  10,  10, 20, 30,
-    30, 20, 10, 10, 50, 50, 50, 50, 50, 50, 50, 50,  0,   0,  0,  0,  0, 0,  0,   0,
-};
-
-static constexpr int PST_PAWN_EG[64] = {
-    0,  0,  0,  0,  0,  0,  0,  0,  10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
-    10, 10, 20, 20, 20, 20, 20, 20, 20, 20, 30, 30, 30, 30, 30, 30, 30, 30, 50, 50, 50, 50,
-    50, 50, 50, 50, 80, 80, 80, 80, 80, 80, 80, 80, 0,  0,  0,  0,  0,  0,  0,  0,
-};
-
-static constexpr int PST_KNIGHT_MG[64] = {
-    -50, -40, -30, -30, -30, -30, -40, -50, -40, -20, 0,   5,   5,   0,   -20, -40,
-    -30, 5,   10,  15,  15,  10,  5,   -30, -30, 0,   15,  20,  20,  15,  0,   -30,
-    -30, 5,   15,  20,  20,  15,  5,   -30, -30, 0,   10,  15,  15,  10,  0,   -30,
-    -40, -20, 0,   0,   0,   0,   -20, -40, -50, -40, -30, -30, -30, -30, -40, -50,
-};
-
-static constexpr int PST_BISHOP_MG[64] = {
-    -20, -10, -10, -10, -10, -10, -10, -20, -10, 5,   0,   0,   0,   0,   5,   -10,
-    -10, 10,  10,  10,  10,  10,  10,  -10, -10, 0,   10,  10,  10,  10,  0,   -10,
-    -10, 5,   5,   10,  10,  5,   5,   -10, -10, 0,   5,   10,  10,  5,   0,   -10,
-    -10, 0,   0,   0,   0,   0,   0,   -10, -20, -10, -10, -10, -10, -10, -10, -20,
-};
-
-static constexpr int PST_ROOK_MG[64] = {
-    0, 0,  0,  5,  5, 0,  0,  0,  -5, 0,  0,  0, 0, 0, 0, -5, -5, 0,  0,  0, 0, 0,
-    0, -5, -5, 0,  0, 0,  0,  0,  0,  -5, -5, 0, 0, 0, 0, 0,  0,  -5, -5, 0, 0, 0,
-    0, 0,  0,  -5, 5, 10, 10, 10, 10, 10, 10, 5, 0, 0, 0, 0,  0,  0,  0,  0,
-};
-
-static constexpr int PST_QUEEN_MG[64] = {
-    -20, -10, -10, -5, -5, -10, -10, -20, -10, 0,   5,   0,  0,  0,   0,   -10,
-    -10, 5,   5,   5,  5,  5,   0,   -10, 0,   0,   5,   5,  5,  5,   0,   -5,
-    -5,  0,   5,   5,  5,  5,   0,   -5,  -10, 0,   5,   5,  5,  5,   0,   -10,
-    -10, 0,   0,   0,  0,  0,   0,   -10, -20, -10, -10, -5, -5, -10, -10, -20,
-};
-
-static constexpr int PST_KING_MG[64] = {
-    20,  30,  10,  0,   0,   10,  30,  20,  20,  20,  0,   0,   0,   0,   20,  20,
-    -10, -20, -20, -20, -20, -20, -20, -10, -20, -30, -30, -40, -40, -30, -30, -20,
-    -30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30,
-    -30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30,
-};
-
-static constexpr int PST_KING_EG[64] = {
-    -50, -30, -30, -30, -30, -30, -30, -50, -30, -30, 0,   0,   0,   0,   -30, -30,
-    -30, -10, 20,  30,  30,  20,  -10, -30, -30, -10, 30,  40,  40,  30,  -10, -30,
-    -30, -10, 30,  40,  40,  30,  -10, -30, -30, -10, 20,  30,  30,  20,  -10, -30,
-    -30, -20, -10, 0,   0,   -10, -20, -30, -50, -40, -30, -20, -20, -30, -40, -50,
-};
-
-// PST lookup arrays (MG and EG)
-static constexpr const int* PST_MG[] = {PST_PAWN_MG, PST_KNIGHT_MG, PST_BISHOP_MG,
-                                        PST_ROOK_MG, PST_QUEEN_MG,  PST_KING_MG};
-
-static constexpr const int* PST_EG[] = {PST_PAWN_EG, PST_KNIGHT_MG, PST_BISHOP_MG,
-                                        PST_ROOK_MG, PST_QUEEN_MG,  PST_KING_EG};
-
-// Phase weights per piece type (pawns/kings don't count)
-static constexpr int PHASE_WEIGHT[] = {0, 1, 1, 2, 4, 0};
-static constexpr int TOTAL_PHASE = 4 * 1 + 4 * 1 + 4 * 2 + 2 * 4;  // 24
-
-// Mobility bonus per move, by piece type
-static constexpr int MOB_BONUS[] = {0, 4, 3, 2, 1, 0};
+#include "generated_config.h"
 
 // Mirror square vertically (for black PST lookups)
 static constexpr int mirror(int sq) { return sq ^ 56; }
@@ -83,7 +12,8 @@ static constexpr int rank_of(int sq) { return sq / 8; }
 static constexpr int file_of(int sq) { return sq % 8; }
 
 float handcrafted_evaluate(const ChessBoard& board) {
-    if (board.is_checkmate()) return board.turn() == ChessBoard::WHITE ? -10000.0f : 10000.0f;
+    if (board.is_checkmate())
+        return board.turn() == ChessBoard::WHITE ? -config::MATE_VALUE : config::MATE_VALUE;
     if (board.is_stalemate() || board.is_draw()) return 0.0f;
 
     int mg_score = 0;
@@ -144,15 +74,15 @@ float handcrafted_evaluate(const ChessBoard& board) {
                 int pst_sq = color == 0 ? sq : mirror(sq);
 
                 // Material
-                mg_score += sign * MATERIAL_MG[pt];
-                eg_score += sign * MATERIAL_EG[pt];
+                mg_score += sign * config::eval::MATERIAL_MG[pt];
+                eg_score += sign * config::eval::MATERIAL_EG[pt];
 
                 // PST
-                mg_score += sign * PST_MG[pt][pst_sq];
-                eg_score += sign * PST_EG[pt][pst_sq];
+                mg_score += sign * config::eval::PST_MG[pt][pst_sq];
+                eg_score += sign * config::eval::PST_EG[pt][pst_sq];
 
                 // Phase
-                phase += PHASE_WEIGHT[pt];
+                phase += config::eval::PHASE_WEIGHT[pt];
 
                 // Bishop pair tracking
                 if (pt == 2) {  // BISHOP
@@ -183,8 +113,10 @@ float handcrafted_evaluate(const ChessBoard& board) {
                     }
                     if (passed) {
                         int dist = color == 0 ? r : (7 - r);
-                        int bonus = 10 + dist * dist * 3;
-                        mg_score += sign * (bonus / 2);
+                        int bonus = config::eval::pawn_structure::PASSED_BASE +
+                                    dist * dist * config::eval::pawn_structure::PASSED_RANK_SCALE;
+                        mg_score +=
+                            sign * (bonus / config::eval::pawn_structure::PASSED_MG_DIVISOR);
                         eg_score += sign * bonus;
                     }
 
@@ -193,14 +125,14 @@ float handcrafted_evaluate(const ChessBoard& board) {
                     if (f > 0 && pawn_files[color][f - 1] > 0) isolated = false;
                     if (f < 7 && pawn_files[color][f + 1] > 0) isolated = false;
                     if (isolated) {
-                        mg_score -= sign * 15;
-                        eg_score -= sign * 20;
+                        mg_score -= sign * config::eval::pawn_structure::ISOLATED_MG;
+                        eg_score -= sign * config::eval::pawn_structure::ISOLATED_EG;
                     }
 
                     // Doubled pawn: more than one pawn on this file
                     if (pawn_files[color][f] > 1) {
-                        mg_score -= sign * 10;
-                        eg_score -= sign * 15;
+                        mg_score -= sign * config::eval::pawn_structure::DOUBLED_MG;
+                        eg_score -= sign * config::eval::pawn_structure::DOUBLED_EG;
                     }
                 }
 
@@ -210,11 +142,11 @@ float handcrafted_evaluate(const ChessBoard& board) {
                     bool own_pawns = pawn_files[color][f] > 0;
                     bool enemy_pawns = pawn_files[1 - color][f] > 0;
                     if (!own_pawns && !enemy_pawns) {
-                        mg_score += sign * 15;
-                        eg_score += sign * 10;
+                        mg_score += sign * config::eval::rook_file::OPEN_MG;
+                        eg_score += sign * config::eval::rook_file::OPEN_EG;
                     } else if (!own_pawns) {
-                        mg_score += sign * 8;
-                        eg_score += sign * 5;
+                        mg_score += sign * config::eval::rook_file::SEMI_OPEN_MG;
+                        eg_score += sign * config::eval::rook_file::SEMI_OPEN_EG;
                     }
                 }
 
@@ -241,8 +173,8 @@ float handcrafted_evaluate(const ChessBoard& board) {
                     auto own_pieces = b.us(c);
                     attacks &= ~own_pieces;
                     int mob = attacks.count();
-                    mg_score += sign * mob * MOB_BONUS[pt];
-                    eg_score += sign * mob * MOB_BONUS[pt];
+                    mg_score += sign * mob * config::eval::MOBILITY_BONUS[pt];
+                    eg_score += sign * mob * config::eval::MOBILITY_BONUS[pt];
                 }
             }
         }
@@ -250,12 +182,12 @@ float handcrafted_evaluate(const ChessBoard& board) {
 
     // Bishop pair bonus
     if (white_bishops >= 2) {
-        mg_score += 30;
-        eg_score += 50;
+        mg_score += config::eval::bishop_pair::BONUS_MG;
+        eg_score += config::eval::bishop_pair::BONUS_EG;
     }
     if (black_bishops >= 2) {
-        mg_score -= 30;
-        eg_score -= 50;
+        mg_score -= config::eval::bishop_pair::BONUS_MG;
+        eg_score -= config::eval::bishop_pair::BONUS_EG;
     }
 
     // King pawn shield
@@ -280,14 +212,15 @@ float handcrafted_evaluate(const ChessBoard& board) {
                 }
             }
         }
-        mg_score += sign * shield * 10;
+        mg_score += sign * shield * config::eval::king_safety::SHIELD_BONUS_MG;
     }
 
     // Tapered eval
-    if (phase > TOTAL_PHASE) phase = TOTAL_PHASE;
+    if (phase > config::eval::TOTAL_PHASE) phase = config::eval::TOTAL_PHASE;
     int mg_phase = phase;
-    int eg_phase = TOTAL_PHASE - phase;
+    int eg_phase = config::eval::TOTAL_PHASE - phase;
 
-    float eval = static_cast<float>(mg_score * mg_phase + eg_score * eg_phase) / TOTAL_PHASE;
+    float eval =
+        static_cast<float>(mg_score * mg_phase + eg_score * eg_phase) / config::eval::TOTAL_PHASE;
     return eval;
 }

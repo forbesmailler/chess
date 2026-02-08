@@ -6,6 +6,7 @@
 #include <string>
 
 #include "chess_board.h"
+#include "generated_config.h"
 #include "logistic_model.h"
 #include "nnue_model.h"
 
@@ -47,7 +48,7 @@ class BaseEngine {
     EvalMode get_eval_mode() const { return eval_mode; }
 
    protected:
-    static constexpr float MATE_VALUE = 10000.0f;
+    static constexpr float MATE_VALUE = config::MATE_VALUE;
 
     std::shared_ptr<LogisticModel> model;
     std::shared_ptr<NNUEModel> nnue_model;

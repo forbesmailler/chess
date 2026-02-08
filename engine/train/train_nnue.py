@@ -7,6 +7,7 @@ and outputs [P(win), P(draw), P(loss)] from side-to-move's perspective.
 
 import argparse
 import struct
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -15,12 +16,18 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset, random_split
 
-POSITION_SIZE = 42  # bytes per training position
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+from config.load_config import engine, training
 
-INPUT_SIZE = 773  # 768 piece-square + 4 castling + 1 en passant
-HIDDEN1_SIZE = 256
-HIDDEN2_SIZE = 32
-OUTPUT_SIZE = 3
+_eng = engine()
+_trn = training()
+
+POSITION_SIZE = 42  # bytes per training position (binary struct layout)
+
+INPUT_SIZE = _eng["nnue"]["input_size"]
+HIDDEN1_SIZE = _eng["nnue"]["hidden1_size"]
+HIDDEN2_SIZE = _eng["nnue"]["hidden2_size"]
+OUTPUT_SIZE = _eng["nnue"]["output_size"]
 
 
 class NNUE(nn.Module):
@@ -137,7 +144,7 @@ class SelfPlayDataset(Dataset):
         )
 
         # Eval target: sigmoid scaling of centipawn eval to [P(win), P(draw), P(loss)]
-        p_win = 1.0 / (1.0 + np.exp(-search_eval / 400.0))
+        p_win = 1.0 / (1.0 + np.exp(-search_eval / _trn["training"]["sigmoid_scale"]))
         eval_target = np.array([p_win, 0.0, 1.0 - p_win], dtype=np.float32)
 
         # Result target: one-hot [win, draw, loss] from game_result (0=loss, 1=draw, 2=win)
@@ -162,7 +169,7 @@ def train(args):
     print(f"Loaded {len(dataset)} positions from {args.data}")
 
     # Split into train/val
-    val_size = max(1, int(len(dataset) * 0.1))
+    val_size = max(1, int(len(dataset) * _trn["training"]["val_split"]))
     train_size = len(dataset) - val_size
     train_set, val_set = random_split(
         dataset,
@@ -180,7 +187,9 @@ def train(args):
     model = NNUE().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, patience=3, factor=0.5
+        optimizer,
+        patience=_trn["training"]["scheduler"]["patience"],
+        factor=_trn["training"]["scheduler"]["factor"],
     )
 
     best_val_loss = float("inf")
@@ -247,14 +256,16 @@ def main():
     parser.add_argument(
         "--output", default="nnue_weights.pt", help="Output PyTorch model path"
     )
-    parser.add_argument("--epochs", type=int, default=100)
-    parser.add_argument("--batch-size", type=int, default=4096)
-    parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--patience", type=int, default=10)
+    parser.add_argument("--epochs", type=int, default=_trn["training"]["epochs"])
+    parser.add_argument(
+        "--batch-size", type=int, default=_trn["training"]["batch_size"]
+    )
+    parser.add_argument("--lr", type=float, default=_trn["training"]["lr"])
+    parser.add_argument("--patience", type=int, default=_trn["training"]["patience"])
     parser.add_argument(
         "--eval-weight",
         type=float,
-        default=0.75,
+        default=_trn["training"]["eval_weight"],
         help="Weight for search eval vs game result in target (0-1)",
     )
     args = parser.parse_args()

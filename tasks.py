@@ -1,9 +1,15 @@
-import os
-
 from invoke import task
 
+from config.load_config import deploy, training
+
+_trn = training()
+_dep = deploy()
+
 CPP_FILES = "engine/*.cpp engine/*.h engine/tests/*.cpp"
-BOT_EXE = os.path.join("engine", "build", "Release", "lichess_bot.exe")
+BOT_EXE = _dep["paths"]["bot_exe"]
+
+_train_defaults = _trn["invoke_defaults"]["train"]
+_run_defaults = _trn["invoke_defaults"]["run"]
 
 
 @task
@@ -61,28 +67,34 @@ def build_cpp(c):
         c.run("cmake --build . --config Release")
 
 
+@task
+def gen_config(c):
+    """Regenerate engine/generated_config.h from YAML config files."""
+    c.run("python scripts/gen_config_header.py")
+
+
 @task(
     help={
-        "games": "Number of self-play games (default: 1000)",
-        "depth": "Search time budget (default: 6)",
-        "threads": "Number of threads (default: 16)",
-        "data": "Training data output path (default: training_data.bin)",
-        "weights": "NNUE weights output path (default: nnue.bin)",
-        "epochs": "Training epochs (default: 100)",
-        "batch_size": "Training batch size (default: 4096)",
-        "eval_weight": "Search eval vs game result blend (default: 0.75)",
+        "games": f"Number of self-play games (default: {_train_defaults['games']})",
+        "depth": f"Search time budget (default: {_train_defaults['depth']})",
+        "threads": f"Number of threads (default: {_train_defaults['threads']})",
+        "data": f"Training data output path (default: {_train_defaults['data']})",
+        "weights": f"NNUE weights output path (default: {_train_defaults['weights']})",
+        "epochs": f"Training epochs (default: {_train_defaults['epochs']})",
+        "batch_size": f"Training batch size (default: {_train_defaults['batch_size']})",
+        "eval_weight": f"Search eval vs game result blend (default: {_train_defaults['eval_weight']})",
     }
 )
 def train(
     c,
-    games=1000,
-    depth=6,
-    threads=16,
-    data="training_data.bin",
-    weights="nnue.bin",
-    epochs=100,
-    batch_size=4096,
-    eval_weight=0.75,
+    games=_train_defaults["games"],
+    depth=_train_defaults["depth"],
+    threads=_train_defaults["threads"],
+    data=_train_defaults["data"],
+    weights=_train_defaults["weights"],
+    epochs=_train_defaults["epochs"],
+    batch_size=_train_defaults["batch_size"],
+    eval_weight=_train_defaults["eval_weight"],
 ):
     """Generate self-play data, train NNUE, and export weights."""
     bot_exe = BOT_EXE
@@ -106,12 +118,17 @@ def train(
 
 @task(
     help={
-        "time": "Max search time in ms (default: 1000)",
-        "engine": "Search algorithm: negamax or mcts (default: negamax)",
-        "weights": "NNUE weights path (default: nnue.bin)",
+        "time": f"Max search time in ms (default: {_run_defaults['time']})",
+        "engine": f"Search algorithm: negamax or mcts (default: {_run_defaults['engine']})",
+        "weights": f"NNUE weights path (default: {_run_defaults['weights']})",
     }
 )
-def run(c, time=1000, engine="negamax", weights="nnue.bin"):
+def run(
+    c,
+    time=_run_defaults["time"],
+    engine=_run_defaults["engine"],
+    weights=_run_defaults["weights"],
+):
     """Run the Lichess bot with NNUE evaluation. Reads LICHESS_TOKEN env var."""
     bot_exe = BOT_EXE
     c.run(f"{bot_exe} {time} --engine={engine} --eval=nnue --nnue-weights={weights}")
@@ -119,12 +136,17 @@ def run(c, time=1000, engine="negamax", weights="nnue.bin"):
 
 @task(
     help={
-        "time": "Max search time in ms (default: 1000)",
-        "engine": "Search algorithm: negamax or mcts (default: negamax)",
-        "weights": "NNUE weights path (default: nnue.bin)",
+        "time": f"Max search time in ms (default: {_run_defaults['time']})",
+        "engine": f"Search algorithm: negamax or mcts (default: {_run_defaults['engine']})",
+        "weights": f"NNUE weights path (default: {_run_defaults['weights']})",
     }
 )
-def deploy_local(c, time=1000, engine="negamax", weights="nnue.bin"):
+def deploy_local(
+    c,
+    time=_run_defaults["time"],
+    engine=_run_defaults["engine"],
+    weights=_run_defaults["weights"],
+):
     """Format, test, build, and run the bot locally. Reads LICHESS_TOKEN env var."""
     print("=== Step 1/4: Format ===")
     format(c)
@@ -139,42 +161,46 @@ def deploy_local(c, time=1000, engine="negamax", weights="nnue.bin"):
     run(c, time=time, engine=engine, weights=weights)
 
 
-REPO_DIR = "/opt/chess-bot-src"
-INSTALL_DIR = "/opt/chess-bot"
+_vps = _dep["vps"]
 
 
 @task(
     help={
-        "time": "Max search time in ms (default: 1000)",
-        "engine": "Search algorithm: negamax or mcts (default: negamax)",
-        "weights": "NNUE weights file name (default: nnue.bin)",
+        "time": f"Max search time in ms (default: {_run_defaults['time']})",
+        "engine": f"Search algorithm: negamax or mcts (default: {_run_defaults['engine']})",
+        "weights": f"NNUE weights file name (default: {_run_defaults['weights']})",
     }
 )
-def deploy(c, time=1000, engine="negamax", weights="nnue.bin"):
+def deploy(
+    c,
+    time=_run_defaults["time"],
+    engine=_run_defaults["engine"],
+    weights=_run_defaults["weights"],
+):
     """Deploy the bot on a Linux VPS: pull, build, install, restart service."""
-    service = "chess-bot"
+    repo_dir = _vps["repo_dir"]
+    install_dir = _vps["install_dir"]
+    service = _vps["service_name"]
 
     print("=== Step 1/5: Pull latest code ===")
-    with c.cd(REPO_DIR):
+    with c.cd(repo_dir):
         c.run("git pull")
 
     print("=== Step 2/5: Build ===")
-    with c.cd(f"{REPO_DIR}/engine/build"):
+    with c.cd(f"{repo_dir}/engine/build"):
         c.run("cmake .. -DCMAKE_BUILD_TYPE=Release")
         c.run("cmake --build . --config Release")
 
     print("=== Step 3/5: Run tests ===")
-    with c.cd(f"{REPO_DIR}/engine/build"):
+    with c.cd(f"{repo_dir}/engine/build"):
         c.run("ctest --output-on-failure")
 
     print("=== Step 4/5: Install ===")
-    c.run(f"mkdir -p {INSTALL_DIR}")
-    c.run(f"cp {REPO_DIR}/engine/build/lichess_bot {INSTALL_DIR}/")
+    c.run(f"mkdir -p {install_dir}")
+    c.run(f"cp {repo_dir}/engine/build/lichess_bot {install_dir}/")
     if weights:
-        c.run(f"cp {REPO_DIR}/{weights} {INSTALL_DIR}/", warn=True)
-    c.run(
-        f"cp {REPO_DIR}/deploy/chess-bot.service /etc/systemd/system/chess-bot.service"
-    )
+        c.run(f"cp {repo_dir}/{weights} {install_dir}/", warn=True)
+    c.run(f"cp {repo_dir}/{_vps['service_file']} {_vps['systemd_path']}")
 
     print("=== Step 5/5: Restart service ===")
     c.run("systemctl daemon-reload")

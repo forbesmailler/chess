@@ -3,12 +3,13 @@
 #include <string>
 #include <vector>
 
+#include "generated_config.h"
+
 class ChessBoard;
 
 class FeatureExtractor {
    public:
-    static constexpr int FEATURE_SIZE =
-        1542;  // 770 * 2 + 2 (768 piece + 2 check features, scaled twice, plus 2 mobility)
+    static constexpr int FEATURE_SIZE = config::features::FEATURE_SIZE;
 
     static std::vector<float> extract_features(const std::string& fen);
     static std::vector<float> extract_features(const ChessBoard& board);

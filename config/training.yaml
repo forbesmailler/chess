@@ -1,0 +1,36 @@
+self_play:
+  num_games: 100
+  search_depth: 6
+  num_threads: 1
+  output_file: "training_data.bin"
+  max_game_ply: 400
+  search_time_ms: 200
+  resign_threshold: 5000
+  resign_count: 3
+
+training:
+  epochs: 100
+  batch_size: 4096
+  lr: 0.001
+  patience: 10
+  eval_weight: 0.75
+  val_split: 0.1
+  sigmoid_scale: 400.0
+  scheduler:
+    patience: 3
+    factor: 0.5
+
+invoke_defaults:
+  train:
+    games: 1000
+    depth: 6
+    threads: 16
+    data: "training_data.bin"
+    weights: "nnue.bin"
+    epochs: 100
+    batch_size: 4096
+    eval_weight: 0.75
+  run:
+    time: 1000
+    engine: "negamax"
+    weights: "nnue.bin"

@@ -34,6 +34,7 @@ invoke format             # format all (ruff + clang-format)
 invoke train              # self-play → train NNUE → export weights
 invoke run                # run bot with NNUE (reads LICHESS_TOKEN env var)
 invoke deploy             # deploy to Linux VPS (reads LICHESS_TOKEN env var)
+invoke gen-config         # regenerate engine/generated_config.h from YAML
 ```
 
 ## Architecture
@@ -54,6 +55,17 @@ invoke deploy             # deploy to Linux VPS (reads LICHESS_TOKEN env var)
 | `utils.h/cpp` | Shared helper functions |
 | `lichess_client.h/cpp` | HTTP streaming to Lichess API via libcurl |
 | `main.cpp` | `LichessBot` game loop; `--selfplay` mode |
+| `generated_config.h` | Auto-generated constants from YAML (run `invoke gen-config`) |
+
+### Config (`config/`)
+
+| File | Purpose |
+|------|---------|
+| `engine.yaml` | Search, MCTS, NNUE architecture, bot/curl, logistic, features |
+| `eval.yaml` | Material, PSTs, pawn/rook/bishop/king bonuses |
+| `training.yaml` | Self-play defaults, training hyperparams, invoke task defaults |
+| `deploy.yaml` | File paths, VPS paths, service config |
+| `load_config.py` | Python YAML loader with caching |
 
 ### Python Components
 
@@ -61,6 +73,7 @@ invoke deploy             # deploy to Linux VPS (reads LICHESS_TOKEN env var)
 |------|---------|
 | `engine/train/train_nnue.py` | PyTorch NNUE training from self-play binary data |
 | `engine/train/export_nnue.py` | Export PyTorch model → binary for C++ loading |
+| `scripts/gen_config_header.py` | Generates `engine/generated_config.h` from YAML |
 
 ### Tests
 

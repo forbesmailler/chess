@@ -29,11 +29,11 @@
 #include <unistd.h>
 #endif
 
-constexpr int MAX_RETRIES = 3;
-constexpr int RETRY_DELAY_MS = 5000;           // 5 seconds
-constexpr int HEARTBEAT_INTERVAL_MS = 30000;   // 30 seconds
-constexpr int CONNECTION_TIMEOUT_MS = 120000;  // 2 minutes
-constexpr int MAX_CONSECUTIVE_ERRORS = 10;
+constexpr int MAX_RETRIES = config::bot::MAX_RETRIES;
+constexpr int RETRY_DELAY_MS = config::bot::RETRY_DELAY_MS;
+constexpr int HEARTBEAT_INTERVAL_MS = config::bot::HEARTBEAT_INTERVAL_MS;
+constexpr int CONNECTION_TIMEOUT_MS = config::bot::CONNECTION_TIMEOUT_MS;
+constexpr int MAX_CONSECUTIVE_ERRORS = config::bot::MAX_CONSECUTIVE_ERRORS;
 
 // Global state for graceful shutdown
 std::atomic<bool> shutdown_requested{false};
@@ -242,7 +242,7 @@ class LichessBot {
 
     void start_with_retry() {
         int restart_attempts = 0;
-        const int max_restarts = 5;
+        const int max_restarts = config::bot::MAX_RESTARTS;
 
         while (!shutdown_requested.load() && restart_attempts < max_restarts) {
             try {
@@ -725,8 +725,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    std::string model_path =
-        "../../train/model_coefficients.txt";  // Relative to build/Release directory
+    std::string model_path{config::paths::MODEL_COEFFICIENTS};
 
     std::string engine_name = (engine_type == LichessBot::EngineType::MCTS) ? "MCTS" : "Negamax";
     std::string eval_name = eval_mode == EvalMode::NNUE          ? "NNUE"

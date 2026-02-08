@@ -161,10 +161,10 @@ float MCTSEngine::simulate(const ChessBoard& board) {
         }
 
         // Use evaluation to guide simulation occasionally
-        if (depth % 10 == 0) {
+        if (depth % config::mcts::EVAL_FREQUENCY == 0) {
             float eval = evaluate_position(sim_board);
             // Early termination if position is very good/bad
-            if (std::abs(eval) > MATE_VALUE * 0.8f) {
+            if (std::abs(eval) > MATE_VALUE * config::mcts::EARLY_TERMINATION_FACTOR) {
                 return sim_board.turn() == board.turn() ? -eval : eval;
             }
         }
@@ -233,7 +233,7 @@ float MCTSEngine::get_move_prior(const ChessBoard& board, const ChessBoard::Move
         board.turn() == ChessBoard::WHITE ? eval_after - eval_before : eval_before - eval_after;
 
     // Convert to probability (sigmoid-like function)
-    return 1.0f / (1.0f + std::exp(-improvement / 1000.0f));
+    return 1.0f / (1.0f + std::exp(-improvement / config::mcts::PRIOR_SIGMOID_SCALE));
 }
 
 float MCTSEngine::MCTSNode::get_uct_value(float exploration_constant, int parent_visits) const {

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "chess_board.h"
+#include "generated_config.h"
 
 // Binary format for training data: 42 bytes per position
 struct TrainingPosition {
@@ -26,14 +27,14 @@ static_assert(sizeof(TrainingPosition) == 42 || sizeof(TrainingPosition) <= 48,
 class SelfPlayGenerator {
    public:
     struct Config {
-        int num_games = 100;
-        int search_depth = 6;
-        int num_threads = 1;
+        int num_games = config::self_play::NUM_GAMES;
+        int search_depth = config::self_play::SEARCH_DEPTH;
+        int num_threads = config::self_play::NUM_THREADS;
         std::string output_file = "training_data.bin";
-        int max_game_ply = 400;
-        int search_time_ms = 200;     // time per move in milliseconds
-        int resign_threshold = 5000;  // centipawns
-        int resign_count = 3;         // consecutive moves above threshold
+        int max_game_ply = config::self_play::MAX_GAME_PLY;
+        int search_time_ms = config::self_play::SEARCH_TIME_MS;
+        int resign_threshold = config::self_play::RESIGN_THRESHOLD;
+        int resign_count = config::self_play::RESIGN_COUNT;
     };
 
     explicit SelfPlayGenerator(const Config& config);

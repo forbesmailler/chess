@@ -1,0 +1,10 @@
+paths:
+  bot_exe: "engine/build/Release/lichess_bot.exe"
+  model_coefficients: "../../train/model_coefficients.txt"
+
+vps:
+  repo_dir: "/opt/chess-bot-src"
+  install_dir: "/opt/chess-bot"
+  service_name: "chess-bot"
+  service_file: "deploy/chess-bot.service"
+  systemd_path: "/etc/systemd/system/chess-bot.service"

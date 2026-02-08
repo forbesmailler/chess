@@ -1,0 +1,63 @@
+mate_value: 10000.0
+
+nnue:
+  input_size: 773
+  hidden1_size: 256
+  hidden2_size: 32
+  output_size: 3
+
+search:
+  cache_size: 1000000
+  time_check_interval: 2048
+  max_depth: 50
+  quiescence_max_depth: 8
+  default_max_time_ms: 1000
+  time_allocation_divisor: 40
+  null_move:
+    min_depth: 3
+    mate_margin: 1000
+    deep_threshold: 7
+    shallow_reduction: 3
+    deep_reduction: 4
+  lmr:
+    min_moves_searched: 2
+    min_depth: 3
+    many_moves_threshold: 7
+    shallow_reduction: 1
+    deep_reduction: 2
+
+mcts:
+  exploration_constant: 1.4
+  max_simulation_depth: 100
+  cache_size: 100000
+  default_max_time_ms: 30000
+  eval_frequency: 10
+  early_termination_factor: 0.8
+  prior_sigmoid_scale: 1000.0
+
+bot:
+  max_retries: 3
+  retry_delay_ms: 5000
+  heartbeat_interval_ms: 30000
+  connection_timeout_ms: 120000
+  max_consecutive_errors: 10
+  max_restarts: 5
+  user_agent: "Lichess-Bot-CPP/1.0"
+  lichess_base_url: "https://lichess.org/api"
+  connectivity_test_url: "http://www.google.com"
+
+curl:
+  request_timeout: 30
+  request_connect_timeout: 10
+  connectivity_timeout: 10
+  connectivity_connect_timeout: 5
+  stream_connect_timeout: 30
+  stream_low_speed_limit: 1
+  stream_low_speed_time: 300
+  stream_keepalive_idle: 120
+  stream_keepalive_interval: 60
+  max_redirects: 5
+
+features:
+  feature_size: 1542
+  piece_count_divisor: 30.0

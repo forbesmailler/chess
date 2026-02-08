@@ -6,6 +6,7 @@
 #include <random>
 
 #include "../chess_board.h"
+#include "../generated_config.h"
 #include "../nnue_model.h"
 
 namespace {
@@ -13,10 +14,10 @@ namespace {
 std::string create_test_weights(unsigned int seed = 42) {
     std::string path = "test_nnue_weights.bin";
 
-    constexpr int INPUT = 773;
-    constexpr int H1 = 256;
-    constexpr int H2 = 32;
-    constexpr int OUTPUT = 3;
+    constexpr int INPUT = config::nnue::INPUT_SIZE;
+    constexpr int H1 = config::nnue::HIDDEN1_SIZE;
+    constexpr int H2 = config::nnue::HIDDEN2_SIZE;
+    constexpr int OUTPUT = config::nnue::OUTPUT_SIZE;
 
     std::mt19937 rng(seed);
     std::normal_distribution<float> dist(0.0f, 0.01f);
@@ -110,5 +111,5 @@ TEST(NNUEModel, UnloadedModelReturnsZero) {
 TEST_F(NNUEModelTest, CheckmateReturnsExtreme) {
     ChessBoard board("rnb1kbnr/pppp1ppp/4p3/8/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3");
     float eval = model.predict(board);
-    EXPECT_EQ(eval, -10000.0f);
+    EXPECT_EQ(eval, -config::MATE_VALUE);
 }

@@ -29,7 +29,8 @@ std::vector<float> FeatureExtractor::extract_features(const ChessBoard& board) {
     base_features.insert(base_features.end(), additional_features.begin(),
                          additional_features.end());
 
-    float factor = static_cast<float>(board.piece_count() - 2) / 30.0f;
+    float factor =
+        static_cast<float>(board.piece_count() - 2) / config::features::PIECE_COUNT_DIVISOR;
 
     std::vector<float> features;
     features.reserve(FEATURE_SIZE);

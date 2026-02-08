@@ -47,13 +47,13 @@ class MCTSEngine : public BaseEngine {
     float evaluate_position(const ChessBoard& board);
     float get_move_prior(const ChessBoard& board, const ChessBoard::Move& move);
 
-    float exploration_constant = 1.4f;
-    int max_simulation_depth = 100;
+    float exploration_constant = config::mcts::EXPLORATION_CONSTANT;
+    int max_simulation_depth = config::mcts::MAX_SIMULATION_DEPTH;
 
     mutable std::mt19937 rng;
 
     mutable std::unordered_map<std::string, float> eval_cache;
     mutable std::mutex eval_cache_mutex;
 
-    static constexpr int CACHE_SIZE = 100000;
+    static constexpr int CACHE_SIZE = config::mcts::CACHE_SIZE;
 };

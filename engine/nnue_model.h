@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "chess_board.h"
+#include "generated_config.h"
 
 class NNUEModel {
    public:
@@ -18,12 +19,11 @@ class NNUEModel {
     bool is_loaded() const { return loaded; }
 
    private:
-    // 768 piece-square + 4 castling + 1 en passant
-    static constexpr int INPUT_SIZE = 773;
-    static constexpr int HIDDEN1_SIZE = 256;
-    static constexpr int HIDDEN2_SIZE = 32;
-    static constexpr int OUTPUT_SIZE = 3;
-    static constexpr float MATE_VALUE = 10000.0f;
+    static constexpr int INPUT_SIZE = config::nnue::INPUT_SIZE;
+    static constexpr int HIDDEN1_SIZE = config::nnue::HIDDEN1_SIZE;
+    static constexpr int HIDDEN2_SIZE = config::nnue::HIDDEN2_SIZE;
+    static constexpr int OUTPUT_SIZE = config::nnue::OUTPUT_SIZE;
+    static constexpr float MATE_VALUE = config::MATE_VALUE;
 
     // Weights and biases
     std::vector<float> w1;  // INPUT_SIZE x HIDDEN1_SIZE
