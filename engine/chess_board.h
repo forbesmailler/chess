@@ -20,10 +20,15 @@ class ChessBoard {
     };
 
     struct Move {
-        std::string uci_string;
-        chess::Move internal_move;
+        chess::Move internal_move = chess::Move::NO_MOVE;
+        mutable std::string uci_string;
 
-        std::string uci() const { return uci_string; }
+        std::string uci() const {
+            if (uci_string.empty() && internal_move != chess::Move::NO_MOVE) {
+                uci_string = chess::uci::moveToUci(internal_move);
+            }
+            return uci_string;
+        }
 
         static Move from_uci(const std::string& uci) {
             Move move;

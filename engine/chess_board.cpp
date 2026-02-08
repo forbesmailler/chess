@@ -1,7 +1,5 @@
 #include "chess_board.h"
 
-#include <sstream>
-
 ChessBoard::ChessBoard() : board() {}
 
 ChessBoard::ChessBoard(const std::string& fen) { load_fen(fen); }
@@ -15,9 +13,9 @@ std::vector<ChessBoard::Move> ChessBoard::get_legal_moves() const {
     chess::movegen::legalmoves(moves, board);
 
     std::vector<Move> result;
+    result.reserve(moves.size());
     for (const auto& move : moves) {
         Move m;
-        m.uci_string = chess::uci::moveToUci(move);
         m.internal_move = move;
         result.push_back(m);
     }
@@ -26,16 +24,18 @@ std::vector<ChessBoard::Move> ChessBoard::get_legal_moves() const {
 }
 
 bool ChessBoard::make_move(const Move& move) {
-    try {
-        chess::Move chess_move = chess::uci::uciToMove(board, move.uci_string);
-        if (chess_move == chess::Move::NO_MOVE) return false;
-
-        move_history.push_back(chess_move);
-        board.makeMove(chess_move);
-        return true;
-    } catch (...) {
-        return false;
+    chess::Move chess_move = move.internal_move;
+    if (chess_move == chess::Move::NO_MOVE) {
+        try {
+            chess_move = chess::uci::uciToMove(board, move.uci_string);
+            if (chess_move == chess::Move::NO_MOVE) return false;
+        } catch (...) {
+            return false;
+        }
     }
+    move_history.push_back(chess_move);
+    board.makeMove(chess_move);
+    return true;
 }
 
 void ChessBoard::unmake_move(const Move& move) {
@@ -76,18 +76,14 @@ ChessBoard::Color ChessBoard::turn() const {
 }
 
 ChessBoard::CastlingRights ChessBoard::get_castling_rights() const {
-    CastlingRights rights;
-    std::string fen = board.getFen();
-    std::istringstream iss(fen);
-    std::string board_str, turn_str, castling_str;
-    iss >> board_str >> turn_str >> castling_str;
-
-    rights.white_kingside = castling_str.find('K') != std::string::npos;
-    rights.white_queenside = castling_str.find('Q') != std::string::npos;
-    rights.black_kingside = castling_str.find('k') != std::string::npos;
-    rights.black_queenside = castling_str.find('q') != std::string::npos;
-
-    return rights;
+    auto cr = board.castlingRights();
+    using Side = chess::Board::CastlingRights::Side;
+    return {
+        cr.has(chess::Color::WHITE, Side::KING_SIDE),
+        cr.has(chess::Color::WHITE, Side::QUEEN_SIDE),
+        cr.has(chess::Color::BLACK, Side::KING_SIDE),
+        cr.has(chess::Color::BLACK, Side::QUEEN_SIDE),
+    };
 }
 
 int ChessBoard::piece_count() const { return board.occ().count(); }

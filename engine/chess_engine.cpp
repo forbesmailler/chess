@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
-#include <sstream>
 
 ChessEngine::ChessEngine(int max_time_ms, EvalMode eval_mode,
                          std::shared_ptr<NNUEModel> nnue_model)
@@ -26,6 +25,7 @@ std::vector<ChessBoard::Move> ChessEngine::order_moves(
     if (moves.size() <= 1) return moves;
 
     constexpr int PIECE_VALUES[] = {100, 320, 330, 500, 900, 0, 0};
+    bool has_tt_move = tt_move.internal_move != chess::Move::NO_MOVE;
 
     std::vector<std::pair<ChessBoard::Move, int>> scored_moves;
     scored_moves.reserve(moves.size());
@@ -33,7 +33,7 @@ std::vector<ChessBoard::Move> ChessEngine::order_moves(
     for (const auto& move : moves) {
         int score = 0;
 
-        if (!tt_move.uci().empty() && move.uci() == tt_move.uci()) {
+        if (has_tt_move && move.internal_move == tt_move.internal_move) {
             score = 1000000;
         } else if (board.is_capture_move(move)) {
             int victim = PIECE_VALUES[board.piece_type_at(move.to())];
@@ -51,7 +51,7 @@ std::vector<ChessBoard::Move> ChessEngine::order_moves(
 
     std::vector<ChessBoard::Move> result;
     result.reserve(moves.size());
-    for (const auto& pair : scored_moves) result.push_back(pair.first);
+    for (auto& pair : scored_moves) result.push_back(std::move(pair.first));
     return result;
 }
 
@@ -122,22 +122,8 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, floa
         !board.is_in_check(board.turn()) &&
         beta < MATE_VALUE - config::search::null_move::MATE_MARGIN &&
         alpha > -MATE_VALUE + config::search::null_move::MATE_MARGIN) {
-        std::string fen = board.to_fen();
-        std::istringstream iss(fen);
-        std::string board_str, turn_str, castling_str, ep_str, halfmove_str,
-            fullmove_str;
-        iss >> board_str >> turn_str >> castling_str >> ep_str >> halfmove_str >>
-            fullmove_str;
-
-        std::string null_turn = (turn_str == "w") ? "b" : "w";
-        int halfmove = std::stoi(halfmove_str) + 1;
-        int fullmove = std::stoi(fullmove_str) + (turn_str == "b" ? 1 : 0);
-
-        std::string null_fen = board_str + " " + null_turn + " " + castling_str +
-                               " - " + std::to_string(halfmove) + " " +
-                               std::to_string(fullmove);
-
-        ChessBoard null_board(null_fen);
+        ChessBoard null_board = board;
+        null_board.board.makeNullMove();
         if (!null_board.is_game_over()) {
             int reduction = depth > config::search::null_move::DEEP_THRESHOLD
                                 ? config::search::null_move::DEEP_REDUCTION
