@@ -12,10 +12,15 @@ static constexpr int rank_of(int sq) { return sq / 8; }
 static constexpr int file_of(int sq) { return sq % 8; }
 
 float handcrafted_evaluate(const ChessBoard& board) {
-    if (board.is_checkmate())
-        return board.turn() == ChessBoard::WHITE ? -config::MATE_VALUE
-                                                 : config::MATE_VALUE;
-    if (board.is_stalemate() || board.is_draw()) return 0.0f;
+    {
+        auto [reason, result] = board.board.isGameOver();
+        if (result != chess::GameResult::NONE) {
+            if (reason == chess::GameResultReason::CHECKMATE)
+                return board.turn() == ChessBoard::WHITE ? -config::MATE_VALUE
+                                                         : config::MATE_VALUE;
+            return 0.0f;
+        }
+    }
 
     int mg_score = 0;
     int eg_score = 0;

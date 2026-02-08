@@ -6,10 +6,11 @@
 #include "base_engine.h"
 
 struct TranspositionEntry {
-    float score;
-    int depth;
-    enum NodeType { EXACT, LOWER_BOUND, UPPER_BOUND } type;
-    ChessBoard::Move best_move;
+    uint64_t key = 0;
+    float score = 0;
+    int depth = 0;
+    enum NodeType { EXACT, LOWER_BOUND, UPPER_BOUND } type = EXACT;
+    chess::Move best_move = chess::Move::NO_MOVE;
 };
 
 class ChessEngine : public BaseEngine {
@@ -33,9 +34,12 @@ class ChessEngine : public BaseEngine {
     std::chrono::steady_clock::time_point search_deadline;
     void check_time();
 
-    mutable std::unordered_map<uint64_t, TranspositionEntry> transposition_table;
+    // TT: power-of-2 flat array for O(1) cache-friendly lookup
+    static constexpr size_t TT_SIZE = 1 << 20;  // ~1M entries
+    static constexpr size_t TT_MASK = TT_SIZE - 1;
+    std::vector<TranspositionEntry> transposition_table;
+
     mutable std::unordered_map<uint64_t, float> eval_cache;
-    bool tt_full = false;
 
     // Killer move heuristic: 2 killer moves per ply (indexed by remaining depth)
     static constexpr int MAX_PLY = config::search::MAX_DEPTH + 10;

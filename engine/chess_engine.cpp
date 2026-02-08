@@ -8,7 +8,7 @@ ChessEngine::ChessEngine(int max_time_ms, EvalMode eval_mode,
                          std::shared_ptr<NNUEModel> nnue_model)
     : BaseEngine(max_time_ms, eval_mode, std::move(nnue_model)) {
     eval_cache.reserve(CACHE_SIZE / 2);
-    transposition_table.reserve(CACHE_SIZE / 2);
+    transposition_table.resize(TT_SIZE);
     std::memset(killers, 0, sizeof(killers));
     std::memset(history, 0, sizeof(history));
 }
@@ -87,32 +87,34 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, int ply, float al
     if ((nodes_searched.fetch_add(1) & (TIME_CHECK_INTERVAL - 1)) == 0) check_time();
     if (should_stop.load()) return SEARCH_INTERRUPTED;
 
-    if (board.is_stalemate() || board.is_draw()) {
-        return 0.0f;
+    {
+        auto [go_reason, go_result] = board.board.isGameOver();
+        if (go_result != chess::GameResult::NONE) {
+            return go_reason == chess::GameResultReason::CHECKMATE ? -MATE_VALUE : 0.0f;
+        }
     }
 
     uint64_t pos_key = board.hash();
     ChessBoard::Move tt_move;
+    const auto& tt_entry = transposition_table[pos_key & TT_MASK];
 
-    if (auto it = transposition_table.find(pos_key);
-        it != transposition_table.end() && it->second.depth >= depth) {
-        const auto& entry = it->second;
-        tt_move = entry.best_move;
+    if (tt_entry.key == pos_key) {
+        tt_move.internal_move = tt_entry.best_move;
 
-        if (!is_pv) {
-            switch (entry.type) {
+        if (tt_entry.depth >= depth && !is_pv) {
+            switch (tt_entry.type) {
                 case TranspositionEntry::EXACT:
-                    return entry.score;
+                    return tt_entry.score;
                 case TranspositionEntry::LOWER_BOUND:
-                    if (entry.score >= beta) return entry.score;
-                    alpha = std::max(alpha, entry.score);
+                    if (tt_entry.score >= beta) return tt_entry.score;
+                    alpha = std::max(alpha, tt_entry.score);
                     break;
                 case TranspositionEntry::UPPER_BOUND:
-                    if (entry.score <= alpha) return entry.score;
-                    beta = std::min(beta, entry.score);
+                    if (tt_entry.score <= alpha) return tt_entry.score;
+                    beta = std::min(beta, tt_entry.score);
                     break;
             }
-            if (alpha >= beta) return entry.score;
+            if (alpha >= beta) return tt_entry.score;
         }
     }
 
@@ -136,18 +138,16 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, int ply, float al
         alpha > -MATE_VALUE + config::search::null_move::MATE_MARGIN) {
         ChessBoard null_board = board;
         null_board.board.makeNullMove();
-        if (!null_board.is_game_over()) {
-            int reduction = depth > config::search::null_move::DEEP_THRESHOLD
-                                ? config::search::null_move::DEEP_REDUCTION
-                                : config::search::null_move::SHALLOW_REDUCTION;
-            int null_depth = depth - 1 - reduction;
+        int reduction = depth > config::search::null_move::DEEP_THRESHOLD
+                            ? config::search::null_move::DEEP_REDUCTION
+                            : config::search::null_move::SHALLOW_REDUCTION;
+        int null_depth = depth - 1 - reduction;
 
-            if (null_depth >= 0) {
-                float null_score =
-                    -negamax(null_board, null_depth, ply + 1, -beta, -beta + 1, false);
-                if (null_score >= beta) {
-                    return null_score;
-                }
+        if (null_depth >= 0) {
+            float null_score =
+                -negamax(null_board, null_depth, ply + 1, -beta, -beta + 1, false);
+            if (null_score >= beta) {
+                return null_score;
             }
         }
     }
@@ -237,10 +237,8 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, int ply, float al
         }
     }
 
-    if (!tt_full) {
-        transposition_table[pos_key] = {best_score, depth, node_type, best_move};
-        if (transposition_table.size() >= CACHE_SIZE / 2) tt_full = true;
-    }
+    transposition_table[pos_key & TT_MASK] = {pos_key, best_score, depth, node_type,
+                                              best_move.internal_move};
 
     return best_score;
 }
@@ -332,9 +330,9 @@ SearchResult ChessEngine::iterative_deepening_search(const ChessBoard& board,
         if (elapsed.count() >= max_time_ms) break;
 
         ChessBoard::Move tt_move;
-        if (auto it = transposition_table.find(pos_key);
-            it != transposition_table.end()) {
-            tt_move = it->second.best_move;
+        {
+            const auto& tt_entry = transposition_table[pos_key & TT_MASK];
+            if (tt_entry.key == pos_key) tt_move.internal_move = tt_entry.best_move;
         }
 
         order_moves(board, legal_moves, tt_move, 0);
@@ -357,9 +355,7 @@ SearchResult ChessEngine::iterative_deepening_search(const ChessBoard& board,
         int move_count = 0;
 
         for (const auto& move : legal_moves) {
-            auto now_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now() - start_time);
-            if (now_elapsed.count() > max_time_ms || should_stop.load()) {
+            if (should_stop.load()) {
                 completed_depth = false;
                 break;
             }
@@ -409,10 +405,7 @@ SearchResult ChessEngine::iterative_deepening_search(const ChessBoard& board,
             order_moves(board, legal_moves, tt_move, 0);
 
             for (const auto& move : legal_moves) {
-                auto now_elapsed =
-                    std::chrono::duration_cast<std::chrono::milliseconds>(
-                        std::chrono::steady_clock::now() - start_time);
-                if (now_elapsed.count() > max_time_ms || should_stop.load()) {
+                if (should_stop.load()) {
                     completed_depth = false;
                     break;
                 }
@@ -457,12 +450,9 @@ SearchResult ChessEngine::iterative_deepening_search(const ChessBoard& board,
                            nodes_searched.load()};
             prev_score = current_best_score;
 
-            if (!tt_full) {
-                transposition_table[pos_key] = {current_best_score, depth,
-                                                TranspositionEntry::EXACT,
-                                                current_best_move};
-                if (transposition_table.size() >= CACHE_SIZE / 2) tt_full = true;
-            }
+            transposition_table[pos_key & TT_MASK] = {pos_key, current_best_score,
+                                                      depth, TranspositionEntry::EXACT,
+                                                      current_best_move.internal_move};
 
             if (std::abs(current_best_score) > MATE_VALUE - 500) break;
         }
@@ -478,8 +468,7 @@ SearchResult ChessEngine::iterative_deepening_search(const ChessBoard& board,
 
 void ChessEngine::clear_caches() {
     eval_cache.clear();
-    transposition_table.clear();
-    tt_full = false;
+    transposition_table.assign(TT_SIZE, TranspositionEntry{});
     std::memset(killers, 0, sizeof(killers));
     std::memset(history, 0, sizeof(history));
 }

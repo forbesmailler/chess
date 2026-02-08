@@ -14,9 +14,14 @@ int BaseEngine::calculate_search_time(const TimeControl& time_control) {
 }
 
 float BaseEngine::raw_evaluate(const ChessBoard& board) {
-    if (board.is_checkmate())
-        return board.turn() == ChessBoard::WHITE ? -MATE_VALUE : MATE_VALUE;
-    if (board.is_stalemate() || board.is_draw()) return 0.0f;
+    {
+        auto [reason, result] = board.board.isGameOver();
+        if (result != chess::GameResult::NONE) {
+            if (reason == chess::GameResultReason::CHECKMATE)
+                return board.turn() == ChessBoard::WHITE ? -MATE_VALUE : MATE_VALUE;
+            return 0.0f;
+        }
+    }
 
     switch (eval_mode) {
         case EvalMode::NNUE:
