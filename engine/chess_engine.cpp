@@ -73,7 +73,9 @@ void ChessEngine::score_moves(const ChessBoard& board, const chess::Movelist& mo
         if (has_tt_move && move == tt_move) {
             score = 1000000;
         } else if (is_capture) {
-            int victim = PIECE_VALUES[static_cast<int>(to_piece.type())];
+            int victim = move.typeOf() == chess::Move::ENPASSANT
+                             ? PIECE_VALUES[0]
+                             : PIECE_VALUES[static_cast<int>(to_piece.type())];
             int attacker =
                 PIECE_VALUES[static_cast<int>(board.board.at(move.from()).type())];
             score = 100000 + victim * 10 - attacker;

@@ -366,6 +366,7 @@ class LichessBot {
                     Utils::log_error("Failed to initialize game " + event.game_id +
                                      ": " + std::string(e.what()));
                     active_games.erase(event.game_id);
+                    active_game_count--;
                 }
 
             } else {

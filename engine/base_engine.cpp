@@ -10,7 +10,7 @@ int BaseEngine::calculate_search_time(const TimeControl& time_control) {
     int allocated_time =
         time_control.increment_ms +
         (time_control.time_left_ms / config::search::TIME_ALLOCATION_DIVISOR);
-    return std::min(allocated_time, max_search_time_ms);
+    return std::max(1, std::min(allocated_time, max_search_time_ms));
 }
 
 float BaseEngine::raw_evaluate(const ChessBoard& board) {
