@@ -200,7 +200,7 @@ void MCTSEngine::backpropagate(MCTSNode* node, float score) {
 }
 
 float MCTSEngine::evaluate_position(const ChessBoard& board) {
-    std::string pos_key = get_position_key(board);
+    uint64_t pos_key = board.hash();
 
     {
         std::lock_guard<std::mutex> lock(eval_cache_mutex);

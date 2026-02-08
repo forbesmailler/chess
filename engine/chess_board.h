@@ -66,6 +66,8 @@ class ChessBoard {
     CastlingRights get_castling_rights() const;
     int piece_count() const;
 
+    uint64_t hash() const { return board.hash(); }
+
     // Additional methods needed by chess engine
     PieceType piece_type_at(int square) const;
     PieceType piece_type_at(const std::string& square_str) const;

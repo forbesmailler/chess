@@ -29,8 +29,8 @@ class ChessEngine : public BaseEngine {
     std::chrono::steady_clock::time_point search_deadline;
     void check_time();
 
-    mutable std::unordered_map<std::string, TranspositionEntry> transposition_table;
-    mutable std::unordered_map<std::string, float> eval_cache;
+    mutable std::unordered_map<uint64_t, TranspositionEntry> transposition_table;
+    mutable std::unordered_map<uint64_t, float> eval_cache;
 
     SearchResult iterative_deepening_search(const ChessBoard& board, int max_time_ms);
     float negamax(const ChessBoard& board, int depth, float alpha, float beta,

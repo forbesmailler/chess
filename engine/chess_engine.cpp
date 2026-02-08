@@ -13,7 +13,7 @@ ChessEngine::ChessEngine(int max_time_ms, EvalMode eval_mode,
 }
 
 float ChessEngine::evaluate(const ChessBoard& board) {
-    std::string pos_key = get_position_key(board);
+    uint64_t pos_key = board.hash();
     if (auto it = eval_cache.find(pos_key); it != eval_cache.end()) return it->second;
 
     float eval = raw_evaluate(board);
@@ -80,7 +80,7 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, floa
         return 0.0f;
     }
 
-    std::string pos_key = get_position_key(board);
+    uint64_t pos_key = board.hash();
     ChessBoard::Move tt_move;
 
     if (auto it = transposition_table.find(pos_key);
@@ -297,7 +297,7 @@ SearchResult ChessEngine::iterative_deepening_search(const ChessBoard& board,
     float static_eval = evaluate(board);
     static_eval = board.turn() == ChessBoard::WHITE ? static_eval : -static_eval;
     SearchResult best_result{legal_moves[0], static_eval, 0, {}, 0};
-    std::string pos_key = get_position_key(board);
+    uint64_t pos_key = board.hash();
 
     for (int depth = 1; depth <= config::search::MAX_DEPTH; ++depth) {
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(

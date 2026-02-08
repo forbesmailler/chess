@@ -55,7 +55,6 @@ class BaseEngine {
     mutable std::atomic<int> nodes_searched{0};
 
     // Shared utility methods
-    std::string get_position_key(const ChessBoard& board) const;
     int calculate_search_time(const TimeControl& time_control);
     float raw_evaluate(const ChessBoard& board);
 };
