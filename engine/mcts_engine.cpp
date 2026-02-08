@@ -72,7 +72,7 @@ SearchResult MCTSEngine::get_best_move(const ChessBoard& board,
         if (child->visits > max_visits) {
             max_visits = child->visits;
             best_move = child->move;
-            best_score = child->get_average_score();
+            best_score = -child->get_average_score();
         }
     }
 
@@ -236,7 +236,7 @@ float MCTSEngine::MCTSNode::get_uct_value(float exploration_constant,
                                                         // priority
     }
 
-    float exploitation = get_average_score();
+    float exploitation = -get_average_score();
     float exploration =
         exploration_constant * std::sqrt(std::log(parent_visits) / visits);
 

@@ -275,7 +275,7 @@ LichessClient::HttpResponse LichessClient::make_request(const std::string& url,
     curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
 
-    return {response_data, static_cast<int>(response_code)};
+    return {response_data, response_code};
 }
 
 void LichessClient::stream_lines(const std::string& url,

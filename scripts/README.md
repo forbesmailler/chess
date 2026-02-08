@@ -5,11 +5,20 @@ Automated code improvement loop using Claude Code. Runs a sequence of tasks, eac
 ## Usage
 
 ```powershell
-# Run with default model
+# Run with default tasks
 .\scripts\iterate.ps1
 
 # Specify a model
 .\scripts\iterate.ps1 -Model sonnet
+
+# Custom prompts (overrides default tasks)
+.\scripts\iterate.ps1 -Prompts "Fix compiler warnings.", "Add input validation."
+
+# Single custom prompt
+.\scripts\iterate.ps1 -Prompts "Remove unused dependencies."
+
+# Custom prompts with model
+.\scripts\iterate.ps1 -Model sonnet -Prompts "Fix compiler warnings."
 ```
 
 ## How it works
@@ -37,9 +46,9 @@ Automated code improvement loop using Claude Code. Runs a sequence of tasks, eac
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `$MaxIterations` | 20 | Max iterations per task before stopping |
-| `$Tasks` | 5 built-in tasks | Edit the `$Tasks` array to customize |
+| `-Prompts` | 5 built-in tasks | Override with custom prompt list |
 | `-Model` | CLI default | Claude model to use |
+| `$MaxIterations` | 20 | Max iterations per task before stopping |
 
 ## Output
 
@@ -56,7 +65,7 @@ A summary table is printed at the end:
 === Summary (12.3m) ===
   converged       Bug fixes
   converged       Test coverage
-  max iterations  Dead code
+  max iterations  Conciseness
   converged       Optimization
   failed          Config
 ```

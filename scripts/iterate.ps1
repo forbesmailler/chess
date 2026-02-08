@@ -1,14 +1,24 @@
 param(
-    [string]$Model = ""
+    [string]$Model = "",
+    [string[]]$Prompts = @()
 )
 
-$Tasks = @(
+$DefaultTasks = @(
     @{ Name = "Bug fixes";    Prompt = "Search every source file in the repo for bugs. Look for: off-by-one errors, race conditions, resource leaks, incorrect boundary checks, and silent data truncation. For each bug, make the smallest fix that corrects the issue." },
     @{ Name = "Test coverage"; Prompt = "Find functions and branches that have no tests or weak tests. Write focused unit tests that cover: error handling paths, boundary values (zero, empty, max, negative), off-by-one boundaries, and uncommon but valid inputs. Each assertion should check an exact expected value, not just truthiness. When testing collections, also assert the count." },
     @{ Name = "Conciseness";   Prompt = "Make the codebase more concise without changing behavior. Remove dead code, unused imports, unreachable branches, and commented-out code. Inline functions that are called only once and add no clarity. Replace deeply nested if/else chains with early returns or guard clauses. Merge duplicate logic into shared helpers only when there are 3+ copies." },
     @{ Name = "Optimization";  Prompt = "Find performance bottlenecks in the codebase. Look for: O(n^2) or worse algorithms that could be O(n log n) or O(n), repeated lookups that should be cached, unnecessary copies of large objects, allocations inside tight loops, and redundant recomputation. Apply targeted fixes. Do not sacrifice readability for marginal gains." },
     @{ Name = "Config";        Prompt = "Find hardcoded numeric constants, string literals, URLs, timeouts, thresholds, and tuning parameters scattered across source files. Move each to an appropriate yaml config file. If a config loading mechanism already exists, use it. If moved values are needed at compile time, update any config generation scripts accordingly." }
 )
+
+if ($Prompts.Count -gt 0) {
+    $Tasks = @()
+    for ($i = 0; $i -lt $Prompts.Count; $i++) {
+        $Tasks += @{ Name = "Task $($i + 1)"; Prompt = $Prompts[$i] }
+    }
+} else {
+    $Tasks = $DefaultTasks
+}
 
 $Suffix = "After making changes, run all tests and the code formatter. Only make changes you are confident are correct. If no changes are needed, respond with exactly NO_CHANGES and nothing else."
 $LogFile = Join-Path $PSScriptRoot "iterate_log.md"
@@ -78,6 +88,10 @@ foreach ($task in $Tasks) {
             break
         }
 
+        # Commit after each successful iteration to preserve progress
+        Commit-Changes "$name - iteration $iteration"
+        Add-Content $LogFile "### $name - iteration $iteration`n"
+
         if ($output -match "NO_CHANGES") {
             $elapsed = [math]::Round(((Get-Date) - $taskStart).TotalMinutes, 1)
             Write-Host "Converged after $iteration iteration(s) (${elapsed}m)" -ForegroundColor Green
@@ -86,10 +100,6 @@ foreach ($task in $Tasks) {
             $status = "converged"
             break
         }
-
-        # Commit after each successful iteration to preserve progress
-        Commit-Changes "$name - iteration $iteration"
-        Add-Content $LogFile "### $name - iteration $iteration`n"
     }
 
     if ($status -eq "max iterations") {

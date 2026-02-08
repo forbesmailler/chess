@@ -2,11 +2,15 @@
 
 import re
 
+import pytest
+
+import scripts.gen_config_header as gen_config_header
 from scripts.gen_config_header import (
     flatten_pst,
     fmt_int_array,
     fmt_pst,
     generate,
+    load,
 )
 
 
@@ -237,3 +241,36 @@ class TestGenerate:
             assert match.group(2) == "L", (
                 f"Long constant missing 'L' suffix: {match.group(0)}"
             )
+
+
+class TestLoad:
+    def test_load_engine(self):
+        cfg = load("engine")
+        assert "nnue" in cfg
+        assert "search" in cfg
+
+    def test_load_eval(self):
+        cfg = load("eval")
+        assert "material_mg" in cfg
+
+    def test_load_nonexistent_raises(self):
+        with pytest.raises(FileNotFoundError):
+            load("nonexistent_config_xyz")
+
+
+class TestMain:
+    def test_main_writes_file(self, tmp_path, monkeypatch):
+        output = tmp_path / "generated_config.h"
+        monkeypatch.setattr(gen_config_header, "OUTPUT", output)
+        gen_config_header.main()
+        assert output.exists()
+        content = output.read_text()
+        assert "#pragma once" in content
+        assert "namespace config" in content
+
+    def test_main_prints_path(self, tmp_path, monkeypatch, capsys):
+        output = tmp_path / "generated_config.h"
+        monkeypatch.setattr(gen_config_header, "OUTPUT", output)
+        gen_config_header.main()
+        captured = capsys.readouterr().out
+        assert "Generated" in captured

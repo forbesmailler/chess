@@ -193,6 +193,9 @@ float ChessEngine::negamax(ChessBoard& board, int depth, int ply, float alpha,
             float null_score =
                 -negamax(board, null_depth, ply + 1, -beta, -beta + 1, false);
             board.board.unmakeNullMove();
+            if (null_score == -SEARCH_INTERRUPTED || should_stop.load()) {
+                return SEARCH_INTERRUPTED;
+            }
             if (null_score >= beta) {
                 return null_score;
             }
@@ -268,7 +271,7 @@ float ChessEngine::negamax(ChessBoard& board, int depth, int ply, float alpha,
 
         board.board.unmakeMove(move);
 
-        if (score == SEARCH_INTERRUPTED) {
+        if (score == -SEARCH_INTERRUPTED || should_stop.load()) {
             return SEARCH_INTERRUPTED;
         }
 
@@ -367,7 +370,8 @@ float ChessEngine::quiescence_search(ChessBoard& board, float alpha, float beta,
                 -quiescence_search(board, -beta, -alpha, qs_depth + 1, child_in_check);
             board.board.unmakeMove(move);
 
-            if (score == SEARCH_INTERRUPTED) return SEARCH_INTERRUPTED;
+            if (score == -SEARCH_INTERRUPTED || should_stop.load())
+                return SEARCH_INTERRUPTED;
             if (score >= beta) return beta;
             if (score > alpha) alpha = score;
         }

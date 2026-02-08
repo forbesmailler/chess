@@ -200,3 +200,60 @@ class TestHelpers:
             return_value=subprocess.CompletedProcess("cmd", 1),
         ):
             assert train_loop.run_check("cmd") is False
+
+    def test_run_check_false_on_nonzero(self):
+        with patch(
+            "scripts.train_loop.subprocess.run",
+            return_value=subprocess.CompletedProcess("cmd", 2),
+        ):
+            assert train_loop.run_check("cmd") is False
+
+
+class TestPositionCounting:
+    def test_position_count_exact(self, loop_env):
+        """Position count = file_size // 42."""
+        run_loop(loop_env, [True], positions_per_iter=100)
+        data = loop_env / "training_data.bin"
+        assert data.stat().st_size == POSITION_BYTES * 100
+        accepted = list((loop_env / "models" / "accepted").glob("*.bin"))
+        assert len(accepted) == 1
+        assert "100pos" in accepted[0].name
+
+    def test_position_count_accumulates_correctly(self, loop_env):
+        """After 3 iterations, file has 3x positions."""
+        run_loop(loop_env, [True, True, True], positions_per_iter=50)
+        data = loop_env / "training_data.bin"
+        assert data.stat().st_size == POSITION_BYTES * 50 * 3
+        accepted = list((loop_env / "models" / "accepted").glob("*.bin"))
+        assert len(accepted) == 3
+        names = [a.name for a in accepted]
+        assert sum("_50pos" in n for n in names) == 1
+        assert sum("_100pos" in n for n in names) == 1
+        assert sum("_150pos" in n for n in names) == 1
+
+    def test_first_archive_name_has_first_iter_count(self, loop_env):
+        run_loop(loop_env, [True, True], positions_per_iter=75)
+        accepted = list((loop_env / "models" / "accepted").glob("*.bin"))
+        assert len(accepted) == 2
+        names = [a.name for a in accepted]
+        assert sum("_75pos" in n for n in names) == 1
+        assert sum("_150pos" in n for n in names) == 1
+
+
+class TestRunFunction:
+    def test_run_success(self):
+        with patch(
+            "scripts.train_loop.subprocess.run",
+            return_value=subprocess.CompletedProcess("cmd", 0),
+        ) as mock_run:
+            result = train_loop.run("echo hello")
+            mock_run.assert_called_once_with("echo hello", shell=True, check=True)
+            assert result.returncode == 0
+
+    def test_run_raises_on_failure(self):
+        with patch(
+            "scripts.train_loop.subprocess.run",
+            side_effect=subprocess.CalledProcessError(1, "cmd"),
+        ):
+            with pytest.raises(subprocess.CalledProcessError):
+                train_loop.run("false")

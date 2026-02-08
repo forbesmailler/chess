@@ -311,3 +311,237 @@ def test_train_respects_eval_weight(tmp_path):
     # Different eval weights should produce different trained weights
     diff = (state_a["fc3.weight"] - state_b["fc3.weight"]).abs().sum()
     assert diff > 0
+
+
+# --- SelfPlayDataset target blending ---
+
+
+def test_dataset_target_win():
+    """Game result = 2 (win) maps to result_scalar = +1."""
+    pos = _make_synthetic_position(game_result=2, search_eval=0.0)
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+        f.write(pos)
+        tmp_path = f.name
+    try:
+        ds = SelfPlayDataset(tmp_path, eval_weight=0.0)  # pure result
+        _, target = ds[0]
+        assert abs(target.item() - 1.0) < 1e-6
+    finally:
+        Path(tmp_path).unlink()
+
+
+def test_dataset_target_loss():
+    """Game result = 0 (loss) maps to result_scalar = -1."""
+    pos = _make_synthetic_position(game_result=0, search_eval=0.0)
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+        f.write(pos)
+        tmp_path = f.name
+    try:
+        ds = SelfPlayDataset(tmp_path, eval_weight=0.0)
+        _, target = ds[0]
+        assert abs(target.item() - (-1.0)) < 1e-6
+    finally:
+        Path(tmp_path).unlink()
+
+
+def test_dataset_target_draw():
+    """Game result = 1 (draw) maps to result_scalar = 0."""
+    pos = _make_synthetic_position(game_result=1, search_eval=0.0)
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+        f.write(pos)
+        tmp_path = f.name
+    try:
+        ds = SelfPlayDataset(tmp_path, eval_weight=0.0)
+        _, target = ds[0]
+        assert abs(target.item()) < 1e-6
+    finally:
+        Path(tmp_path).unlink()
+
+
+def test_dataset_target_pure_eval():
+    """eval_weight=1.0 uses only search eval, ignoring result."""
+    mate_value = 10000.0
+    pos = _make_synthetic_position(game_result=2, search_eval=5000.0)
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+        f.write(pos)
+        tmp_path = f.name
+    try:
+        ds = SelfPlayDataset(tmp_path, eval_weight=1.0)
+        _, target = ds[0]
+        expected = np.clip(5000.0 / mate_value, -1.0, 1.0)
+        assert abs(target.item() - expected) < 1e-6
+    finally:
+        Path(tmp_path).unlink()
+
+
+def test_dataset_target_eval_clipping():
+    """Search eval beyond MATE_VALUE gets clipped to [-1, 1]."""
+    pos = _make_synthetic_position(game_result=1, search_eval=99999.0)
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+        f.write(pos)
+        tmp_path = f.name
+    try:
+        ds = SelfPlayDataset(tmp_path, eval_weight=1.0)
+        _, target = ds[0]
+        assert abs(target.item() - 1.0) < 1e-6
+    finally:
+        Path(tmp_path).unlink()
+
+
+def test_dataset_target_blending():
+    """Verify blending formula: eval_weight * eval + (1 - eval_weight) * result."""
+    mate_value = 10000.0
+    pos = _make_synthetic_position(game_result=2, search_eval=5000.0)
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+        f.write(pos)
+        tmp_path = f.name
+    try:
+        ds = SelfPlayDataset(tmp_path, eval_weight=0.75)
+        _, target = ds[0]
+        eval_scalar = np.clip(5000.0 / mate_value, -1.0, 1.0)
+        result_scalar = 1.0  # win
+        expected = 0.75 * eval_scalar + 0.25 * result_scalar
+        assert abs(target.item() - expected) < 1e-6
+    finally:
+        Path(tmp_path).unlink()
+
+
+def test_extract_features_black_piece_as_opponent():
+    """Black knight (nibble 8) on b8 (sq 57) with white STM is opponent piece."""
+    placement = bytearray(32)
+    # sq 57 = byte 28, odd nibble
+    placement[28] |= 8  # low nibble = 8 = black knight
+    feat = extract_features(bytes(placement), side_to_move=0)
+    # White STM, black knight is opponent. piece_type=1 (knight), sq=57
+    # index = 384 + 1*64 + 57 = 505
+    assert feat[505] == 1.0
+    assert feat[:768].sum() == 1
+
+
+def test_extract_features_black_piece_as_own():
+    """Black knight (nibble 8) on b8 (sq 57) with black STM is own piece, sq flipped."""
+    placement = bytearray(32)
+    placement[28] |= 8  # sq 57 = black knight
+    feat = extract_features(bytes(placement), side_to_move=1)
+    # Black STM: own knight. piece_type=1, sq flipped: 57^56=1
+    # index = 1*64 + 1 = 65
+    assert feat[65] == 1.0
+    assert feat[:768].sum() == 1
+
+
+def test_extract_features_specific_piece_indices():
+    """Verify exact feature indices for known pieces in starting position."""
+    placement = _starting_placement()
+    features = extract_features(placement, side_to_move=0, castling=0b1111)
+
+    # White king on e1 (sq 4): own king = 5*64 + 4 = 324
+    assert features[324] == 1.0
+    # White queen on d1 (sq 3): own queen = 4*64 + 3 = 259
+    assert features[259] == 1.0
+    # Black king on e8 (sq 60): opponent king = 384 + 5*64 + 60 = 764
+    assert features[764] == 1.0
+    # Black queen on d8 (sq 59): opponent queen = 384 + 4*64 + 59 = 699
+    assert features[699] == 1.0
+    # White rook on a1 (sq 0): own rook = 3*64 + 0 = 192
+    assert features[192] == 1.0
+
+
+def test_dataset_target_eval_clipping_negative():
+    """Search eval below -MATE_VALUE gets clipped to -1."""
+    pos = _make_synthetic_position(game_result=1, search_eval=-99999.0)
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+        f.write(pos)
+        tmp_path = f.name
+    try:
+        ds = SelfPlayDataset(tmp_path, eval_weight=1.0)
+        _, target = ds[0]
+        assert abs(target.item() - (-1.0)) < 1e-6
+    finally:
+        Path(tmp_path).unlink()
+
+
+def test_dataset_multiple_positions():
+    """Dataset correctly indexes multiple positions."""
+    positions = []
+    for i in range(5):
+        positions.append(
+            _make_synthetic_position(
+                game_result=i % 3, search_eval=float(i * 100), ply=i
+            )
+        )
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+        for pos in positions:
+            f.write(pos)
+        tmp_path = f.name
+    try:
+        ds = SelfPlayDataset(tmp_path)
+        assert len(ds) == 5
+        for i in range(5):
+            features, target = ds[i]
+            assert features.shape == (773,)
+            assert -1.0 <= target.item() <= 1.0
+    finally:
+        Path(tmp_path).unlink()
+
+
+def test_extract_features_en_passant_file_zero():
+    """En passant on a-file (file 0) should set feature 772."""
+    placement = bytes(32)
+    features = extract_features(placement, side_to_move=0, en_passant_file=0)
+    assert features[772] == 1.0
+
+
+def test_extract_features_en_passant_file_seven():
+    """En passant on h-file (file 7) should set feature 772."""
+    placement = bytes(32)
+    features = extract_features(placement, side_to_move=0, en_passant_file=7)
+    assert features[772] == 1.0
+
+
+def test_nnue_single_sample():
+    """NNUE forward pass with batch_size=1."""
+    model = NNUE()
+    x = torch.randn(1, 773)
+    with torch.no_grad():
+        out = model(x)
+    assert out.shape == (1,)
+    assert -1.0 <= out.item() <= 1.0
+
+
+def test_dataset_target_half_blend():
+    """eval_weight=0.5 blends eval and result equally."""
+    mate_value = 10000.0
+    # Win (result=2) with eval=2000 -> eval_scalar=0.2, result_scalar=1.0
+    # target = 0.5*0.2 + 0.5*1.0 = 0.6
+    pos = _make_synthetic_position(game_result=2, search_eval=2000.0)
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+        f.write(pos)
+        tmp_path = f.name
+    try:
+        ds = SelfPlayDataset(tmp_path, eval_weight=0.5)
+        _, target = ds[0]
+        expected = 0.5 * (2000.0 / mate_value) + 0.5 * 1.0
+        assert abs(target.item() - expected) < 1e-6
+    finally:
+        Path(tmp_path).unlink()
+
+
+def test_extract_features_no_en_passant_file_254():
+    """File 254 is not a valid file but isn't 255; should still set feature 772."""
+    placement = bytes(32)
+    features = extract_features(placement, side_to_move=0, en_passant_file=254)
+    assert features[772] == 1.0
+
+
+def test_dataset_target_zero_eval():
+    """Zero search eval with eval_weight=1.0 produces target 0."""
+    pos = _make_synthetic_position(game_result=1, search_eval=0.0)
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+        f.write(pos)
+        tmp_path = f.name
+    try:
+        ds = SelfPlayDataset(tmp_path, eval_weight=1.0)
+        _, target = ds[0]
+        assert abs(target.item()) < 1e-6
+    finally:
+        Path(tmp_path).unlink()

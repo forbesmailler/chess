@@ -178,10 +178,13 @@ endif()
 if(BUILD_TESTS)
     add_executable(chess_tests
         ../tests/engine/test_chess_board.cpp
+        ../tests/engine/test_chess_board_edge.cpp
         ../tests/engine/test_chess_engine.cpp
+        ../tests/engine/test_engine_edge.cpp
         ../tests/engine/test_handcrafted_eval.cpp
         ../tests/engine/test_self_play.cpp
         ../tests/engine/test_nnue_model.cpp
+        ../tests/engine/test_utils.cpp
     )
 
     target_include_directories(chess_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

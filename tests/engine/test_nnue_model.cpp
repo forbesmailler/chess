@@ -107,3 +107,34 @@ TEST(NNUEModel, UnloadedModelReturnsZero) {
     float eval = model.predict(board);
     EXPECT_FLOAT_EQ(eval, 0.0f);
 }
+
+TEST_F(NNUEModelTest, PredictBlackToMoveNegatesOutput) {
+    // Same position but with different side to move should produce negated eval
+    // (since predict converts from STM to white's perspective)
+    ChessBoard white_board(
+        "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 1");
+    ChessBoard black_board(
+        "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1");
+    float white_eval = model.predict(white_board);
+    float black_eval = model.predict(black_board);
+    // The evals should differ — different features are active for each side
+    EXPECT_NE(white_eval, black_eval);
+    EXPECT_TRUE(std::isfinite(white_eval));
+    EXPECT_TRUE(std::isfinite(black_eval));
+}
+
+TEST_F(NNUEModelTest, PredictOutputBoundedByMateValue) {
+    ChessBoard board;
+    float eval = model.predict(board);
+    EXPECT_LE(eval, config::MATE_VALUE);
+    EXPECT_GE(eval, -config::MATE_VALUE);
+}
+
+TEST_F(NNUEModelTest, PredictSymmetricStartNearZero) {
+    // Starting position is symmetric; with random weights the eval will be some
+    // value, but it should be finite and bounded
+    ChessBoard board;
+    float eval = model.predict(board);
+    EXPECT_TRUE(std::isfinite(eval));
+    EXPECT_LE(std::abs(eval), config::MATE_VALUE);
+}

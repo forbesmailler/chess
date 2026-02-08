@@ -75,3 +75,37 @@ def test_export_roundtrip():
 
                 np.testing.assert_allclose(w, expected_w, atol=1e-6)
                 np.testing.assert_allclose(b, expected_b, atol=1e-6)
+
+
+def test_export_file_size():
+    """Verify exported file size matches header + total parameters * 4 bytes."""
+    with tempfile.TemporaryDirectory() as tmp:
+        pt_path = str(Path(tmp) / "model.pt")
+        bin_path = str(Path(tmp) / "nnue.bin")
+        model = _save_random_model(pt_path)
+        export_model(pt_path, bin_path)
+
+        total_params = sum(p.numel() for p in model.parameters())
+        expected_size = 24 + total_params * 4
+        actual_size = Path(bin_path).stat().st_size
+        assert actual_size == expected_size
+
+
+def test_export_no_extra_bytes():
+    """Exported file should contain exactly the header and weight data, nothing more."""
+    with tempfile.TemporaryDirectory() as tmp:
+        pt_path = str(Path(tmp) / "model.pt")
+        bin_path = str(Path(tmp) / "nnue.bin")
+        model = _save_random_model(pt_path)
+        export_model(pt_path, bin_path)
+
+        with open(bin_path, "rb") as f:
+            data = f.read()
+
+        # After reading header (24 bytes), we should be able to read all weight data
+        offset = 24
+        for layer in [model.fc1, model.fc2, model.fc3]:
+            out_sz, in_sz = layer.weight.shape
+            offset += in_sz * out_sz * 4  # weight
+            offset += out_sz * 4  # bias
+        assert offset == len(data)
