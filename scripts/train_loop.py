@@ -6,10 +6,19 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
-from config.load_config import deploy, training
+import yaml
 
-_trn = training()
-_dep = deploy()
+ROOT = Path(__file__).resolve().parent.parent
+CONFIG_DIR = ROOT / "config"
+
+
+def _load(name: str) -> dict:
+    with open(CONFIG_DIR / f"{name}.yaml") as f:
+        return yaml.safe_load(f)
+
+
+_trn = _load("training")
+_dep = _load("deploy")
 
 BOT_EXE = str(Path(_dep["paths"]["bot_exe"]))
 _sp = _trn["self_play"]
