@@ -300,7 +300,7 @@ int MCTSEngine::calculate_search_time(const TimeControl& time_control) {
 std::string MCTSEngine::get_position_key(const ChessBoard& board) const {
     std::string fen = board.to_fen();
     size_t pos = fen.find(' ');
-    for (int i = 0; i < 2 && pos != std::string::npos; ++i) {
+    for (int i = 0; i < 3 && pos != std::string::npos; ++i) {
         pos = fen.find(' ', pos + 1);
     }
     return pos != std::string::npos ? fen.substr(0, pos) : fen;

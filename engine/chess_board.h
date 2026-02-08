@@ -23,8 +23,6 @@ class ChessBoard {
             return move;
         }
 
-        // Methods expected by chess engine
-        bool is_capture() const;
         bool is_promotion() const;
         int from() const;
         int to() const;

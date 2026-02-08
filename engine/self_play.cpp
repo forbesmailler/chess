@@ -109,7 +109,6 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
         ChessBoard board;
         uint16_t ply = 0;
         int consecutive_resign = 0;
-        float last_eval = 0.0f;
 
         // Game result from white's perspective: 0=black wins, 1=draw, 2=white wins
         int white_result = 1;  // assume draw until determined
@@ -157,7 +156,6 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
             if (result.best_move.uci().empty()) break;
             board.make_move(result.best_move);
             ply++;
-            last_eval = stm_eval;
         }
 
         // Fill in game results from each position's STM perspective

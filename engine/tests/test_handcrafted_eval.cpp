@@ -48,15 +48,11 @@ TEST(HandcraftedEval, CheckmateBlackLoses) {
 }
 
 TEST(HandcraftedEval, StalemateIsZero) {
-    // A simple stalemate position
-    ChessBoard board("k7/8/1K6/8/8/8/8/8 b - - 0 1");
-    // This might not be stalemate. Use a known stalemate:
     // Black king in corner, white queen trapping but not checking
-    ChessBoard board2("k7/2Q5/1K6/8/8/8/8/8 b - - 0 1");
-    if (board2.is_stalemate()) {
-        float eval = handcrafted_evaluate(board2);
-        EXPECT_EQ(eval, 0.0f);
-    }
+    ChessBoard board("k7/2Q5/1K6/8/8/8/8/8 b - - 0 1");
+    ASSERT_TRUE(board.is_stalemate());
+    float eval = handcrafted_evaluate(board);
+    EXPECT_EQ(eval, 0.0f);
 }
 
 TEST(HandcraftedEval, EndgameKingCentralisation) {

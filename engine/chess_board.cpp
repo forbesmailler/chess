@@ -132,8 +132,6 @@ ChessBoard::PieceType ChessBoard::piece_type_at(const std::string& square_str) c
     return piece_type_at(square_from_string(square_str));
 }
 
-bool ChessBoard::Move::is_capture() const { return false; }
-
 bool ChessBoard::Move::is_promotion() const {
     return internal_move.typeOf() == chess::Move::PROMOTION;
 }
