@@ -119,6 +119,9 @@ void MCTSEngine::expand(MCTSNode* node) {
         return;
     }
 
+    // Evaluate parent once for all move priors
+    float parent_eval = evaluate_position(node->board);
+
     // Create child nodes for all legal moves
     node->children.reserve(legal_moves.size());
     for (const auto& move : legal_moves) {
@@ -130,7 +133,7 @@ void MCTSEngine::expand(MCTSNode* node) {
         // Apply the move
         if (child->board.make_move(move)) {
             // Set prior probability based on move evaluation
-            child->prior_probability = get_move_prior(node->board, move);
+            child->prior_probability = get_move_prior(node->board, move, parent_eval);
 
             // Check if this is a terminal position
             auto child_legal_moves = child->board.get_legal_moves();
@@ -221,18 +224,16 @@ float MCTSEngine::evaluate_position(const ChessBoard& board) {
     return eval;
 }
 
-float MCTSEngine::get_move_prior(const ChessBoard& board,
-                                 const ChessBoard::Move& move) {
-    // Simple heuristic for move priors - could be improved
+float MCTSEngine::get_move_prior(const ChessBoard& board, const ChessBoard::Move& move,
+                                 float parent_eval) {
     ChessBoard temp_board = board;
     if (!temp_board.make_move(move)) return 0.0f;
 
     float eval_after = evaluate_position(temp_board);
-    float eval_before = evaluate_position(board);
 
     // Normalize the improvement
-    float improvement = board.turn() == ChessBoard::WHITE ? eval_after - eval_before
-                                                          : eval_before - eval_after;
+    float improvement = board.turn() == ChessBoard::WHITE ? eval_after - parent_eval
+                                                          : parent_eval - eval_after;
 
     // Convert to probability (sigmoid-like function)
     return 1.0f / (1.0f + std::exp(-improvement / config::mcts::PRIOR_SIGMOID_SCALE));

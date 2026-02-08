@@ -210,13 +210,11 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, floa
 float ChessEngine::quiescence_search(const ChessBoard& board, float alpha, float beta,
                                      int qs_depth) {
     if (should_stop.load()) return SEARCH_INTERRUPTED;
-    if (qs_depth >= config::search::QUIESCENCE_MAX_DEPTH) {
-        float eval = evaluate(board);
-        return board.turn() == ChessBoard::WHITE ? eval : -eval;
-    }
 
     float stand_pat = evaluate(board);
     stand_pat = board.turn() == ChessBoard::WHITE ? stand_pat : -stand_pat;
+
+    if (qs_depth >= config::search::QUIESCENCE_MAX_DEPTH) return stand_pat;
 
     bool in_check = board.is_in_check(board.turn());
 
@@ -229,11 +227,15 @@ float ChessEngine::quiescence_search(const ChessBoard& board, float alpha, float
 
     if (in_check && legal_moves.empty()) return -MATE_VALUE;
 
+    // When in check, all moves must be searched; otherwise only tactical moves
     std::vector<ChessBoard::Move> tactical_moves;
-
-    for (const auto& move : legal_moves) {
-        if (in_check || board.is_capture_move(move) || move.is_promotion()) {
-            tactical_moves.push_back(move);
+    if (in_check) {
+        tactical_moves = std::move(legal_moves);
+    } else {
+        for (const auto& move : legal_moves) {
+            if (board.is_capture_move(move) || move.is_promotion()) {
+                tactical_moves.push_back(move);
+            }
         }
     }
 
@@ -347,7 +349,7 @@ SearchResult ChessEngine::iterative_deepening_search(const ChessBoard& board,
                 if (transposition_table.size() >= CACHE_SIZE / 2) tt_full = true;
             }
 
-            if (std::abs(current_best_score) == MATE_VALUE) break;
+            if (std::abs(current_best_score) > MATE_VALUE - 500) break;
         }
 
         if (!completed_depth) break;

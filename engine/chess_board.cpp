@@ -1,8 +1,11 @@
 #include "chess_board.h"
 
-ChessBoard::ChessBoard() : board() {}
+ChessBoard::ChessBoard() : board() { move_history.reserve(128); }
 
-ChessBoard::ChessBoard(const std::string& fen) { load_fen(fen); }
+ChessBoard::ChessBoard(const std::string& fen) {
+    move_history.reserve(128);
+    load_fen(fen);
+}
 
 void ChessBoard::load_fen(const std::string& fen) { board = chess::Board(fen); }
 

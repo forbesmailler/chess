@@ -175,15 +175,25 @@ def train(args):
         generator=torch.Generator().manual_seed(42),
     )
 
+    use_cuda = device.type == "cuda"
     train_loader = DataLoader(
-        train_set, batch_size=args.batch_size, shuffle=True, num_workers=0
+        train_set,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=0,
+        pin_memory=use_cuda,
     )
     val_loader = DataLoader(
-        val_set, batch_size=args.batch_size, shuffle=False, num_workers=0
+        val_set,
+        batch_size=args.batch_size,
+        shuffle=False,
+        num_workers=0,
+        pin_memory=use_cuda,
     )
 
     model = NNUE().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    scaler = torch.amp.GradScaler(enabled=use_cuda)
 
     best_val_loss = float("inf")
     patience_counter = 0
@@ -195,12 +205,14 @@ def train(args):
         for features, targets in train_loader:
             features, targets = features.to(device), targets.to(device)
 
-            output = model(features)
-            loss = F.mse_loss(output, targets)
+            with torch.amp.autocast(device_type=device.type, enabled=use_cuda):
+                output = model(features)
+                loss = F.mse_loss(output, targets)
 
             optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
             train_loss += loss.item() * features.size(0)
 
         train_loss /= train_size
@@ -211,8 +223,9 @@ def train(args):
         with torch.no_grad():
             for features, targets in val_loader:
                 features, targets = features.to(device), targets.to(device)
-                output = model(features)
-                loss = F.mse_loss(output, targets)
+                with torch.amp.autocast(device_type=device.type, enabled=use_cuda):
+                    output = model(features)
+                    loss = F.mse_loss(output, targets)
                 val_loss += loss.item() * features.size(0)
 
         val_loss /= val_size

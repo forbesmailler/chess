@@ -151,13 +151,12 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
                 if (legal_moves.empty()) break;
 
                 std::vector<float> scores(legal_moves.size());
+                ChessBoard eval_board = board;
                 for (size_t i = 0; i < legal_moves.size(); ++i) {
-                    ChessBoard copy = board;
-                    copy.make_move(legal_moves[i]);
-                    // Negate: evaluate returns from white's perspective,
-                    // we want score for the side that just moved
-                    float eval = engine->evaluate(copy);
+                    eval_board.make_move(legal_moves[i]);
+                    float eval = engine->evaluate(eval_board);
                     scores[i] = board.turn() == ChessBoard::WHITE ? eval : -eval;
+                    eval_board.unmake_move(legal_moves[i]);
                 }
 
                 // Softmax with temperature

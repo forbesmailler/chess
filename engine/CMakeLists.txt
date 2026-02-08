@@ -34,7 +34,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebI
         message(STATUS "Added MSVC optimization flags")
     else()
         # GCC/Clang optimizations
-        add_compile_options(-O3 -march=native -flto)
+        add_compile_options(-O3 -march=native -flto -funroll-loops -fomit-frame-pointer)
         add_link_options(-flto)
         message(STATUS "Added GCC/Clang optimization flags")
     endif()
