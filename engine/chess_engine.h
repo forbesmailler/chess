@@ -1,9 +1,13 @@
 #pragma once
 #include <cstring>
-#include <unordered_map>
 #include <vector>
 
 #include "base_engine.h"
+
+struct EvalCacheEntry {
+    uint64_t key = 0;
+    float score = 0;
+};
 
 struct TranspositionEntry {
     uint64_t key = 0;
@@ -35,27 +39,34 @@ class ChessEngine : public BaseEngine {
     void check_time();
 
     // TT: power-of-2 flat array for O(1) cache-friendly lookup
-    static constexpr size_t TT_SIZE = 1 << 20;  // ~1M entries
+    static constexpr size_t TT_SIZE = 1 << 20;
     static constexpr size_t TT_MASK = TT_SIZE - 1;
     std::vector<TranspositionEntry> transposition_table;
 
-    mutable std::unordered_map<uint64_t, float> eval_cache;
+    // Eval cache: power-of-2 flat array
+    static constexpr size_t EVAL_CACHE_SIZE = 1 << 18;
+    static constexpr size_t EVAL_CACHE_MASK = EVAL_CACHE_SIZE - 1;
+    std::vector<EvalCacheEntry> eval_cache;
 
-    // Killer move heuristic: 2 killer moves per ply (indexed by remaining depth)
+    // Killer move heuristic: 2 killer moves per ply
     static constexpr int MAX_PLY = config::search::MAX_DEPTH + 10;
     ChessBoard::Move killers[MAX_PLY][2];
 
     // History heuristic: indexed by [from_square][to_square]
     int history[64][64];
 
+    // Countermove heuristic: indexed by [prev_from][prev_to]
+    chess::Move countermoves[64][64];
+
     // Aspiration window
     static constexpr float ASPIRATION_DELTA = 50.0f;
 
     SearchResult iterative_deepening_search(const ChessBoard& board, int max_time_ms);
     float negamax(const ChessBoard& board, int depth, int ply, float alpha, float beta,
-                  bool is_pv = false);
+                  bool is_pv = false, chess::Move prev_move = chess::Move::NO_MOVE);
     float quiescence_search(const ChessBoard& board, float alpha, float beta,
                             int depth = 0, bool in_check = false);
     void order_moves(const ChessBoard& board, std::vector<ChessBoard::Move>& moves,
-                     const ChessBoard::Move& tt_move, int ply);
+                     const ChessBoard::Move& tt_move, int ply,
+                     chess::Move prev_move = chess::Move::NO_MOVE);
 };

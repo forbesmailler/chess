@@ -39,6 +39,4 @@ class NNUEModel {
 
     // Collect active (non-zero) feature indices (all features are binary)
     static void extract_features(const ChessBoard& board, std::vector<int>& active);
-
-    static float clipped_relu(float x);
 };

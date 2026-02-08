@@ -116,8 +116,6 @@ void NNUEModel::extract_features(const ChessBoard& board, std::vector<int>& acti
     if (b.enpassantSq() != chess::Square::NO_SQ) active.push_back(772);
 }
 
-float NNUEModel::clipped_relu(float x) { return std::max(0.0f, std::min(1.0f, x)); }
-
 float NNUEModel::predict(const ChessBoard& board) const {
     if (!loaded) return 0.0f;
 
@@ -131,27 +129,26 @@ float NNUEModel::predict(const ChessBoard& board) const {
     }
 
     thread_local std::vector<int> active;
-    thread_local std::vector<float> h1(HIDDEN1_SIZE);
-    thread_local std::vector<float> h2(HIDDEN2_SIZE);
+    float h1[HIDDEN1_SIZE];
+    float h2[HIDDEN2_SIZE];
 
     extract_features(board, active);
 
     // Layer 1: sparse accumulation (input features are binary)
-    // w1 layout: (INPUT_SIZE x HIDDEN1_SIZE) row-major — each active feature
-    // selects a contiguous row to add.
-    std::copy(b1.begin(), b1.end(), h1.begin());
+    std::memcpy(h1, b1.data(), HIDDEN1_SIZE * sizeof(float));
     for (int idx : active) {
         const float* row = w1.data() + idx * HIDDEN1_SIZE;
         for (int j = 0; j < HIDDEN1_SIZE; ++j) h1[j] += row[j];
     }
-    for (int j = 0; j < HIDDEN1_SIZE; ++j) h1[j] = clipped_relu(h1[j]);
+    for (int j = 0; j < HIDDEN1_SIZE; ++j)
+        h1[j] = std::max(0.0f, std::min(1.0f, h1[j]));
 
     // Layer 2: dense, w2 transposed to (HIDDEN2_SIZE x HIDDEN1_SIZE)
     for (int j = 0; j < HIDDEN2_SIZE; ++j) {
         float sum = b2[j];
         const float* row = w2.data() + j * HIDDEN1_SIZE;
         for (int i = 0; i < HIDDEN1_SIZE; ++i) sum += h1[i] * row[i];
-        h2[j] = clipped_relu(sum);
+        h2[j] = std::max(0.0f, std::min(1.0f, sum));
     }
 
     // Layer 3: single output (tanh)
