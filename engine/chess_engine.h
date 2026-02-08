@@ -33,6 +33,10 @@ class ChessEngine : public BaseEngine {
    private:
     static constexpr float SEARCH_INTERRUPTED = -99999.0f;  // Special value for interrupted search
     static constexpr size_t CACHE_SIZE = 1000000;
+    static constexpr int TIME_CHECK_INTERVAL = 2048;  // Check clock every N nodes
+
+    std::chrono::steady_clock::time_point search_deadline;
+    void check_time();
 
     mutable std::unordered_map<std::string, TranspositionEntry> transposition_table;
     mutable std::unordered_map<std::string, float> eval_cache;

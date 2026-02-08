@@ -96,11 +96,9 @@ SearchResult ChessEngine::get_best_move(const ChessBoard& board, const TimeContr
 
 float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, float beta,
                            bool is_pv) {
-    if (should_stop.load() || (nodes_searched.load() % 1000 == 0 && should_stop.load())) {
-        return SEARCH_INTERRUPTED;
-    }
-
     nodes_searched.fetch_add(1);
+    if (nodes_searched.load() % TIME_CHECK_INTERVAL == 0) check_time();
+    if (should_stop.load()) return SEARCH_INTERRUPTED;
 
     if (board.is_stalemate() || board.is_draw()) {
         return 0.0f;
@@ -237,6 +235,7 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, float alpha, floa
 
 float ChessEngine::quiescence_search(const ChessBoard& board, float alpha, float beta,
                                      int qs_depth) {
+    if (should_stop.load()) return SEARCH_INTERRUPTED;
     if (qs_depth >= 8) {
         float eval = evaluate(board);
         return board.turn() == ChessBoard::WHITE ? eval : -eval;
@@ -306,8 +305,15 @@ int ChessEngine::calculate_search_time(const TimeControl& time_control) {
     return std::min(allocated_time, max_search_time_ms);
 }
 
+void ChessEngine::check_time() {
+    if (std::chrono::steady_clock::now() >= search_deadline) {
+        should_stop.store(true);
+    }
+}
+
 SearchResult ChessEngine::iterative_deepening_search(const ChessBoard& board, int max_time_ms) {
     auto start_time = std::chrono::steady_clock::now();
+    search_deadline = start_time + std::chrono::milliseconds(max_time_ms);
     should_stop.store(false);
     nodes_searched.store(0);
 

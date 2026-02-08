@@ -99,31 +99,26 @@ def train(
 
 @task(
     help={
-        "token": "Lichess API token",
         "time": "Max search time in ms (default: 1000)",
         "engine": "Search algorithm: negamax or mcts (default: negamax)",
         "weights": "NNUE weights path (default: nnue.bin)",
     }
 )
-def run(c, token, time=1000, engine="negamax", weights="nnue.bin"):
-    """Run the Lichess bot with NNUE evaluation."""
+def run(c, time=1000, engine="negamax", weights="nnue.bin"):
+    """Run the Lichess bot with NNUE evaluation. Reads LICHESS_TOKEN env var."""
     bot_exe = BOT_EXE
-    c.run(
-        f"{bot_exe} {token} {time} --engine={engine} "
-        f"--eval=nnue --nnue-weights={weights}"
-    )
+    c.run(f"{bot_exe} {time} --engine={engine} --eval=nnue --nnue-weights={weights}")
 
 
 @task(
     help={
-        "token": "Lichess API token",
         "time": "Max search time in ms (default: 1000)",
         "engine": "Search algorithm: negamax or mcts (default: negamax)",
         "weights": "NNUE weights path (default: nnue.bin)",
     }
 )
-def deploy_local(c, token, time=1000, engine="negamax", weights="nnue.bin"):
-    """Format, test, build, and run the bot locally."""
+def deploy_local(c, time=1000, engine="negamax", weights="nnue.bin"):
+    """Format, test, build, and run the bot locally. Reads LICHESS_TOKEN env var."""
     print("=== Step 1/4: Format ===")
     format(c)
 
@@ -134,7 +129,7 @@ def deploy_local(c, token, time=1000, engine="negamax", weights="nnue.bin"):
     build_cpp(c)
 
     print("=== Step 4/4: Run ===")
-    run(c, token=token, time=time, engine=engine, weights=weights)
+    run(c, time=time, engine=engine, weights=weights)
 
 
 REPO_DIR = "/opt/chess-bot-src"
@@ -143,15 +138,14 @@ INSTALL_DIR = "/opt/chess-bot"
 
 @task(
     help={
-        "token": "Lichess API token",
         "time": "Max search time in ms (default: 1000)",
         "engine": "Search algorithm: negamax or mcts (default: negamax)",
         "weights": "NNUE weights file name (default: nnue.bin)",
     }
 )
-def deploy(c, token, time=1000, engine="negamax", weights="nnue.bin"):
+def deploy(c, time=1000, engine="negamax", weights="nnue.bin"):
     """Deploy the bot on a Linux VPS: pull, build, install, restart service."""
-    service = f"chess-bot@{token}"
+    service = "chess-bot"
 
     print("=== Step 1/5: Pull latest code ===")
     with c.cd(REPO_DIR):
@@ -172,7 +166,7 @@ def deploy(c, token, time=1000, engine="negamax", weights="nnue.bin"):
     if weights:
         c.run(f"cp {REPO_DIR}/{weights} {INSTALL_DIR}/", warn=True)
     c.run(
-        f"cp {REPO_DIR}/deploy/chess-bot.service /etc/systemd/system/chess-bot@.service"
+        f"cp {REPO_DIR}/deploy/chess-bot.service /etc/systemd/system/chess-bot.service"
     )
 
     print("=== Step 5/5: Restart service ===")

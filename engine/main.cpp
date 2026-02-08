@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <exception>
 #include <fstream>
 #include <iostream>
@@ -687,11 +688,12 @@ int main(int argc, char* argv[]) {
         std::cout << "Piece count: " << board.piece_count() << std::endl;
         std::cout << "All tests passed!" << std::endl;
         std::cout << std::endl;
-        std::cout << "Usage: " << argv[0] << " <lichess_token> [max_time_ms] [options]"
-                  << std::endl;
+        std::cout << "Usage: " << argv[0] << " [max_time_ms] [options]" << std::endl;
         std::cout << "       " << argv[0]
                   << " --selfplay [num_games] [search_depth] [output_file] [num_threads]"
                   << std::endl;
+        std::cout << std::endl;
+        std::cout << "Set LICHESS_TOKEN environment variable before running." << std::endl;
         std::cout << std::endl;
         std::cout << "Options:" << std::endl;
         std::cout << "  --engine=negamax|mcts    Search algorithm (default: negamax)" << std::endl;
@@ -722,20 +724,21 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " <lichess_token> [max_time_ms] [options]"
-                  << std::endl;
+    const char* token_env = std::getenv("LICHESS_TOKEN");
+    if (!token_env || std::string(token_env).empty()) {
+        std::cerr << "Error: LICHESS_TOKEN environment variable not set." << std::endl;
+        std::cerr << "Usage: " << argv[0] << " [max_time_ms] [options]" << std::endl;
         return 1;
     }
 
-    std::string token = argv[1];
+    std::string token = token_env;
     int max_time_ms = 1000;
     LichessBot::EngineType engine_type = LichessBot::EngineType::NEGAMAX;
     EvalMode eval_mode = EvalMode::LOGISTIC;
     std::string nnue_weights_path;
 
     // Parse optional arguments
-    for (int i = 2; i < argc; i++) {
+    for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
 
         if (arg.find("--engine=") == 0) {
@@ -783,7 +786,6 @@ int main(int argc, char* argv[]) {
                                                                  : "Logistic";
 
     std::cout << "=== Starting Lichess Bot ===" << std::endl;
-    std::cout << "Token: " << token.substr(0, 8) << "..." << std::endl;
     std::cout << "Engine: " << engine_name << std::endl;
     std::cout << "Eval: " << eval_name << std::endl;
     std::cout << "Max search time: " << max_time_ms << "ms" << std::endl;

@@ -9,3 +9,6 @@ build/
 *.pkl
 *.txt
 !**/CMakeLists.txt
+*.pyc
+.env
+nul

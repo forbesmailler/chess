@@ -30,17 +30,19 @@ sudo cp /path/to/nnue.bin /opt/chess-bot/
 ## Install the systemd service
 
 ```bash
-# Edit the service file to set your Lichess token
-sudo cp deploy/chess-bot.service /etc/systemd/system/chess-bot@.service
+# Create the environment file with your token
+echo 'LICHESS_TOKEN=lip_xxxxx' | sudo tee /opt/chess-bot/.env
+sudo chmod 600 /opt/chess-bot/.env
 
-# Enable and start (replace TOKEN with your Lichess API token)
+# Install and start the service
+sudo cp deploy/chess-bot.service /etc/systemd/system/chess-bot.service
 sudo systemctl daemon-reload
-sudo systemctl enable chess-bot@TOKEN
-sudo systemctl start chess-bot@TOKEN
+sudo systemctl enable chess-bot
+sudo systemctl start chess-bot
 
 # Check status and logs
-sudo systemctl status chess-bot@TOKEN
-sudo journalctl -u chess-bot@TOKEN -f
+sudo systemctl status chess-bot
+sudo journalctl -u chess-bot -f
 ```
 
 ## Update the bot
@@ -51,5 +53,5 @@ git pull
 cd engine/build
 cmake --build . --config Release
 sudo cp Release/lichess_bot /opt/chess-bot/
-sudo systemctl restart chess-bot@TOKEN
+sudo systemctl restart chess-bot
 ```
