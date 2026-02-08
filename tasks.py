@@ -138,7 +138,7 @@ _vps = _dep["vps"]
     }
 )
 def deploy(c, weights=_inv["weights"]):
-    """Deploy the bot on a Linux VPS: pull, test, build, install, restart service."""
+    """Deploy the bot on a Linux VPS: pull, build, test, install, restart service."""
     repo_dir = _vps["repo_dir"]
     install_dir = _vps["install_dir"]
     service = _vps["service_name"]
@@ -147,15 +147,17 @@ def deploy(c, weights=_inv["weights"]):
     with c.cd(repo_dir):
         c.run("git pull")
 
-    print("=== Step 2/5: Test ===")
-    test(c)
-
-    print("=== Step 3/5: Build ===")
+    print("=== Step 2/5: Build ===")
     with c.cd(f"{repo_dir}/engine/build"):
         c.run("cmake .. -DCMAKE_BUILD_TYPE=Release")
         c.run("cmake --build . --config Release")
 
+    print("=== Step 3/5: Test ===")
+    with c.cd(f"{repo_dir}/engine/build"):
+        c.run("ctest -C Release --output-on-failure")
+
     print("=== Step 4/5: Install ===")
+    c.run(f"systemctl stop {service}", warn=True)
     c.run(f"mkdir -p {install_dir}")
     c.run(f"cp {repo_dir}/engine/build/lichess_bot {install_dir}/")
     if weights:
