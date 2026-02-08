@@ -86,10 +86,10 @@ TEST(ChessBoardTest, MoveFromUci) {
 
 TEST(ChessBoardTest, PieceTypeAt) {
     ChessBoard board;
-    EXPECT_EQ(board.piece_type_at(0), ChessBoard::ROOK);    // a1
-    EXPECT_EQ(board.piece_type_at(4), ChessBoard::KING);    // e1
-    EXPECT_EQ(board.piece_type_at(8), ChessBoard::PAWN);    // a2
-    EXPECT_EQ(board.piece_type_at(32), ChessBoard::NONE);   // empty square
+    EXPECT_EQ(board.piece_type_at(0), ChessBoard::ROOK);   // a1
+    EXPECT_EQ(board.piece_type_at(4), ChessBoard::KING);   // e1
+    EXPECT_EQ(board.piece_type_at(8), ChessBoard::PAWN);   // a2
+    EXPECT_EQ(board.piece_type_at(32), ChessBoard::NONE);  // empty square
 }
 
 TEST(ChessBoardTest, SquareConversion) {

@@ -8,6 +8,22 @@
 #include "../chess_board.h"
 #include "../self_play.h"
 
+namespace {
+
+SelfPlayGenerator::Config make_test_config(const std::string& output_file, int num_games = 1,
+                                           int num_threads = 1) {
+    SelfPlayGenerator::Config config;
+    config.num_games = num_games;
+    config.num_threads = num_threads;
+    config.output_file = output_file;
+    config.search_time_ms = 50;
+    config.max_game_ply = 50;
+    config.resign_threshold = 500;
+    return config;
+}
+
+}  // namespace
+
 TEST(SelfPlay, EncodeDecodeRoundtrip) {
     ChessBoard board;
     float eval = 123.456f;
@@ -16,31 +32,28 @@ TEST(SelfPlay, EncodeDecodeRoundtrip) {
 
     TrainingPosition pos = SelfPlayGenerator::encode_position(board, eval, result, ply);
 
-    EXPECT_EQ(pos.side_to_move, 0);  // White to move
+    EXPECT_EQ(pos.side_to_move, 0);
     EXPECT_FLOAT_EQ(pos.search_eval, eval);
     EXPECT_EQ(pos.game_result, result);
     EXPECT_EQ(pos.ply_number, ply);
-    EXPECT_EQ(pos.en_passant_file, 255);  // No en passant
+    EXPECT_EQ(pos.en_passant_file, 255);
 
-    // Castling should have all 4 bits set
-    EXPECT_EQ(pos.castling & 0x08, 0x08);  // White kingside
-    EXPECT_EQ(pos.castling & 0x04, 0x04);  // White queenside
-    EXPECT_EQ(pos.castling & 0x02, 0x02);  // Black kingside
-    EXPECT_EQ(pos.castling & 0x01, 0x01);  // Black queenside
+    EXPECT_EQ(pos.castling & 0x08, 0x08);
+    EXPECT_EQ(pos.castling & 0x04, 0x04);
+    EXPECT_EQ(pos.castling & 0x02, 0x02);
+    EXPECT_EQ(pos.castling & 0x01, 0x01);
 }
 
 TEST(SelfPlay, BinaryWriteReadRoundtrip) {
     ChessBoard board;
     TrainingPosition pos = SelfPlayGenerator::encode_position(board, 50.0f, 1, 10);
 
-    // Write to temp file
     std::string tmp_file = "test_roundtrip.bin";
     {
         std::ofstream out(tmp_file, std::ios::binary);
         SelfPlayGenerator::write_position(out, pos);
     }
 
-    // Read back
     TrainingPosition read_pos;
     {
         std::ifstream in(tmp_file, std::ios::binary);
@@ -62,7 +75,6 @@ TEST(SelfPlay, PieceEncodingStartPosition) {
     ChessBoard board;
     TrainingPosition pos = SelfPlayGenerator::encode_position(board, 0.0f, 1, 0);
 
-    // Check that piece placement is non-trivial (not all zeros)
     bool has_pieces = false;
     for (int i = 0; i < 32; ++i) {
         if (pos.piece_placement[i] != 0) {
@@ -72,8 +84,6 @@ TEST(SelfPlay, PieceEncodingStartPosition) {
     }
     EXPECT_TRUE(has_pieces);
 
-    // Squares 16-47 (ranks 3-6) should be empty
-    // sq 16 => byte 8 high nibble, sq 17 => byte 8 low nibble, etc.
     for (int sq = 16; sq < 48; sq += 2) {
         int byte_idx = sq / 2;
         EXPECT_EQ(pos.piece_placement[byte_idx], 0)
@@ -85,26 +95,16 @@ TEST(SelfPlay, SingleGameProducesPositions) {
     std::string tmp_file = "test_single_game.bin";
     std::remove(tmp_file.c_str());
 
-    SelfPlayGenerator::Config config;
-    config.num_games = 1;
-    config.num_threads = 1;
-    config.output_file = tmp_file;
-    config.search_time_ms = 50;
-    config.max_game_ply = 50;
-    config.resign_threshold = 500;
-
+    auto config = make_test_config(tmp_file);
     SelfPlayGenerator generator(config);
     generator.generate();
 
     EXPECT_GT(generator.get_total_positions(), 0);
 
-    // Verify file exists and has content
     std::ifstream in(tmp_file, std::ios::binary | std::ios::ate);
     EXPECT_TRUE(in.is_open());
     auto file_size = in.tellg();
     EXPECT_GT(file_size, 0);
-
-    // Each position should be sizeof(TrainingPosition) bytes
     EXPECT_EQ(file_size % sizeof(TrainingPosition), 0);
 
     std::remove(tmp_file.c_str());
@@ -114,25 +114,16 @@ TEST(SelfPlay, MultiThreadedNoCorruption) {
     std::string tmp_file = "test_multithread.bin";
     std::remove(tmp_file.c_str());
 
-    SelfPlayGenerator::Config config;
-    config.num_games = 4;
-    config.num_threads = 2;
-    config.output_file = tmp_file;
-    config.search_time_ms = 50;
-    config.max_game_ply = 50;
-    config.resign_threshold = 500;
-
+    auto config = make_test_config(tmp_file, 4, 2);
     SelfPlayGenerator generator(config);
     generator.generate();
 
     EXPECT_GT(generator.get_total_positions(), 0);
 
-    // Verify file is valid: size should be multiple of position size
     std::ifstream in(tmp_file, std::ios::binary | std::ios::ate);
     auto file_size = in.tellg();
     EXPECT_EQ(file_size % sizeof(TrainingPosition), 0);
 
-    // Read all positions and verify they're valid
     in.seekg(0);
     int count = 0;
     TrainingPosition pos;

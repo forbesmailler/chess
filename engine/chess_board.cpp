@@ -90,19 +90,7 @@ ChessBoard::CastlingRights ChessBoard::get_castling_rights() const {
     return rights;
 }
 
-int ChessBoard::piece_count() const {
-    std::string fen = board.getFen();
-    std::istringstream iss(fen);
-    std::string board_str;
-    iss >> board_str;
-
-    int count = 0;
-    for (char c : board_str) {
-        if (c != '/' && !std::isdigit(c)) count++;
-    }
-
-    return count;
-}
+int ChessBoard::piece_count() const { return board.occ().count(); }
 
 int ChessBoard::square_from_string(const std::string& sq) {
     if (sq.length() != 2) return -1;

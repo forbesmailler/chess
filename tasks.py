@@ -2,7 +2,7 @@ import os
 
 from invoke import task
 
-CPP_FILES = "engine/*.cpp engine/*.h"
+CPP_FILES = "engine/*.cpp engine/*.h engine/tests/*.cpp"
 BOT_EXE = os.path.join("engine", "build", "Release", "lichess_bot.exe")
 
 
@@ -23,7 +23,14 @@ def format_py(c):
 @task
 def format_cpp(c):
     """Format C++ code with clang-format."""
+    from glob import glob
+
+    files = []
+    for pattern in CPP_FILES.split():
+        files.extend(glob(pattern))
+    print(f"Formatting {len(files)} C++ files...")
     c.run(f"clang-format -i {CPP_FILES}")
+    print("Done.")
 
 
 @task

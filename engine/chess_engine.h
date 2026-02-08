@@ -1,14 +1,8 @@
 #pragma once
-#include <atomic>
-#include <chrono>
-#include <memory>
 #include <unordered_map>
 #include <vector>
 
 #include "base_engine.h"
-#include "chess_board.h"
-#include "logistic_model.h"
-#include "nnue_model.h"
 
 struct TranspositionEntry {
     float score;
@@ -26,14 +20,10 @@ class ChessEngine : public BaseEngine {
     float evaluate(const ChessBoard& board) override;
     SearchResult get_best_move(const ChessBoard& board, const TimeControl& time_control) override;
 
-    void set_max_time(int max_time_ms) override { max_search_time_ms = max_time_ms; }
-    int get_max_time() const override { return max_search_time_ms; }
-    void stop_search() override { should_stop.store(true); }
-
    private:
-    static constexpr float SEARCH_INTERRUPTED = -99999.0f;  // Special value for interrupted search
+    static constexpr float SEARCH_INTERRUPTED = -99999.0f;
     static constexpr size_t CACHE_SIZE = 1000000;
-    static constexpr int TIME_CHECK_INTERVAL = 2048;  // Check clock every N nodes
+    static constexpr int TIME_CHECK_INTERVAL = 2048;
 
     std::chrono::steady_clock::time_point search_deadline;
     void check_time();
@@ -41,10 +31,6 @@ class ChessEngine : public BaseEngine {
     mutable std::unordered_map<std::string, TranspositionEntry> transposition_table;
     mutable std::unordered_map<std::string, float> eval_cache;
 
-    // Time management
-    int calculate_search_time(const TimeControl& time_control);
-
-    // Search functions
     SearchResult iterative_deepening_search(const ChessBoard& board, int max_time_ms);
     float negamax(const ChessBoard& board, int depth, float alpha, float beta, bool is_pv = false);
     float quiescence_search(const ChessBoard& board, float alpha, float beta, int depth = 0);
@@ -53,7 +39,4 @@ class ChessEngine : public BaseEngine {
                                               const ChessBoard::Move& tt_move = ChessBoard::Move{});
     int score_move(const ChessBoard& board, const ChessBoard::Move& move);
     void clear_cache_if_needed();
-    std::string get_position_key(const ChessBoard& board) const;
-
-    std::shared_ptr<NNUEModel> nnue_model;
 };

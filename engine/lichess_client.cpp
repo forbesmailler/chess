@@ -23,9 +23,6 @@ LichessClient::~LichessClient() = default;
 bool LichessClient::get_account_info(AccountInfo& info) {
     auto response = make_request(base_url + "/account");
 
-    std::cout << "[DEBUG] Account info response code: " << response.status_code << std::endl;
-    std::cout << "[DEBUG] Account info response: " << response.data << std::endl;
-
     if (response.status_code != 200) {
         std::cerr << "Failed to get account info: " << response.status_code << std::endl;
         return false;
@@ -37,12 +34,6 @@ bool LichessClient::get_account_info(AccountInfo& info) {
         info.username = j["username"];
         info.is_bot = j.value("title", "") == "BOT";
         info.title = j.value("title", "");
-
-        std::cout << "[DEBUG] Account: " << info.username << " (ID: " << info.id << ")"
-                  << std::endl;
-        std::cout << "[DEBUG] Is bot: " << (info.is_bot ? "YES" : "NO") << std::endl;
-        std::cout << "[DEBUG] Title: " << info.title << std::endl;
-
         return true;
     } catch (const std::exception& e) {
         std::cerr << "Error parsing account info: " << e.what() << std::endl;
@@ -84,14 +75,8 @@ bool LichessClient::offer_draw(const std::string& game_id) {
 }
 
 bool LichessClient::test_connectivity() {
-    std::cout << "[DEBUG] Testing basic connectivity..." << std::endl;
-
-    // First test basic HTTP connectivity to Google
     CURL* curl = curl_easy_init();
-    if (!curl) {
-        std::cout << "[DEBUG] CURL init failed" << std::endl;
-        return false;
-    }
+    if (!curl) return false;
 
     std::string response_data;
     curl_easy_setopt(curl, CURLOPT_URL, "http://www.google.com");
@@ -106,46 +91,25 @@ bool LichessClient::test_connectivity() {
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
     curl_easy_cleanup(curl);
 
-    if (res != CURLE_OK) {
-        std::cout << "[DEBUG] Basic connectivity test failed: " << curl_easy_strerror(res)
-                  << std::endl;
-        return false;
-    }
+    if (res != CURLE_OK) return false;
 
-    std::cout << "[DEBUG] Basic connectivity OK, testing Lichess..." << std::endl;
-
-    // Now test Lichess connectivity
     auto response = make_request("https://lichess.org/api");
-    if (response.status_code == 0) {
-        std::cout << "[DEBUG] Lichess connectivity test failed" << std::endl;
-        return false;
-    }
-
-    std::cout << "[DEBUG] Lichess connectivity OK (status: " << response.status_code << ")"
-              << std::endl;
-    return true;
+    return response.status_code != 0;
 }
 
 void LichessClient::stream_events(std::function<void(const GameEvent&)> callback) {
     stream_lines(base_url + "/stream/event", [callback](const std::string& line) {
         if (line.empty()) return;
 
-        // Debug: log all incoming events
-        std::cout << "[DEBUG] Received event line: " << line << std::endl;
-
         try {
             auto j = json::parse(line);
             GameEvent event;
             event.type = j["type"];
 
-            std::cout << "[DEBUG] Parsed event type: " << event.type << std::endl;
-
             if (event.type == "challenge") {
                 event.challenge_id = j["challenge"]["id"];
-                std::cout << "[DEBUG] Challenge ID: " << event.challenge_id << std::endl;
             } else if (event.type == "gameStart") {
                 event.game_id = j["game"]["id"];
-                std::cout << "[DEBUG] Game ID: " << event.game_id << std::endl;
             }
 
             callback(event);
@@ -200,14 +164,12 @@ void LichessClient::stream_game(const std::string& game_id,
     });
 }
 
-// CURL callback for writing response data
 size_t LichessClient::write_callback(void* contents, size_t size, size_t nmemb, std::string* data) {
     size_t total_size = size * nmemb;
     data->append(static_cast<char*>(contents), total_size);
     return total_size;
 }
 
-// CURL callback for streaming data line by line
 size_t LichessClient::stream_callback(void* contents, size_t size, size_t nmemb,
                                       StreamData* stream_data) {
     size_t total_size = size * nmemb;
@@ -287,9 +249,8 @@ LichessClient::HttpResponse LichessClient::make_request(const std::string& url,
     if (res == CURLE_OK) {
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
     } else {
-        std::cout << "[ERROR] CURL error for " << url << ": " << curl_easy_strerror(res)
-                  << std::endl;
-        response_code = 0;  // Set response code to 0 on error
+        std::cerr << "CURL error for " << url << ": " << curl_easy_strerror(res) << std::endl;
+        response_code = 0;
     }
 
     curl_slist_free_all(headers);
@@ -300,13 +261,8 @@ LichessClient::HttpResponse LichessClient::make_request(const std::string& url,
 
 void LichessClient::stream_lines(const std::string& url,
                                  std::function<void(const std::string&)> callback) {
-    std::cout << "[DEBUG] Starting stream to URL: " << url << std::endl;
-
     CURL* curl = curl_easy_init();
-    if (!curl) {
-        std::cout << "[DEBUG] CURL init failed for streaming" << std::endl;
-        return;
-    }
+    if (!curl) return;
 
     StreamData stream_data;
     stream_data.callback = callback;
@@ -334,21 +290,9 @@ void LichessClient::stream_lines(const std::string& url,
     headers = curl_slist_append(headers, "Cache-Control: no-cache");
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
-    // Follow redirects
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
 
-    std::cout << "[DEBUG] Starting CURL request for streaming..." << std::endl;
-
-    // Perform the request
     CURLcode res = curl_easy_perform(curl);
-
-    std::cout << "[DEBUG] CURL stream finished with result: " << curl_easy_strerror(res)
-              << std::endl;
-
-    // Check HTTP response code
-    long response_code;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
-    std::cout << "[DEBUG] Stream HTTP response code: " << response_code << std::endl;
 
     // Process any remaining data in buffer
     if (!stream_data.buffer.empty()) {

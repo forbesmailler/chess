@@ -39,11 +39,9 @@ TEST(HandcraftedEval, CheckmateWhiteLoses) {
 
 TEST(HandcraftedEval, CheckmateBlackLoses) {
     // Black is checkmated
-    ChessBoard board("rnbqkbnr/ppppp2p/5p2/6pQ/4P3/2N5/PPPP1PPP/R1B1KBNR b KQkq - 1 3");
-    // This position isn't actually checkmate, let's use a real one
     // Scholar's mate position (after Qxf7#)
-    ChessBoard board2("r1bqkb1r/pppp1Qpp/2n2n2/4p3/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 0 4");
-    float eval = handcrafted_evaluate(board2);
+    ChessBoard board("r1bqkb1r/pppp1Qpp/2n2n2/4p3/2B1P3/8/PPPP1PPP/RNB1K1NR b KQkq - 0 4");
+    float eval = handcrafted_evaluate(board);
     EXPECT_EQ(eval, 10000.0f);  // Black is mated, positive from white's perspective
 }
 

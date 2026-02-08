@@ -23,18 +23,13 @@ HIDDEN2_SIZE = 32
 OUTPUT_SIZE = 3
 
 
-class ClippedReLU(nn.Module):
-    def forward(self, x):
-        return torch.clamp(x, 0.0, 1.0)
-
-
 class NNUE(nn.Module):
     def __init__(self):
         super().__init__()
         self.fc1 = nn.Linear(INPUT_SIZE, HIDDEN1_SIZE)
         self.fc2 = nn.Linear(HIDDEN1_SIZE, HIDDEN2_SIZE)
         self.fc3 = nn.Linear(HIDDEN2_SIZE, OUTPUT_SIZE)
-        self.crelu = ClippedReLU()
+        self.crelu = nn.Hardtanh(0.0, 1.0)
 
     def forward(self, x):
         x = self.crelu(self.fc1(x))
@@ -102,7 +97,6 @@ class SelfPlayDataset(Dataset):
         file_size = Path(filepath).stat().st_size
         self.num_positions = file_size // POSITION_SIZE
 
-        # Memory-map the file for efficient access
         with open(filepath, "rb") as f:
             self.data = f.read()
 
@@ -115,31 +109,18 @@ class SelfPlayDataset(Dataset):
 
         piece_placement = raw[0:32]
         side_to_move = raw[32]
-        # castling = raw[33]  # not used for features
-        # ep_file = raw[34]  # not used for features
         search_eval = struct.unpack("<f", raw[35:39])[0]
         game_result = raw[39]
-        # ply = struct.unpack("<H", raw[40:42])[0]  # not used for training
 
         features = extract_features(piece_placement, side_to_move)
 
-        # Build target distribution from eval and result
-        # Eval target: convert centipawn eval to win/draw/loss probabilities
-        # using a sigmoid-like scaling
-        eval_scaled = search_eval / 400.0  # scale factor
-        p_win_eval = 1.0 / (1.0 + np.exp(-eval_scaled))
-        p_loss_eval = 1.0 - p_win_eval
-        p_draw_eval = 0.0  # simple model: eval only predicts win/loss
-        eval_target = np.array([p_win_eval, p_draw_eval, p_loss_eval], dtype=np.float32)
+        # Eval target: sigmoid scaling of centipawn eval to [P(win), P(draw), P(loss)]
+        p_win = 1.0 / (1.0 + np.exp(-search_eval / 400.0))
+        eval_target = np.array([p_win, 0.0, 1.0 - p_win], dtype=np.float32)
 
-        # Result target: one-hot from game result (0=loss, 1=draw, 2=win)
+        # Result target: one-hot [win, draw, loss] from game_result (0=loss, 1=draw, 2=win)
         result_target = np.zeros(3, dtype=np.float32)
-        result_target[game_result] = 1.0
-        # Reorder to [win, draw, loss]
-        result_target = np.array(
-            [result_target[2], result_target[1], result_target[0]],
-            dtype=np.float32,
-        )
+        result_target[2 - game_result] = 1.0
 
         # Blend eval and result targets
         target = (

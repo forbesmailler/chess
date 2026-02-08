@@ -1,10 +1,11 @@
 #include "logistic_model.h"
 
-#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <iostream>
 #include <sstream>
+
+#include "utils.h"
 
 LogisticModel::LogisticModel() : n_classes(3), n_features(1542) {
     weights.assign(n_features * n_classes, 0.0f);
@@ -86,22 +87,5 @@ std::vector<float> LogisticModel::predict_proba(const std::vector<float>& featur
         }
     }
 
-    return softmax(logits);
-}
-
-float LogisticModel::sigmoid(float x) { return 1.0f / (1.0f + std::exp(-x)); }
-
-std::vector<float> LogisticModel::softmax(const std::vector<float>& logits) {
-    float max_logit = *std::max_element(logits.begin(), logits.end());
-
-    std::vector<float> probs(logits.size());
-    float sum = 0.0f;
-
-    for (size_t i = 0; i < logits.size(); i++) {
-        probs[i] = std::exp(logits[i] - max_logit);
-        sum += probs[i];
-    }
-
-    for (auto& p : probs) p /= sum;
-    return probs;
+    return Utils::softmax(logits);
 }

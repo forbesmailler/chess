@@ -37,7 +37,5 @@ class NNUEModel {
     // Extract 768 piece-square features (flipped for side-to-move perspective)
     static std::vector<float> extract_features(const ChessBoard& board);
 
-    // Forward pass helpers
     static float clipped_relu(float x);
-    static std::vector<float> softmax(const std::vector<float>& logits);
 };

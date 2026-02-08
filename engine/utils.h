@@ -10,4 +10,5 @@ class Utils {
     static void log_info(const std::string& message);
     static void log_error(const std::string& message);
     static void log_warning(const std::string& message);
+    static std::vector<float> softmax(const std::vector<float>& logits);
 };

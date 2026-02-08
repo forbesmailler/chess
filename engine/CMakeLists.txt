@@ -135,6 +135,7 @@ endif()
 
 # Create library for engine code (used by both main executable and tests)
 add_library(chess_engine_lib STATIC
+    base_engine.cpp
     chess_board.cpp
     chess_engine.cpp
     mcts_engine.cpp

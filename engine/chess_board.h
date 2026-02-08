@@ -29,16 +29,10 @@ class ChessBoard {
     };
 
     struct CastlingRights {
-        bool white_kingside;
-        bool white_queenside;
-        bool black_kingside;
-        bool black_queenside;
-
-        CastlingRights()
-            : white_kingside(true),
-              white_queenside(true),
-              black_kingside(true),
-              black_queenside(true) {}
+        bool white_kingside = true;
+        bool white_queenside = true;
+        bool black_kingside = true;
+        bool black_queenside = true;
     };
 
     ChessBoard();

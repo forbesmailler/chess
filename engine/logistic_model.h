@@ -13,7 +13,4 @@ class LogisticModel {
     std::vector<float> intercept;
     int n_classes;
     int n_features;
-
-    static float sigmoid(float x);
-    static std::vector<float> softmax(const std::vector<float>& logits);
 };

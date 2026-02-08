@@ -29,12 +29,11 @@
 #include <unistd.h>
 #endif
 
-// Robust bot configuration
-const int MAX_RETRIES = 3;
-const int RETRY_DELAY_MS = 5000;           // 5 seconds
-const int HEARTBEAT_INTERVAL_MS = 30000;   // 30 seconds
-const int CONNECTION_TIMEOUT_MS = 120000;  // 2 minutes
-const int MAX_CONSECUTIVE_ERRORS = 10;
+constexpr int MAX_RETRIES = 3;
+constexpr int RETRY_DELAY_MS = 5000;           // 5 seconds
+constexpr int HEARTBEAT_INTERVAL_MS = 30000;   // 30 seconds
+constexpr int CONNECTION_TIMEOUT_MS = 120000;  // 2 minutes
+constexpr int MAX_CONSECUTIVE_ERRORS = 10;
 
 // Global state for graceful shutdown
 std::atomic<bool> shutdown_requested{false};
@@ -89,7 +88,6 @@ class LichessBot {
                 Utils::log_warning("Failed to load NNUE weights from " + nnue_weights_path +
                                    ", falling back to handcrafted eval");
                 eval_mode = EvalMode::HANDCRAFTED;
-                this->eval_mode = eval_mode;
             }
         }
 
@@ -160,26 +158,29 @@ class LichessBot {
     std::atomic<bool> heartbeat_active{true};
     std::thread heartbeat_thread;
 
-    bool get_account_info_with_retry() {
+    template <typename Func>
+    bool retry_with_backoff(Func&& func, const std::string& action, int delay_ms = RETRY_DELAY_MS) {
         for (int attempt = 1; attempt <= MAX_RETRIES; ++attempt) {
             try {
-                if (client.get_account_info(account_info)) {
-                    consecutive_errors.store(0);
-                    return true;
-                }
-                Utils::log_warning("Failed to get account info (attempt " +
-                                   std::to_string(attempt) + "/" + std::to_string(MAX_RETRIES) +
-                                   ")");
+                if (func()) return true;
+                Utils::log_warning("Failed: " + action + " (attempt " + std::to_string(attempt) +
+                                   "/" + std::to_string(MAX_RETRIES) + ")");
             } catch (const std::exception& e) {
-                Utils::log_error("Exception getting account info (attempt " +
-                                 std::to_string(attempt) + "): " + std::string(e.what()));
+                Utils::log_error("Exception: " + action + " (attempt " + std::to_string(attempt) +
+                                 "): " + std::string(e.what()));
             }
-
             if (attempt < MAX_RETRIES && !shutdown_requested.load()) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(RETRY_DELAY_MS));
+                std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
             }
         }
         return false;
+    }
+
+    bool get_account_info_with_retry() {
+        bool result = retry_with_backoff([this]() { return client.get_account_info(account_info); },
+                                         "get account info");
+        if (result) consecutive_errors.store(0);
+        return result;
     }
 
     void start_heartbeat_monitor() {
@@ -363,24 +364,8 @@ class LichessBot {
     }
 
     bool accept_challenge_with_retry(const std::string& challenge_id) {
-        for (int attempt = 1; attempt <= MAX_RETRIES; ++attempt) {
-            try {
-                if (client.accept_challenge(challenge_id)) {
-                    return true;
-                }
-                Utils::log_warning("Failed to accept challenge (attempt " +
-                                   std::to_string(attempt) + "/" + std::to_string(MAX_RETRIES) +
-                                   ")");
-            } catch (const std::exception& e) {
-                Utils::log_error("Exception accepting challenge (attempt " +
-                                 std::to_string(attempt) + "): " + std::string(e.what()));
-            }
-
-            if (attempt < MAX_RETRIES && !shutdown_requested.load()) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(RETRY_DELAY_MS / 2));
-            }
-        }
-        return false;
+        return retry_with_backoff([&]() { return client.accept_challenge(challenge_id); },
+                                  "accept challenge " + challenge_id, RETRY_DELAY_MS / 2);
     }
 
     void handle_game_with_recovery(const std::string& game_id) {
@@ -446,51 +431,30 @@ class LichessBot {
                            const LichessClient::GameEvent& event) {
         if (event.type == "gameFull" && game_state->first_event) {
             game_state->first_event = false;
-
             game_state->our_white = (event.white_id == account_info.id);
             Utils::log_info("Game " + game_id + ": we are " +
                             (game_state->our_white ? "White" : "Black"));
-            Utils::log_info("White player: " + event.white_id +
-                            ", Black player: " + event.black_id);
-
-            // Process initial moves
-            process_moves(game_id, game_state, event.moves);
-
-            float eval = evaluate_position_safely(game_state);
-            Utils::log_info("Game " + game_id + " - Initial eval after ply " +
-                            std::to_string(game_state->ply_count) +
-                            " (white-persp): " + std::to_string(eval));
-
-            // Make initial move if it's our turn with time control
-            if (is_our_turn(game_state)) {
-                TimeControl time_control = create_time_control(event, game_state->our_white);
-                play_best_move_safely(game_id, game_state, time_control);
-            }
-
         } else if (event.type == "gameState") {
             if (event.status != "started") {
                 Utils::log_info("Game " + game_id + " ended with status: " + event.status);
                 game_state->is_active.store(false);
                 return;
             }
+            if (event.draw_offer) handle_draw_offer_safely(game_id, game_state);
+        } else {
+            return;
+        }
 
-            if (event.draw_offer) {
-                handle_draw_offer_safely(game_id, game_state);
-            }
+        process_moves(game_id, game_state, event.moves);
 
-            // Process new moves
-            process_moves(game_id, game_state, event.moves);
+        float eval = evaluate_position_safely(game_state);
+        Utils::log_info("Game " + game_id + " - Eval after ply " +
+                        std::to_string(game_state->ply_count) +
+                        " (white-persp): " + std::to_string(eval));
 
-            float eval = evaluate_position_safely(game_state);
-            Utils::log_info("Game " + game_id + " - Eval after ply " +
-                            std::to_string(game_state->ply_count) +
-                            " (white-persp): " + std::to_string(eval));
-
-            // Make our move if it's our turn with updated time control
-            if (is_our_turn(game_state)) {
-                TimeControl time_control = create_time_control(event, game_state->our_white);
-                play_best_move_safely(game_id, game_state, time_control);
-            }
+        if (is_our_turn(game_state)) {
+            TimeControl time_control = create_time_control(event, game_state->our_white);
+            play_best_move_safely(game_id, game_state, time_control);
         }
     }
 
@@ -587,24 +551,8 @@ class LichessBot {
     }
 
     bool make_move_with_retry(const std::string& game_id, const std::string& uci) {
-        for (int attempt = 1; attempt <= MAX_RETRIES; ++attempt) {
-            try {
-                if (client.make_move(game_id, uci)) {
-                    return true;
-                }
-                Utils::log_warning("Game " + game_id + ": Move attempt " + std::to_string(attempt) +
-                                   " failed for " + uci);
-            } catch (const std::exception& e) {
-                Utils::log_error("Game " + game_id + ": Exception on move attempt " +
-                                 std::to_string(attempt) + ": " + std::string(e.what()));
-            }
-
-            if (attempt < MAX_RETRIES && !shutdown_requested.load()) {
-                std::this_thread::sleep_for(
-                    std::chrono::milliseconds(1000));  // 1 second retry delay for moves
-            }
-        }
-        return false;
+        return retry_with_backoff([&]() { return client.make_move(game_id, uci); },
+                                  "game " + game_id + " move " + uci, 1000);
     }
 
     void handle_draw_offer_safely(const std::string& game_id,

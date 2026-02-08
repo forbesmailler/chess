@@ -5,42 +5,18 @@
 #include <limits>
 #include <sstream>
 
-#include "feature_extractor.h"
-#include "handcrafted_eval.h"
-
 ChessEngine::ChessEngine(std::shared_ptr<LogisticModel> model, int max_time_ms, EvalMode eval_mode,
                          std::shared_ptr<NNUEModel> nnue_model)
-    : BaseEngine(model, max_time_ms, eval_mode), nnue_model(nnue_model) {
+    : BaseEngine(model, max_time_ms, eval_mode, std::move(nnue_model)) {
     eval_cache.reserve(CACHE_SIZE / 2);
     transposition_table.reserve(CACHE_SIZE / 2);
 }
 
 float ChessEngine::evaluate(const ChessBoard& board) {
-    if (board.is_checkmate()) return board.turn() == ChessBoard::WHITE ? -MATE_VALUE : MATE_VALUE;
-    if (board.is_stalemate() || board.is_draw()) return 0.0f;
-
     std::string pos_key = get_position_key(board);
     if (auto it = eval_cache.find(pos_key); it != eval_cache.end()) return it->second;
 
-    float eval = 0.0f;
-    switch (eval_mode) {
-        case EvalMode::HANDCRAFTED:
-            eval = handcrafted_evaluate(board);
-            break;
-        case EvalMode::NNUE:
-            if (nnue_model)
-                eval = nnue_model->predict(board);
-            else
-                eval = handcrafted_evaluate(board);
-            break;
-        case EvalMode::LOGISTIC:
-        default: {
-            auto features = FeatureExtractor::extract_features(board);
-            auto proba = model->predict_proba(features);
-            eval = (proba[2] - proba[0]) * MATE_VALUE;
-            break;
-        }
-    }
+    float eval = raw_evaluate(board);
 
     if (eval_cache.size() >= CACHE_SIZE / 2) clear_cache_if_needed();
     return eval_cache[pos_key] = eval;
@@ -275,15 +251,6 @@ float ChessEngine::quiescence_search(const ChessBoard& board, float alpha, float
     return alpha;
 }
 
-std::string ChessEngine::get_position_key(const ChessBoard& board) const {
-    std::string fen = board.to_fen();
-    size_t pos = fen.find(' ');
-    for (int i = 0; i < 3 && pos != std::string::npos; ++i) {
-        pos = fen.find(' ', pos + 1);
-    }
-    return pos != std::string::npos ? fen.substr(0, pos) : fen;
-}
-
 void ChessEngine::clear_cache_if_needed() {
     if (eval_cache.size() >= CACHE_SIZE / 2) {
         auto it = eval_cache.begin();
@@ -296,13 +263,6 @@ void ChessEngine::clear_cache_if_needed() {
         std::advance(it, transposition_table.size() / 2);
         transposition_table.erase(transposition_table.begin(), it);
     }
-}
-
-int ChessEngine::calculate_search_time(const TimeControl& time_control) {
-    if (time_control.time_left_ms <= 0) return max_search_time_ms;
-
-    int allocated_time = time_control.increment_ms + (time_control.time_left_ms / 40);
-    return std::min(allocated_time, max_search_time_ms);
 }
 
 void ChessEngine::check_time() {

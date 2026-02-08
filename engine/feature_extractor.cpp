@@ -2,28 +2,16 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstring>
 #include <sstream>
 
 #include "chess_board.h"
 
 namespace {
 int get_piece_type(char c) {
-    switch (std::tolower(c)) {
-        case 'p':
-            return 1;
-        case 'n':
-            return 2;
-        case 'b':
-            return 3;
-        case 'r':
-            return 4;
-        case 'q':
-            return 5;
-        case 'k':
-            return 6;
-        default:
-            return 0;
-    }
+    const char* pieces = "pnbrqk";
+    const char* pos = std::strchr(pieces, std::tolower(c));
+    return pos ? static_cast<int>(pos - pieces + 1) : 0;
 }
 }  // namespace
 
@@ -114,67 +102,43 @@ std::array<float, 2> FeatureExtractor::extract_additional_features(const ChessBo
 }
 
 std::array<float, 2> FeatureExtractor::extract_mobility_features(const ChessBoard& board) {
-    std::array<float, 2> mobility_features = {0.0f, 0.0f};  // [white_mobility, black_mobility]
+    std::array<float, 2> mobility_features = {0.0f, 0.0f};
 
-    // Parse FEN once to count pieces and extract components
     std::string fen = board.to_fen();
     std::istringstream iss(fen);
     std::string board_str, turn_str, castling_str, ep_str, halfmove_str, fullmove_str;
     iss >> board_str >> turn_str >> castling_str >> ep_str >> halfmove_str >> fullmove_str;
 
-    // Count pieces for each color
-    int white_pieces = 0;
-    int black_pieces = 0;
+    int piece_counts[2] = {0, 0};
     for (char c : board_str) {
         if (c != '/' && !std::isdigit(c)) {
-            if (std::isupper(c))
-                white_pieces++;
-            else if (std::islower(c))
-                black_pieces++;
+            piece_counts[std::islower(c) ? 1 : 0]++;
         }
     }
 
     ChessBoard::Color current_turn = board.turn();
     auto current_moves = board.get_legal_moves();
+    const char* turn_chars = "wb";
 
-    // Calculate white mobility if needed
-    if (white_pieces < 8) {
-        float white_moves = 0.0f;
+    for (int color = 0; color < 2; ++color) {
+        if (piece_counts[color] >= 8) continue;
 
-        if (current_turn == ChessBoard::WHITE) {
-            white_moves = static_cast<float>(current_moves.size());
+        auto color_enum = color == 0 ? ChessBoard::WHITE : ChessBoard::BLACK;
+        float moves = 0.0f;
+
+        if (current_turn == color_enum) {
+            moves = static_cast<float>(current_moves.size());
         } else {
-            // Get white moves by flipping turn
-            std::string white_fen = board_str + " w " + castling_str + " " + ep_str + " " +
-                                    halfmove_str + " " + fullmove_str;
-            ChessBoard white_board(white_fen);
-            if (!white_board.is_game_over()) {
-                white_moves = static_cast<float>(white_board.get_legal_moves().size());
+            std::string flipped_fen = board_str + " " + turn_chars[color] + " " + castling_str +
+                                      " " + ep_str + " " + halfmove_str + " " + fullmove_str;
+            ChessBoard flipped_board(flipped_fen);
+            if (!flipped_board.is_game_over()) {
+                moves = static_cast<float>(flipped_board.get_legal_moves().size());
             }
         }
 
-        float white_factor = std::max((8.0f - white_pieces) / 6.0f, 0.0f);
-        mobility_features[0] = white_factor * white_moves;
-    }
-
-    // Calculate black mobility if needed
-    if (black_pieces < 8) {
-        float black_moves = 0.0f;
-
-        if (current_turn == ChessBoard::BLACK) {
-            black_moves = static_cast<float>(current_moves.size());
-        } else {
-            // Get black moves by flipping turn
-            std::string black_fen = board_str + " b " + castling_str + " " + ep_str + " " +
-                                    halfmove_str + " " + fullmove_str;
-            ChessBoard black_board(black_fen);
-            if (!black_board.is_game_over()) {
-                black_moves = static_cast<float>(black_board.get_legal_moves().size());
-            }
-        }
-
-        float black_factor = std::max((8.0f - black_pieces) / 6.0f, 0.0f);
-        mobility_features[1] = black_factor * black_moves;
+        float factor = std::max((8.0f - piece_counts[color]) / 6.0f, 0.0f);
+        mobility_features[color] = factor * moves;
     }
 
     return mobility_features;

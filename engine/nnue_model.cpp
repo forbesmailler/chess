@@ -6,6 +6,8 @@
 #include <fstream>
 #include <iostream>
 
+#include "utils.h"
+
 bool NNUEModel::load_weights(const std::string& path) {
     std::ifstream file(path, std::ios::binary);
     if (!file.is_open()) {
@@ -97,18 +99,6 @@ std::vector<float> NNUEModel::extract_features(const ChessBoard& board) {
 
 float NNUEModel::clipped_relu(float x) { return std::max(0.0f, std::min(1.0f, x)); }
 
-std::vector<float> NNUEModel::softmax(const std::vector<float>& logits) {
-    float max_val = *std::max_element(logits.begin(), logits.end());
-    std::vector<float> result(logits.size());
-    float sum = 0.0f;
-    for (size_t i = 0; i < logits.size(); ++i) {
-        result[i] = std::exp(logits[i] - max_val);
-        sum += result[i];
-    }
-    for (auto& v : result) v /= sum;
-    return result;
-}
-
 float NNUEModel::predict(const ChessBoard& board) const {
     if (!loaded) return 0.0f;
 
@@ -141,7 +131,7 @@ float NNUEModel::predict(const ChessBoard& board) const {
         logits[j] = sum;
     }
 
-    auto proba = softmax(logits);
+    auto proba = Utils::softmax(logits);
     // proba[0] = P(win), proba[1] = P(draw), proba[2] = P(loss)
     // from side-to-move's perspective
     float stm_eval = (proba[0] - proba[2]) * MATE_VALUE;
