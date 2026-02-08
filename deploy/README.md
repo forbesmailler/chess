@@ -19,10 +19,10 @@ sudo git clone <your-repo-url> chess-bot-src
 cd chess-bot-src/engine
 mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build . --config Release
+cmake --build .
 
 sudo mkdir -p /opt/chess-bot
-sudo cp Release/lichess_bot /opt/chess-bot/
+sudo cp lichess_bot /opt/chess-bot/
 # Copy NNUE weights if using NNUE eval
 sudo cp /path/to/nnue.bin /opt/chess-bot/
 ```
@@ -47,11 +47,20 @@ sudo journalctl -u chess-bot -f
 
 ## Update the bot
 
+Manually:
+
 ```bash
 cd /opt/chess-bot-src
 git pull
 cd engine/build
-cmake --build . --config Release
-sudo cp Release/lichess_bot /opt/chess-bot/
+cmake --build .
+sudo cp lichess_bot /opt/chess-bot/
 sudo systemctl restart chess-bot
+```
+
+Or via invoke (runs build, tests, install, and restart):
+
+```bash
+cd /opt/chess-bot-src
+invoke deploy
 ```

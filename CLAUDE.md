@@ -29,9 +29,9 @@ ctest --output-on-failure
 invoke gen-config         # regenerate engine/generated_config.h from YAML
 invoke format             # format all (ruff + clang-format)
 invoke test               # all tests (Python + C++)
-invoke prepare            # gen-config → format → test
-invoke train              # prepare → self-play → train NNUE → export → compare models
-invoke deploy             # pull → test → build → install → restart service on VPS
+invoke prepare            # gen-config → format → build → test
+invoke train              # prepare → continuous RL loop (self-play → train → export → compare)
+invoke deploy             # pull → build → test → install → restart service on VPS
 ```
 
 ## Architecture
@@ -71,10 +71,12 @@ invoke deploy             # pull → test → build → install → restart serv
 | `engine/train/train_nnue.py` | PyTorch NNUE training from self-play binary data |
 | `engine/train/export_nnue.py` | Export PyTorch model → binary for C++ loading |
 | `scripts/gen_config_header.py` | Generates `engine/generated_config.h` from YAML |
+| `scripts/train_loop.py` | Continuous RL loop: self-play → train → export → compare → archive |
 
 ### Tests
 
 - C++: `tests/engine/test_*.cpp` (GTest, run via ctest)
+- Python: `tests/{config,scripts,train}/test_*.py` (pytest)
 
 ## Evaluation Modes
 

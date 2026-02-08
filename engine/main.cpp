@@ -329,6 +329,11 @@ class LichessBot {
                 Utils::log_info("Game starting: " + event.game_id);
 
                 std::lock_guard<std::mutex> lock(games_mutex);
+                if (active_games.count(event.game_id)) {
+                    Utils::log_info("Game " + event.game_id +
+                                    " already has an active handler, skipping");
+                    return;
+                }
                 auto game_state = std::make_shared<GameState>();
 
                 // Create a separate engine instance for this game
@@ -400,40 +405,58 @@ class LichessBot {
             game_state = it->second;  // Keep shared_ptr alive
         }
 
-        try {
-            client.stream_game(game_id, [this, game_state, game_id](
-                                            const LichessClient::GameEvent& event) {
-                if (shutdown_requested.load() || !game_state->is_active.load()) {
-                    Utils::log_info(
-                        "Game " + game_id +
-                        ": Shutdown requested or game inactive, ending handler");
-                    return;
-                }
+        constexpr int MAX_STREAM_RETRIES = 3;
+        for (int attempt = 1; attempt <= MAX_STREAM_RETRIES; ++attempt) {
+            if (shutdown_requested.load() || !game_state->is_active.load()) break;
 
-                last_activity.store(std::chrono::steady_clock::now());
-                game_state->last_move_time = std::chrono::steady_clock::now();
+            // Reset first_event so gameFull re-syncs board state on reconnect
+            game_state->first_event = true;
 
-                try {
-                    handle_game_event(game_id, game_state, event);
-                } catch (const std::exception& e) {
-                    Utils::log_error("Game " + game_id + ": Error processing event: " +
-                                     std::string(e.what()));
-                    consecutive_errors.fetch_add(1);
-
-                    if (consecutive_errors.load() >
-                        MAX_CONSECUTIVE_ERRORS / 2) {  // Per-game threshold
-                        Utils::log_error("Game " + game_id +
-                                         ": Too many errors, abandoning game");
-                        game_state->is_active.store(false);
+            try {
+                client.stream_game(game_id, [this, game_state, game_id](
+                                                const LichessClient::GameEvent& event) {
+                    if (shutdown_requested.load() || !game_state->is_active.load()) {
+                        Utils::log_info(
+                            "Game " + game_id +
+                            ": Shutdown requested or game inactive, ending handler");
+                        return;
                     }
-                }
-            });
-        } catch (const std::exception& e) {
-            Utils::log_error("Game " + game_id +
-                             ": Exception in stream_game: " + std::string(e.what()));
+
+                    last_activity.store(std::chrono::steady_clock::now());
+                    game_state->last_move_time = std::chrono::steady_clock::now();
+
+                    try {
+                        handle_game_event(game_id, game_state, event);
+                    } catch (const std::exception& e) {
+                        Utils::log_error(
+                            "Game " + game_id +
+                            ": Error processing event: " + std::string(e.what()));
+                        consecutive_errors.fetch_add(1);
+
+                        if (consecutive_errors.load() > MAX_CONSECUTIVE_ERRORS / 2) {
+                            Utils::log_error("Game " + game_id +
+                                             ": Too many errors, abandoning game");
+                            game_state->is_active.store(false);
+                        }
+                    }
+                });
+            } catch (const std::exception& e) {
+                Utils::log_error("Game " + game_id + ": Exception in stream_game: " +
+                                 std::string(e.what()));
+            }
+
+            // Stream ended — if game is still active, reconnect
+            if (!game_state->is_active.load() || shutdown_requested.load()) break;
+
+            if (attempt < MAX_STREAM_RETRIES) {
+                Utils::log_warning("Game " + game_id +
+                                   ": Stream disconnected, reconnecting (attempt " +
+                                   std::to_string(attempt + 1) + "/" +
+                                   std::to_string(MAX_STREAM_RETRIES) + ")");
+                std::this_thread::sleep_for(std::chrono::seconds(2));
+            }
         }
 
-        // Clean up when stream ends
         Utils::log_info("Game " + game_id + ": Stream ended, cleaning up");
         cleanup_game(game_id);
     }

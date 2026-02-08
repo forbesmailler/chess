@@ -8,7 +8,7 @@ MCTSEngine::MCTSEngine(int max_time_ms, EvalMode eval_mode,
                        std::shared_ptr<NNUEModel> nnue_model)
     : BaseEngine(max_time_ms, eval_mode, std::move(nnue_model)),
       rng(std::random_device{}()) {
-    eval_cache.reserve(CACHE_SIZE);
+    eval_cache.resize(EVAL_CACHE_SIZE);
 }
 
 SearchResult MCTSEngine::get_best_move(const ChessBoard& board,
@@ -204,23 +204,11 @@ void MCTSEngine::backpropagate(MCTSNode* node, float score) {
 
 float MCTSEngine::evaluate_position(const ChessBoard& board) {
     uint64_t pos_key = board.hash();
-
-    {
-        std::shared_lock<std::shared_mutex> lock(eval_cache_mutex);
-        if (auto it = eval_cache.find(pos_key); it != eval_cache.end()) {
-            return it->second;
-        }
-    }
+    auto& entry = eval_cache[pos_key & EVAL_CACHE_MASK];
+    if (entry.key == pos_key) return entry.score;
 
     float eval = raw_evaluate(board);
-
-    {
-        std::unique_lock<std::shared_mutex> lock(eval_cache_mutex);
-        if (eval_cache.size() < CACHE_SIZE) {
-            eval_cache.emplace(pos_key, eval);
-        }
-    }
-
+    entry = {pos_key, eval};
     return eval;
 }
 

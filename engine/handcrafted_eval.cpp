@@ -33,31 +33,85 @@ float handcrafted_evaluate(const ChessBoard& board) {
     }
 
     int king_sq[2] = {-1, -1};
+    int pawn_sqs[2][8];
+    int pawn_count[2] = {};
 
-    // First pass: collect pawn structure data and king squares
+    // First pass: pawns (material + PST + phase + file tracking)
     const auto& b = board.board;
     for (int color = 0; color < 2; ++color) {
         auto c = color == 0 ? chess::Color::WHITE : chess::Color::BLACK;
+        int sign = color == 0 ? 1 : -1;
 
-        // King square
         king_sq[color] = b.kingSq(c).index();
 
-        // Pawn locations
         auto pawns = b.pieces(chess::PieceType::PAWN, c);
         while (pawns) {
             int sq = static_cast<int>(pawns.pop());
+            int pst_sq = color == 0 ? sq : mirror(sq);
             int f = file_of(sq);
             int r = rank_of(sq);
+
+            mg_score += sign * config::eval::MATERIAL_MG[0];
+            eg_score += sign * config::eval::MATERIAL_EG[0];
+            mg_score += sign * config::eval::PST_MG[0][pst_sq];
+            eg_score += sign * config::eval::PST_EG[0][pst_sq];
+            phase += config::eval::PHASE_WEIGHT[0];
+
             pawn_files[color][f]++;
             pawn_rank_min[color][f] = std::min(pawn_rank_min[color][f], r);
             pawn_rank_max[color][f] = std::max(pawn_rank_max[color][f], r);
+            if (pawn_count[color] < 8) pawn_sqs[color][pawn_count[color]++] = sq;
         }
     }
 
-    // Evaluate each piece
+    // Pawn structure bonuses (uses complete pawn_files data)
+    for (int color = 0; color < 2; ++color) {
+        int sign = color == 0 ? 1 : -1;
+        int enemy = 1 - color;
+        for (int pi = 0; pi < pawn_count[color]; ++pi) {
+            int sq = pawn_sqs[color][pi];
+            int f = file_of(sq);
+            int r = rank_of(sq);
+
+            bool passed = true;
+            for (int af = std::max(0, f - 1); af <= std::min(7, f + 1); ++af) {
+                if (pawn_files[enemy][af] > 0) {
+                    if (color == 0) {
+                        if (pawn_rank_max[enemy][af] > r) passed = false;
+                    } else {
+                        if (pawn_rank_min[enemy][af] < r) passed = false;
+                    }
+                }
+            }
+            if (passed) {
+                int dist = color == 0 ? r : (7 - r);
+                int bonus =
+                    config::eval::pawn_structure::PASSED_BASE +
+                    dist * dist * config::eval::pawn_structure::PASSED_RANK_SCALE;
+                mg_score +=
+                    sign * (bonus / config::eval::pawn_structure::PASSED_MG_DIVISOR);
+                eg_score += sign * bonus;
+            }
+
+            bool isolated = true;
+            if (f > 0 && pawn_files[color][f - 1] > 0) isolated = false;
+            if (f < 7 && pawn_files[color][f + 1] > 0) isolated = false;
+            if (isolated) {
+                mg_score -= sign * config::eval::pawn_structure::ISOLATED_MG;
+                eg_score -= sign * config::eval::pawn_structure::ISOLATED_EG;
+            }
+
+            if (pawn_files[color][f] > 1) {
+                mg_score -= sign * config::eval::pawn_structure::DOUBLED_MG;
+                eg_score -= sign * config::eval::pawn_structure::DOUBLED_EG;
+            }
+        }
+    }
+
+    // Evaluate non-pawn pieces (pt 1..5: knight, bishop, rook, queen, king)
     static constexpr chess::PieceType PIECE_TYPES[] = {
-        chess::PieceType::PAWN, chess::PieceType::KNIGHT, chess::PieceType::BISHOP,
-        chess::PieceType::ROOK, chess::PieceType::QUEEN,  chess::PieceType::KING};
+        chess::PieceType::KNIGHT, chess::PieceType::BISHOP, chess::PieceType::ROOK,
+        chess::PieceType::QUEEN, chess::PieceType::KING};
 
     auto occ = b.occ();
 
@@ -66,79 +120,27 @@ float handcrafted_evaluate(const ChessBoard& board) {
         int sign = color == 0 ? 1 : -1;
         auto own_pieces = b.us(c);
 
-        for (int pt = 0; pt < 6; ++pt) {
-            auto pieces = b.pieces(PIECE_TYPES[pt], c);
+        for (int pti = 0; pti < 5; ++pti) {
+            int pt = pti + 1;  // 1=knight, 2=bishop, 3=rook, 4=queen, 5=king
+            auto pieces = b.pieces(PIECE_TYPES[pti], c);
             while (pieces) {
                 int sq = static_cast<int>(pieces.pop());
                 int pst_sq = color == 0 ? sq : mirror(sq);
 
-                // Material
                 mg_score += sign * config::eval::MATERIAL_MG[pt];
                 eg_score += sign * config::eval::MATERIAL_EG[pt];
-
-                // PST
                 mg_score += sign * config::eval::PST_MG[pt][pst_sq];
                 eg_score += sign * config::eval::PST_EG[pt][pst_sq];
-
-                // Phase
                 phase += config::eval::PHASE_WEIGHT[pt];
 
-                // Bishop pair tracking
-                if (pt == 2) {  // BISHOP
+                if (pt == 2) {
                     if (color == 0)
                         white_bishops++;
                     else
                         black_bishops++;
                 }
 
-                // Pawn structure bonuses
-                if (pt == 0) {  // PAWN
-                    int f = file_of(sq);
-                    int r = rank_of(sq);
-
-                    // Passed pawn: no enemy pawns on same or adjacent files
-                    // that can block or capture
-                    bool passed = true;
-                    int enemy = 1 - color;
-                    for (int af = std::max(0, f - 1); af <= std::min(7, f + 1); ++af) {
-                        if (pawn_files[enemy][af] > 0) {
-                            if (color == 0) {
-                                // White pawn: enemy pawn must be on higher rank
-                                if (pawn_rank_max[enemy][af] > r) passed = false;
-                            } else {
-                                if (pawn_rank_min[enemy][af] < r) passed = false;
-                            }
-                        }
-                    }
-                    if (passed) {
-                        int dist = color == 0 ? r : (7 - r);
-                        int bonus = config::eval::pawn_structure::PASSED_BASE +
-                                    dist * dist *
-                                        config::eval::pawn_structure::PASSED_RANK_SCALE;
-                        mg_score +=
-                            sign *
-                            (bonus / config::eval::pawn_structure::PASSED_MG_DIVISOR);
-                        eg_score += sign * bonus;
-                    }
-
-                    // Isolated pawn: no friendly pawns on adjacent files
-                    bool isolated = true;
-                    if (f > 0 && pawn_files[color][f - 1] > 0) isolated = false;
-                    if (f < 7 && pawn_files[color][f + 1] > 0) isolated = false;
-                    if (isolated) {
-                        mg_score -= sign * config::eval::pawn_structure::ISOLATED_MG;
-                        eg_score -= sign * config::eval::pawn_structure::ISOLATED_EG;
-                    }
-
-                    // Doubled pawn: more than one pawn on this file
-                    if (pawn_files[color][f] > 1) {
-                        mg_score -= sign * config::eval::pawn_structure::DOUBLED_MG;
-                        eg_score -= sign * config::eval::pawn_structure::DOUBLED_EG;
-                    }
-                }
-
-                // Rook on open/semi-open file
-                if (pt == 3) {  // ROOK
+                if (pt == 3) {
                     int f = file_of(sq);
                     bool own_pawns_on_file = pawn_files[color][f] > 0;
                     bool enemy_pawns = pawn_files[1 - color][f] > 0;
@@ -151,8 +153,7 @@ float handcrafted_evaluate(const ChessBoard& board) {
                     }
                 }
 
-                // Mobility (for non-pawn, non-king pieces)
-                if (pt >= 1 && pt <= 4) {
+                if (pt <= 4) {
                     chess::Bitboard attacks;
                     auto sq_typed = static_cast<chess::Square>(sq);
                     switch (pt) {

@@ -5,7 +5,7 @@ A Lichess chess bot written in C++ with a Python training pipeline.
 ## Features
 
 - **Search**: Negamax (alpha-beta pruning, transposition tables, quiescence search, iterative deepening) and MCTS (UCT selection)
-- **Evaluation**: Handcrafted tapered eval or NNUE (773→256→32→3)
+- **Evaluation**: Handcrafted tapered eval or NNUE (773→256→32→1)
 - **Training**: Self-play data generation → PyTorch NNUE training → binary weight export
 - **Deployment**: Connects to Lichess API; runs as a systemd service on Linux
 
@@ -44,6 +44,7 @@ Set the `LICHESS_TOKEN` environment variable, then:
 
 ```bash
 ctest -C Release --output-on-failure   # C++ tests
+pytest                                  # Python tests
 ```
 
 ## NNUE Training Pipeline
@@ -74,30 +75,38 @@ invoke train --games=1000 --depth=6 --threads=8 --epochs=100
 ```bash
 pip install -e ".[dev]"       # install dev dependencies
 
-invoke build-cpp              # build engine
-invoke test                   # run all tests
+invoke gen-config             # regenerate engine/generated_config.h from YAML
 invoke format                 # format Python (ruff) + C++ (clang-format)
-invoke run                    # run bot (reads LICHESS_TOKEN env var)
+invoke test                   # run all tests (Python + C++)
+invoke prepare                # gen-config → format → build → test
+invoke train                  # prepare → continuous RL loop
 invoke deploy                 # deploy to Linux VPS
 ```
 
 ## Project Structure
 
 ```
-engine/
-├── base_engine.h           # BaseEngine interface, EvalMode enum
-├── chess_engine.h/cpp      # Negamax search
-├── mcts_engine.h/cpp       # MCTS search
-├── handcrafted_eval.h/cpp  # Tapered evaluation
-├── nnue_model.h/cpp        # NNUE inference
-├── self_play.h/cpp         # Self-play data generator
-├── lichess_client.h/cpp    # Lichess API client (libcurl)
-├── main.cpp                # Entry point
-├── train/
-│   ├── train_nnue.py       # PyTorch NNUE training
-│   └── export_nnue.py      # Export to binary weights
-└── tests/                  # GTest unit tests
-deploy/                     # systemd service & deployment guide
+engine/                         # C++ engine and Lichess bot
+├── base_engine.h               # BaseEngine interface, EvalMode enum
+├── chess_engine.h/cpp          # Negamax search
+├── mcts_engine.h/cpp           # MCTS search
+├── handcrafted_eval.h/cpp      # Tapered evaluation
+├── nnue_model.h/cpp            # NNUE inference
+├── self_play.h/cpp             # Self-play data generator
+├── lichess_client.h/cpp        # Lichess API client (libcurl)
+├── main.cpp                    # Entry point
+├── generated_config.h          # Auto-generated from YAML
+└── train/
+    ├── train_nnue.py           # PyTorch NNUE training
+    └── export_nnue.py          # Export to binary weights
+config/                         # YAML configuration files
+scripts/                        # Code generation & training loop
+tests/                          # All tests (Python + C++)
+├── engine/                     # C++ GTest unit tests
+├── config/                     # Config loader tests
+├── scripts/                    # Gen-config & train loop tests
+└── train/                      # NNUE training & export tests
+deploy/                         # systemd service & deployment guide
 ```
 
 ## Dependencies

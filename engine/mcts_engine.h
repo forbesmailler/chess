@@ -1,9 +1,7 @@
 #pragma once
 
-#include <mutex>
+#include <cstring>
 #include <random>
-#include <shared_mutex>
-#include <unordered_map>
 #include <vector>
 
 #include "base_engine.h"
@@ -57,8 +55,11 @@ class MCTSEngine : public BaseEngine {
 
     mutable std::mt19937 rng;
 
-    mutable std::unordered_map<uint64_t, float> eval_cache;
-    mutable std::shared_mutex eval_cache_mutex;
-
-    static constexpr int CACHE_SIZE = config::mcts::CACHE_SIZE;
+    struct CacheEntry {
+        uint64_t key = 0;
+        float score = 0;
+    };
+    static constexpr size_t EVAL_CACHE_SIZE = 1 << 18;
+    static constexpr size_t EVAL_CACHE_MASK = EVAL_CACHE_SIZE - 1;
+    std::vector<CacheEntry> eval_cache;
 };

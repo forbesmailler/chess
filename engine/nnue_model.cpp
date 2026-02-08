@@ -1,5 +1,7 @@
 #include "nnue_model.h"
 
+#include <xmmintrin.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -127,8 +129,13 @@ float NNUEModel::predict(const ChessBoard& board) const {
 
     // Layer 1: sparse accumulation (input features are binary)
     std::memcpy(h1, b1.data(), HIDDEN1_SIZE * sizeof(float));
-    for (int idx : active) {
-        const float* row = w1.data() + idx * HIDDEN1_SIZE;
+    for (size_t k = 0; k < active.size(); ++k) {
+        const float* row = w1.data() + active[k] * HIDDEN1_SIZE;
+        if (k + 1 < active.size()) {
+            _mm_prefetch(
+                reinterpret_cast<const char*>(w1.data() + active[k + 1] * HIDDEN1_SIZE),
+                _MM_HINT_T0);
+        }
         for (int j = 0; j < HIDDEN1_SIZE; ++j) h1[j] += row[j];
     }
     for (int j = 0; j < HIDDEN1_SIZE; ++j)

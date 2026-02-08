@@ -24,61 +24,6 @@ float ChessEngine::evaluate(const ChessBoard& board) {
     return eval;
 }
 
-void ChessEngine::order_moves(const ChessBoard& board,
-                              std::vector<ChessBoard::Move>& moves,
-                              const ChessBoard::Move& tt_move, int ply,
-                              chess::Move prev_move) {
-    if (moves.size() <= 1) return;
-
-    constexpr int PIECE_VALUES[] = {100, 320, 330, 500, 900, 0, 0};
-    bool has_tt_move = tt_move.internal_move != chess::Move::NO_MOVE;
-    bool has_prev = prev_move != chess::Move::NO_MOVE;
-    chess::Move cm = chess::Move::NO_MOVE;
-    if (has_prev) {
-        cm = countermoves[prev_move.from().index()][prev_move.to().index()];
-    }
-
-    thread_local std::vector<std::pair<ChessBoard::Move, int>> scored;
-    scored.clear();
-    scored.reserve(moves.size());
-
-    for (const auto& move : moves) {
-        int score = 0;
-        if (has_tt_move && move.internal_move == tt_move.internal_move) {
-            score = 1000000;
-        } else if (board.is_capture_move(move)) {
-            int victim = PIECE_VALUES[board.piece_type_at(move.to())];
-            int attacker = PIECE_VALUES[board.piece_type_at(move.from())];
-            score = 100000 + victim * 10 - attacker;
-        } else if (move.is_promotion()) {
-            score = 90000;
-        } else {
-            // Killer move heuristic
-            if (ply < MAX_PLY) {
-                if (move.internal_move == killers[ply][0].internal_move) {
-                    score = 80000;
-                } else if (move.internal_move == killers[ply][1].internal_move) {
-                    score = 70000;
-                }
-            }
-            // Countermove heuristic
-            if (score == 0 && cm != chess::Move::NO_MOVE && move.internal_move == cm) {
-                score = 60000;
-            }
-            // History heuristic for remaining quiet moves
-            if (score == 0) {
-                score = history[move.from()][move.to()];
-            }
-        }
-        scored.emplace_back(move, score);
-    }
-
-    std::sort(scored.begin(), scored.end(),
-              [](const auto& a, const auto& b) { return a.second > b.second; });
-
-    for (size_t i = 0; i < moves.size(); ++i) moves[i] = scored[i].first;
-}
-
 static void pick_move(std::vector<ChessBoard::Move>& moves, int* scores, int start,
                       int count) {
     int best_idx = start;
@@ -88,6 +33,20 @@ static void pick_move(std::vector<ChessBoard::Move>& moves, int* scores, int sta
     if (best_idx != start) {
         std::swap(moves[start], moves[best_idx]);
         std::swap(scores[start], scores[best_idx]);
+    }
+}
+
+void ChessEngine::order_moves(const ChessBoard& board,
+                              std::vector<ChessBoard::Move>& moves,
+                              const ChessBoard::Move& tt_move, int ply,
+                              chess::Move prev_move) {
+    if (moves.size() <= 1) return;
+
+    int scores[256];
+    int n = static_cast<int>(moves.size());
+    score_moves(board, moves, scores, tt_move, ply, prev_move);
+    for (int i = 0; i < n - 1; ++i) {
+        pick_move(moves, scores, i, n);
     }
 }
 
