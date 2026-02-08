@@ -101,7 +101,7 @@ class TestGenerate:
         assert "INPUT_SIZE = 773" in result
         assert "HIDDEN1_SIZE = 256" in result
         assert "HIDDEN2_SIZE = 32" in result
-        assert "OUTPUT_SIZE = 3" in result
+        assert "OUTPUT_SIZE = 1" in result
 
     def test_search_constants(self):
         result = generate()

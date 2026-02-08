@@ -203,7 +203,7 @@ float MCTSEngine::evaluate_position(const ChessBoard& board) {
     uint64_t pos_key = board.hash();
 
     {
-        std::lock_guard<std::mutex> lock(eval_cache_mutex);
+        std::shared_lock<std::shared_mutex> lock(eval_cache_mutex);
         if (auto it = eval_cache.find(pos_key); it != eval_cache.end()) {
             return it->second;
         }
@@ -212,9 +212,9 @@ float MCTSEngine::evaluate_position(const ChessBoard& board) {
     float eval = raw_evaluate(board);
 
     {
-        std::lock_guard<std::mutex> lock(eval_cache_mutex);
+        std::unique_lock<std::shared_mutex> lock(eval_cache_mutex);
         if (eval_cache.size() < CACHE_SIZE) {
-            eval_cache[pos_key] = eval;
+            eval_cache.emplace(pos_key, eval);
         }
     }
 

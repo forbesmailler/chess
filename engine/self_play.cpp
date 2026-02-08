@@ -120,12 +120,13 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
         }
     }
 
+    auto engine =
+        std::make_unique<ChessEngine>(config.search_time_ms, eval_mode, model);
+
     for (int g = 0; g < num_games; ++g) {
+        engine->clear_caches();
         std::vector<TrainingPosition> positions;
         positions.reserve(config.max_game_ply);
-
-        auto engine =
-            std::make_unique<ChessEngine>(config.search_time_ms, eval_mode, model);
 
         ChessBoard board;
         uint16_t ply = 0;
@@ -292,24 +293,24 @@ void ModelComparator::play_games(int num_games, int thread_id) {
         }
     }
 
+    auto new_engine =
+        std::make_unique<ChessEngine>(config.search_time_ms, EvalMode::NNUE, new_model);
+    std::unique_ptr<ChessEngine> old_engine;
+    if (old_is_handcrafted) {
+        old_engine = std::make_unique<ChessEngine>(config.search_time_ms);
+    } else {
+        old_engine = std::make_unique<ChessEngine>(config.search_time_ms,
+                                                   EvalMode::NNUE, old_model);
+    }
+
     for (int g = 0; g < num_games; ++g) {
+        new_engine->clear_caches();
+        old_engine->clear_caches();
         std::vector<TrainingPosition> positions;
         positions.reserve(config.max_game_ply);
 
         // Alternate colors: new model plays white when (thread_id + g) is even
         bool new_is_white = (thread_id + g) % 2 == 0;
-
-        std::unique_ptr<ChessEngine> new_engine;
-        std::unique_ptr<ChessEngine> old_engine;
-
-        new_engine = std::make_unique<ChessEngine>(config.search_time_ms,
-                                                   EvalMode::NNUE, new_model);
-        if (old_is_handcrafted) {
-            old_engine = std::make_unique<ChessEngine>(config.search_time_ms);
-        } else {
-            old_engine = std::make_unique<ChessEngine>(config.search_time_ms,
-                                                       EvalMode::NNUE, old_model);
-        }
 
         ChessBoard board;
         uint16_t ply = 0;

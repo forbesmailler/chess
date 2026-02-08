@@ -162,24 +162,25 @@ def test_nnue_forward_shape():
     x = torch.randn(4, 773)
     with torch.no_grad():
         out = model(x)
-    assert out.shape == (4, 3)
+    assert out.shape == (4,)
 
 
-def test_nnue_output_sums_to_one():
+def test_nnue_output_in_range():
     model = NNUE()
     x = torch.randn(8, 773)
     with torch.no_grad():
         out = model(x)
-    sums = out.sum(dim=-1)
-    np.testing.assert_allclose(sums.numpy(), np.ones(8), atol=1e-5)
+    assert (out >= -1).all()
+    assert (out <= 1).all()
 
 
-def test_nnue_output_nonnegative():
+def test_nnue_output_scalar_per_sample():
     model = NNUE()
     x = torch.randn(8, 773)
     with torch.no_grad():
         out = model(x)
-    assert (out >= 0).all()
+    assert out.dim() == 1
+    assert out.shape[0] == 8
 
 
 # --- SelfPlayDataset ---
@@ -218,8 +219,8 @@ def test_dataset_from_binary():
 
         features, target = ds[0]
         assert features.shape == (773,)
-        assert target.shape == (3,)
-        np.testing.assert_allclose(target.sum().item(), 1.0, atol=1e-5)
+        assert target.shape == ()
+        assert -1.0 <= target.item() <= 1.0
     finally:
         Path(tmp_path).unlink()
 
@@ -283,8 +284,8 @@ def test_train_model_loadable(tmp_path):
     x = torch.randn(1, 773)
     with torch.no_grad():
         out = model(x)
-    assert out.shape == (1, 3)
-    np.testing.assert_allclose(out.sum().item(), 1.0, atol=1e-5)
+    assert out.shape == (1,)
+    assert -1.0 <= out.item() <= 1.0
 
 
 def test_train_loss_decreases(tmp_path, capsys):

@@ -26,17 +26,19 @@ class NNUEModel {
     static constexpr float MATE_VALUE = config::MATE_VALUE;
 
     // Weights and biases
-    std::vector<float> w1;  // INPUT_SIZE x HIDDEN1_SIZE
+    std::vector<float>
+        w1;  // INPUT_SIZE x HIDDEN1_SIZE (row-major, for sparse accumulation)
     std::vector<float> b1;  // HIDDEN1_SIZE
-    std::vector<float> w2;  // HIDDEN1_SIZE x HIDDEN2_SIZE
+    std::vector<float>
+        w2;  // HIDDEN2_SIZE x HIDDEN1_SIZE (transposed at load for sequential access)
     std::vector<float> b2;  // HIDDEN2_SIZE
     std::vector<float> w3;  // HIDDEN2_SIZE x OUTPUT_SIZE
     std::vector<float> b3;  // OUTPUT_SIZE
 
     bool loaded = false;
 
-    // Extract piece-square, castling, and en passant features (STM perspective)
-    static std::vector<float> extract_features(const ChessBoard& board);
+    // Collect active (non-zero) feature indices (all features are binary)
+    static void extract_features(const ChessBoard& board, std::vector<int>& active);
 
     static float clipped_relu(float x);
 };

@@ -46,7 +46,7 @@ def test_cpp(c):
 @task
 def test(c):
     """Run all tests (Python + C++)."""
-    c.run("pytest", warn=True)
+    c.run("pytest")
     test_cpp(c)
 
 

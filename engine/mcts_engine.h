@@ -2,6 +2,7 @@
 
 #include <mutex>
 #include <random>
+#include <shared_mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -56,7 +57,7 @@ class MCTSEngine : public BaseEngine {
     mutable std::mt19937 rng;
 
     mutable std::unordered_map<uint64_t, float> eval_cache;
-    mutable std::mutex eval_cache_mutex;
+    mutable std::shared_mutex eval_cache_mutex;
 
     static constexpr int CACHE_SIZE = config::mcts::CACHE_SIZE;
 };

@@ -55,6 +55,16 @@ bool NNUEModel::load_weights(const std::string& path) {
         return false;
     }
 
+    // Transpose w2 from (HIDDEN1_SIZE x HIDDEN2_SIZE) to (HIDDEN2_SIZE x HIDDEN1_SIZE)
+    // for cache-friendly sequential access in the dense layer 2 inner loop.
+    {
+        std::vector<float> w2_t(HIDDEN1_SIZE * HIDDEN2_SIZE);
+        for (int i = 0; i < HIDDEN1_SIZE; ++i)
+            for (int j = 0; j < HIDDEN2_SIZE; ++j)
+                w2_t[j * HIDDEN1_SIZE + i] = w2[i * HIDDEN2_SIZE + j];
+        w2 = std::move(w2_t);
+    }
+
     loaded = true;
     std::cout << "Loaded NNUE model (v" << version << "): " << INPUT_SIZE << " -> "
               << HIDDEN1_SIZE << " -> " << HIDDEN2_SIZE << " -> " << OUTPUT_SIZE
@@ -62,13 +72,11 @@ bool NNUEModel::load_weights(const std::string& path) {
     return true;
 }
 
-std::vector<float> NNUEModel::extract_features(const ChessBoard& board) {
-    std::vector<float> features(INPUT_SIZE, 0.0f);
+void NNUEModel::extract_features(const ChessBoard& board, std::vector<int>& active) {
+    active.clear();
     const auto& b = board.board;
     bool white_to_move = b.sideToMove() == chess::Color::WHITE;
 
-    // Feature layout: 0-383 = own pieces, 384-767 = opponent pieces,
-    // 768-771 = castling (own KS, own QS, opp KS, opp QS), 772 = en passant available
     static constexpr chess::PieceType PIECE_TYPES[] = {
         chess::PieceType::PAWN, chess::PieceType::KNIGHT, chess::PieceType::BISHOP,
         chess::PieceType::ROOK, chess::PieceType::QUEEN,  chess::PieceType::KING};
@@ -77,41 +85,35 @@ std::vector<float> NNUEModel::extract_features(const ChessBoard& board) {
     auto opp_color = white_to_move ? chess::Color::BLACK : chess::Color::WHITE;
 
     for (int pt = 0; pt < 6; ++pt) {
-        // Own pieces -> indices 0-383
         auto own_pieces = b.pieces(PIECE_TYPES[pt], own_color);
         while (own_pieces) {
             int sq = static_cast<int>(own_pieces.pop());
-            if (!white_to_move) sq ^= 56;  // Vertical flip for black
-            features[pt * 64 + sq] = 1.0f;
+            if (!white_to_move) sq ^= 56;
+            active.push_back(pt * 64 + sq);
         }
 
-        // Opponent pieces -> indices 384-767
         auto opp_pieces = b.pieces(PIECE_TYPES[pt], opp_color);
         while (opp_pieces) {
             int sq = static_cast<int>(opp_pieces.pop());
-            if (!white_to_move) sq ^= 56;  // Vertical flip for black
-            features[384 + pt * 64 + sq] = 1.0f;
+            if (!white_to_move) sq ^= 56;
+            active.push_back(384 + pt * 64 + sq);
         }
     }
 
-    // Castling rights from STM perspective
     auto rights = board.get_castling_rights();
     if (white_to_move) {
-        features[768] = rights.white_kingside ? 1.0f : 0.0f;
-        features[769] = rights.white_queenside ? 1.0f : 0.0f;
-        features[770] = rights.black_kingside ? 1.0f : 0.0f;
-        features[771] = rights.black_queenside ? 1.0f : 0.0f;
+        if (rights.white_kingside) active.push_back(768);
+        if (rights.white_queenside) active.push_back(769);
+        if (rights.black_kingside) active.push_back(770);
+        if (rights.black_queenside) active.push_back(771);
     } else {
-        features[768] = rights.black_kingside ? 1.0f : 0.0f;
-        features[769] = rights.black_queenside ? 1.0f : 0.0f;
-        features[770] = rights.white_kingside ? 1.0f : 0.0f;
-        features[771] = rights.white_queenside ? 1.0f : 0.0f;
+        if (rights.black_kingside) active.push_back(768);
+        if (rights.black_queenside) active.push_back(769);
+        if (rights.white_kingside) active.push_back(770);
+        if (rights.white_queenside) active.push_back(771);
     }
 
-    // En passant available
-    features[772] = (b.enpassantSq() != chess::Square::NO_SQ) ? 1.0f : 0.0f;
-
-    return features;
+    if (b.enpassantSq() != chess::Square::NO_SQ) active.push_back(772);
 }
 
 float NNUEModel::clipped_relu(float x) { return std::max(0.0f, std::min(1.0f, x)); }
@@ -123,25 +125,31 @@ float NNUEModel::predict(const ChessBoard& board) const {
         return board.turn() == ChessBoard::WHITE ? -MATE_VALUE : MATE_VALUE;
     if (board.is_stalemate() || board.is_draw()) return 0.0f;
 
-    auto input = extract_features(board);
+    thread_local std::vector<int> active;
+    thread_local std::vector<float> h1(HIDDEN1_SIZE);
+    thread_local std::vector<float> h2(HIDDEN2_SIZE);
 
-    // Layer 1: input -> hidden1 (ClippedReLU)
-    std::vector<float> h1(HIDDEN1_SIZE);
-    for (int j = 0; j < HIDDEN1_SIZE; ++j) {
-        float sum = b1[j];
-        for (int i = 0; i < INPUT_SIZE; ++i) sum += input[i] * w1[i * HIDDEN1_SIZE + j];
-        h1[j] = clipped_relu(sum);
+    extract_features(board, active);
+
+    // Layer 1: sparse accumulation (input features are binary)
+    // w1 layout: (INPUT_SIZE x HIDDEN1_SIZE) row-major — each active feature
+    // selects a contiguous row to add.
+    std::copy(b1.begin(), b1.end(), h1.begin());
+    for (int idx : active) {
+        const float* row = w1.data() + idx * HIDDEN1_SIZE;
+        for (int j = 0; j < HIDDEN1_SIZE; ++j) h1[j] += row[j];
     }
+    for (int j = 0; j < HIDDEN1_SIZE; ++j) h1[j] = clipped_relu(h1[j]);
 
-    // Layer 2: hidden1 -> hidden2 (ClippedReLU)
-    std::vector<float> h2(HIDDEN2_SIZE);
+    // Layer 2: dense, w2 transposed to (HIDDEN2_SIZE x HIDDEN1_SIZE)
     for (int j = 0; j < HIDDEN2_SIZE; ++j) {
         float sum = b2[j];
-        for (int i = 0; i < HIDDEN1_SIZE; ++i) sum += h1[i] * w2[i * HIDDEN2_SIZE + j];
+        const float* row = w2.data() + j * HIDDEN1_SIZE;
+        for (int i = 0; i < HIDDEN1_SIZE; ++i) sum += h1[i] * row[i];
         h2[j] = clipped_relu(sum);
     }
 
-    // Layer 3: hidden2 -> single output (tanh)
+    // Layer 3: single output (tanh)
     float logit = b3[0];
     for (int i = 0; i < HIDDEN2_SIZE; ++i) logit += h2[i] * w3[i];
     float stm_eval = std::tanh(logit) * MATE_VALUE;
