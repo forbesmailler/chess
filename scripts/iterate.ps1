@@ -1,3 +1,7 @@
+param(
+    [string]$Model = ""
+)
+
 $Tasks = @(
     @{ Name = "Bug fixes";    Prompt = "Search all source files for bugs: off-by-one errors, null/undefined access, unhandled error paths, race conditions, resource leaks, incorrect boundary checks, and wrong operator precedence. Fix each bug you find with a minimal targeted change." },
     @{ Name = "Test coverage"; Prompt = "Identify untested and under-tested code paths. Add unit tests for: edge cases, error handling branches, boundary values, and any function lacking test coverage. Each test should assert exact expected values." },
@@ -9,11 +13,28 @@ $Tasks = @(
 $Suffix = "After making changes, run all tests and the code formatter. Only make changes you are confident are correct. If no changes are needed, respond with exactly NO_CHANGES and nothing else."
 $LogFile = Join-Path $PSScriptRoot "iterate_log.md"
 $MaxIterations = 20
+$ModelArgs = if ($Model) { @("--model", $Model) } else { @() }
 
 Set-Content $LogFile "# Iteration Log`n"
 $scriptStart = Get-Date
 $completed = @()
 $results = @()
+
+function Invoke-Claude {
+    param([string[]]$Args)
+    $allArgs = @("-p", "--dangerously-skip-permissions") + $ModelArgs + $Args
+    $output = & claude @allArgs 2>&1
+    return $output
+}
+
+function Commit-Changes {
+    param([string]$Message)
+    git add -A -- . ":!scripts/iterate_log.md"
+    git diff --cached --quiet
+    if ($LASTEXITCODE -ne 0) {
+        git commit -m $Message
+    }
+}
 
 foreach ($task in $Tasks) {
     $name = $task.Name
@@ -31,9 +52,9 @@ foreach ($task in $Tasks) {
                 $bullets = ($completed | ForEach-Object { "- $_" }) -join "`n"
                 $context = "Previously completed tasks this session:`n$bullets`n`n"
             }
-            $output = claude -p --dangerously-skip-permissions "$context$prompt $Suffix" 2>&1
+            $output = Invoke-Claude @("$context$prompt $Suffix")
         } else {
-            $output = claude -p --continue --dangerously-skip-permissions "Keep going with the same task. $Suffix" 2>&1
+            $output = Invoke-Claude @("--continue", "Keep going with the same task. $Suffix")
         }
 
         Write-Host $output
@@ -43,6 +64,7 @@ foreach ($task in $Tasks) {
             Write-Host "Claude exited with error code $LASTEXITCODE" -ForegroundColor Red
             Add-Content $LogFile "## Failed: $name (iteration $iteration, exit code $LASTEXITCODE)`n"
             $status = "failed"
+            Commit-Changes "$name - partial (failed at iteration $iteration)"
             break
         }
 
@@ -52,12 +74,7 @@ foreach ($task in $Tasks) {
             $completed += $name
             Add-Content $LogFile "## Completed: $name in $iteration iteration(s) (${elapsed}m)`n"
             $status = "converged"
-
-            git add -A
-            git diff --cached --quiet
-            if ($LASTEXITCODE -ne 0) {
-                git commit -m "$name - automated iteration"
-            }
+            Commit-Changes "$name - automated iteration"
             break
         }
 
@@ -67,6 +84,7 @@ foreach ($task in $Tasks) {
     if ($status -eq "abandoned") {
         Write-Host "Hit max iterations ($MaxIterations) for: $name" -ForegroundColor Yellow
         Add-Content $LogFile "## Abandoned: $name after $MaxIterations iterations`n"
+        Commit-Changes "$name - partial (hit max iterations)"
     }
 
     $results += @{ Name = $name; Status = $status }
