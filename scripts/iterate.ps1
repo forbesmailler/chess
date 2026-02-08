@@ -6,19 +6,21 @@ $Tasks = @(
     @{ Name = "Config";        Prompt = "Find hardcoded numeric constants, string literals, and thresholds scattered in source files that should be centralized in config files. Move them and wire up any config loading or generation needed." }
 )
 
-$Suffix = "After making changes, run all tests, and run the code formatter. Only make changes you are confident are correct. If no changes are needed, respond with exactly NO_CHANGES and nothing else."
+$Suffix = "After making changes, run all tests and the code formatter. Only make changes you are confident are correct. If no changes are needed, respond with exactly NO_CHANGES and nothing else."
 $LogFile = Join-Path $PSScriptRoot "iterate_log.md"
 $MaxIterations = 20
 
 Set-Content $LogFile "# Iteration Log`n"
 $scriptStart = Get-Date
 $completed = @()
+$results = @()
 
 foreach ($task in $Tasks) {
     $name = $task.Name
     $prompt = $task.Prompt
     Write-Host "`n=== Task: $name ===" -ForegroundColor Magenta
     $taskStart = Get-Date
+    $status = "abandoned"
 
     for ($iteration = 1; $iteration -le $MaxIterations; $iteration++) {
         Write-Host "--- $name iteration $iteration ---" -ForegroundColor Cyan
@@ -31,7 +33,7 @@ foreach ($task in $Tasks) {
             }
             $output = claude -p --dangerously-skip-permissions "$context$prompt $Suffix" 2>&1
         } else {
-            $output = claude -p --continue --dangerously-skip-permissions "Continue: $prompt $Suffix" 2>&1
+            $output = claude -p --continue --dangerously-skip-permissions "Keep going with the same task. $Suffix" 2>&1
         }
 
         Write-Host $output
@@ -39,7 +41,8 @@ foreach ($task in $Tasks) {
 
         if ($LASTEXITCODE -ne 0 -and -not ($output -match "NO_CHANGES")) {
             Write-Host "Claude exited with error code $LASTEXITCODE" -ForegroundColor Red
-            Add-Content $LogFile "## Failed: $name (iteration $iteration)`nExit code $LASTEXITCODE`n"
+            Add-Content $LogFile "## Failed: $name (iteration $iteration, exit code $LASTEXITCODE)`n"
+            $status = "failed"
             break
         }
 
@@ -47,21 +50,31 @@ foreach ($task in $Tasks) {
             $elapsed = [math]::Round(((Get-Date) - $taskStart).TotalMinutes, 1)
             Write-Host "Converged after $iteration iteration(s) (${elapsed}m)" -ForegroundColor Green
             $completed += $name
-            Add-Content $LogFile "## Completed: $name`nConverged after $iteration iteration(s) in ${elapsed}m.`n"
+            Add-Content $LogFile "## Completed: $name in $iteration iteration(s) (${elapsed}m)`n"
+            $status = "converged"
 
-            # Checkpoint progress
-            git add -A && git commit -m "$name — automated iteration" 2>$null
+            git add -A
+            git diff --cached --quiet
+            if ($LASTEXITCODE -ne 0) {
+                git commit -m "$name - automated iteration"
+            }
             break
         }
 
-        Add-Content $LogFile "### $name — iteration $iteration`n"
+        Add-Content $LogFile "### $name - iteration $iteration`n"
     }
 
-    if ($iteration -gt $MaxIterations) {
+    if ($status -eq "abandoned") {
         Write-Host "Hit max iterations ($MaxIterations) for: $name" -ForegroundColor Yellow
         Add-Content $LogFile "## Abandoned: $name after $MaxIterations iterations`n"
     }
+
+    $results += @{ Name = $name; Status = $status }
 }
 
 $totalElapsed = [math]::Round(((Get-Date) - $scriptStart).TotalMinutes, 1)
-Write-Host "`nDone in ${totalElapsed}m. ($($completed.Count)/$($Tasks.Count) converged)" -ForegroundColor Green
+Write-Host "`n=== Summary (${totalElapsed}m) ===" -ForegroundColor Magenta
+foreach ($r in $results) {
+    $color = switch ($r.Status) { "converged" { "Green" } "failed" { "Red" } default { "Yellow" } }
+    Write-Host "  $($r.Status.PadRight(10)) $($r.Name)" -ForegroundColor $color
+}
