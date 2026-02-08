@@ -21,8 +21,8 @@ $completed = @()
 $results = @()
 
 function Invoke-Claude {
-    param([string[]]$Args)
-    $allArgs = @("-p", "--dangerously-skip-permissions") + $ModelArgs + $Args
+    param([string[]]$ExtraArgs)
+    $allArgs = @("-p", "--dangerously-skip-permissions") + $ModelArgs + $ExtraArgs
     $output = & claude @allArgs 2>&1
     return $output
 }
@@ -36,25 +36,35 @@ function Commit-Changes {
     }
 }
 
+function Discard-Changes {
+    git checkout -- .
+    git clean -fd
+}
+
+function Squash-TaskCommits {
+    param([string]$BaseSha, [string]$Message)
+    $headSha = git rev-parse HEAD
+    if ($headSha -ne $BaseSha) {
+        git reset --soft $BaseSha
+        git commit -m $Message
+    }
+}
+
 foreach ($task in $Tasks) {
     $name = $task.Name
     $prompt = $task.Prompt
     Write-Host "`n=== Task: $name ===" -ForegroundColor Magenta
     $taskStart = Get-Date
-    $status = "abandoned"
+    $baseSha = git rev-parse HEAD
+    $status = "max iterations"
 
     for ($iteration = 1; $iteration -le $MaxIterations; $iteration++) {
         Write-Host "--- $name iteration $iteration ---" -ForegroundColor Cyan
 
         if ($iteration -eq 1) {
-            $context = ""
-            if ($completed.Count -gt 0) {
-                $bullets = ($completed | ForEach-Object { "- $_" }) -join "`n"
-                $context = "Previously completed tasks this session:`n$bullets`n`n"
-            }
-            $output = Invoke-Claude @("$context$prompt $Suffix")
+            $output = Invoke-Claude -ExtraArgs "$prompt $Suffix"
         } else {
-            $output = Invoke-Claude @("--continue", "Keep going with the same task. $Suffix")
+            $output = Invoke-Claude -ExtraArgs "--continue", "Keep going with the same task. $Suffix"
         }
 
         Write-Host $output
@@ -64,7 +74,7 @@ foreach ($task in $Tasks) {
             Write-Host "Claude exited with error code $LASTEXITCODE" -ForegroundColor Red
             Add-Content $LogFile "## Failed: $name (iteration $iteration, exit code $LASTEXITCODE)`n"
             $status = "failed"
-            Commit-Changes "$name - partial (failed at iteration $iteration)"
+            Discard-Changes
             break
         }
 
@@ -74,18 +84,21 @@ foreach ($task in $Tasks) {
             $completed += $name
             Add-Content $LogFile "## Completed: $name in $iteration iteration(s) (${elapsed}m)`n"
             $status = "converged"
-            Commit-Changes "$name - automated iteration"
             break
         }
 
+        # Commit after each successful iteration to preserve progress
+        Commit-Changes "$name - iteration $iteration"
         Add-Content $LogFile "### $name - iteration $iteration`n"
     }
 
-    if ($status -eq "abandoned") {
+    if ($status -eq "max iterations") {
         Write-Host "Hit max iterations ($MaxIterations) for: $name" -ForegroundColor Yellow
-        Add-Content $LogFile "## Abandoned: $name after $MaxIterations iterations`n"
-        Commit-Changes "$name - partial (hit max iterations)"
+        Add-Content $LogFile "## Max iterations: $name after $MaxIterations iterations`n"
     }
+
+    # Squash per-iteration commits into one per task
+    Squash-TaskCommits $baseSha "$name - automated iteration"
 
     $results += @{ Name = $name; Status = $status }
 }
@@ -94,5 +107,5 @@ $totalElapsed = [math]::Round(((Get-Date) - $scriptStart).TotalMinutes, 1)
 Write-Host "`n=== Summary (${totalElapsed}m) ===" -ForegroundColor Magenta
 foreach ($r in $results) {
     $color = switch ($r.Status) { "converged" { "Green" } "failed" { "Red" } default { "Yellow" } }
-    Write-Host "  $($r.Status.PadRight(10)) $($r.Name)" -ForegroundColor $color
+    Write-Host "  $($r.Status.PadRight(15)) $($r.Name)" -ForegroundColor $color
 }
