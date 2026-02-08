@@ -4,8 +4,11 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <random>
 
 #include "chess_board.h"
+#include "generated_config.h"
+#include "nnue_model.h"
 #include "self_play.h"
 
 namespace {
@@ -188,4 +191,70 @@ TEST(SelfPlay, SoftmaxProducesDiverseGames) {
 
     std::remove(file1.c_str());
     std::remove(file2.c_str());
+}
+
+namespace {
+
+std::string create_compare_weights(const std::string& path, unsigned int seed) {
+    constexpr int INPUT = config::nnue::INPUT_SIZE;
+    constexpr int H1 = config::nnue::HIDDEN1_SIZE;
+    constexpr int H2 = config::nnue::HIDDEN2_SIZE;
+    constexpr int OUTPUT = config::nnue::OUTPUT_SIZE;
+
+    std::mt19937 rng(seed);
+    std::normal_distribution<float> dist(0.0f, 0.01f);
+
+    std::ofstream f(path, std::ios::binary);
+    f.write("NNUE", 4);
+    uint32_t header[] = {1, INPUT, H1, H2, OUTPUT};
+    f.write(reinterpret_cast<char*>(header), sizeof(header));
+
+    auto write_random = [&](size_t count) {
+        for (size_t i = 0; i < count; ++i) {
+            float val = dist(rng);
+            f.write(reinterpret_cast<char*>(&val), sizeof(float));
+        }
+    };
+
+    write_random(INPUT * H1);
+    write_random(H1);
+    write_random(H1 * H2);
+    write_random(H2);
+    write_random(H2 * OUTPUT);
+    write_random(OUTPUT);
+
+    return path;
+}
+
+}  // namespace
+
+TEST(ModelComparator, ComparisonProducesResults) {
+    std::string old_weights = create_compare_weights("test_cmp_old.bin", 42);
+    std::string new_weights = create_compare_weights("test_cmp_new.bin", 123);
+    std::string output_file = "test_cmp_output.bin";
+    std::remove(output_file.c_str());
+
+    ModelComparator::Config config;
+    config.num_games = 2;
+    config.num_threads = 1;
+    config.output_file = output_file;
+    config.max_game_ply = 50;
+    config.search_time_ms = 50;
+
+    ModelComparator comparator(config, old_weights, new_weights);
+    auto result = comparator.run();
+
+    EXPECT_EQ(result.new_wins + result.old_wins + result.draws, 2);
+    EXPECT_GT(result.total_positions, 0);
+
+    // Verify binary output is valid
+    std::ifstream in(output_file, std::ios::binary | std::ios::ate);
+    EXPECT_TRUE(in.is_open());
+    auto file_size = in.tellg();
+    EXPECT_GT(file_size, 0);
+    EXPECT_EQ(file_size % sizeof(TrainingPosition), 0);
+
+    std::remove(old_weights.c_str());
+    std::remove(new_weights.c_str());
+    std::remove(output_file.c_str());
 }

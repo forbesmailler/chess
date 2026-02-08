@@ -621,6 +621,10 @@ int main(int argc, char* argv[]) {
         std::cout << "       " << argv[0]
                   << " --selfplay [num_games] [search_depth] [output_file] [num_threads]"
                   << std::endl;
+        std::cout << "       " << argv[0]
+                  << " --compare <old_weights|handcrafted> <new_weights>"
+                     " [num_games] [output_file] [threads]"
+                  << std::endl;
         std::cout << std::endl;
         std::cout << "Set LICHESS_TOKEN environment variable before running." << std::endl;
         std::cout << std::endl;
@@ -650,6 +654,47 @@ int main(int argc, char* argv[]) {
         generator.generate();
         std::cout << "Total positions: " << generator.get_total_positions() << std::endl;
         return 0;
+    }
+
+    // Check for --compare mode
+    if (first_arg == "--compare") {
+        if (argc < 4) {
+            std::cerr << "Usage: " << argv[0]
+                      << " --compare <old_weights|handcrafted> <new_weights>"
+                         " [num_games] [output_file] [threads]"
+                      << std::endl;
+            return 1;
+        }
+
+        ModelComparator::Config config;
+        std::string old_weights = argv[2];
+        std::string new_weights = argv[3];
+        if (argc > 4) config.num_games = std::stoi(argv[4]);
+        if (argc > 5) config.output_file = argv[5];
+        if (argc > 6) config.num_threads = std::stoi(argv[6]);
+
+        // "handcrafted" means use handcrafted eval (empty string signals this)
+        if (old_weights == "handcrafted") old_weights = "";
+
+        std::cout << "=== Model Comparison ===" << std::endl;
+        std::cout << "Old: " << (old_weights.empty() ? "handcrafted" : old_weights) << std::endl;
+        std::cout << "New: " << new_weights << std::endl;
+        std::cout << "Games: " << config.num_games << std::endl;
+        std::cout << "Output: " << (config.output_file.empty() ? "(none)" : config.output_file)
+                  << std::endl;
+        std::cout << "Threads: " << config.num_threads << std::endl;
+
+        ModelComparator comparator(config, old_weights, new_weights);
+        auto result = comparator.run();
+
+        std::cout << "Total positions generated: " << result.total_positions << std::endl;
+        if (result.improved()) {
+            std::cout << "Result: NEW MODEL IMPROVED" << std::endl;
+            return 0;
+        } else {
+            std::cout << "Result: No improvement" << std::endl;
+            return 1;
+        }
     }
 
     const char* token_env = std::getenv("LICHESS_TOKEN");

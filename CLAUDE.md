@@ -30,7 +30,7 @@ invoke gen-config         # regenerate engine/generated_config.h from YAML
 invoke format             # format all (ruff + clang-format)
 invoke test               # all tests (Python + C++)
 invoke prepare            # gen-config → format → test
-invoke train              # prepare → self-play → train NNUE → export weights
+invoke train              # prepare → self-play → train NNUE → export → compare models
 invoke deploy             # pull → test → build → install → restart service on VPS
 ```
 
@@ -45,11 +45,11 @@ invoke deploy             # pull → test → build → install → restart serv
 | `mcts_engine.h/cpp` | Monte Carlo Tree Search with UCT selection |
 | `handcrafted_eval.h/cpp` | Tapered eval: material, PSTs, pawn structure, mobility, king safety |
 | `nnue_model.h/cpp` | NNUE inference: binary weights, 773→256→32→3 with ClippedReLU |
-| `self_play.h/cpp` | Multi-threaded self-play data generator (binary output) |
+| `self_play.h/cpp` | Multi-threaded self-play data generator and model comparator (binary output) |
 | `chess_board.h/cpp` | Board wrapper utilities |
 | `utils.h/cpp` | Shared helper functions |
 | `lichess_client.h/cpp` | HTTP streaming to Lichess API via libcurl |
-| `main.cpp` | `LichessBot` game loop; `--selfplay` mode |
+| `main.cpp` | `LichessBot` game loop; `--selfplay` and `--compare` modes |
 | `generated_config.h` | Auto-generated constants from YAML (run `invoke gen-config`) |
 
 ### Config (`config/`)
@@ -58,9 +58,11 @@ invoke deploy             # pull → test → build → install → restart serv
 |------|---------|
 | `engine.yaml` | Search, MCTS, NNUE architecture, bot/curl |
 | `eval.yaml` | Material, PSTs, pawn/rook/bishop/king bonuses |
-| `training.yaml` | Self-play defaults, training hyperparams, invoke task defaults |
+| `training.yaml` | Self-play defaults, training hyperparams, invoke task defaults, compare |
 | `deploy.yaml` | File paths, VPS paths, service config |
 | `load_config.py` | Python YAML loader with caching |
+
+**Config change rule**: When adding or modifying values in `config/*.yaml` that the C++ engine needs at compile time, update `scripts/gen_config_header.py` to emit them into `engine/generated_config.h`. Values only used by Python (`tasks.py`, training scripts) do not need header generation.
 
 ### Python Components
 

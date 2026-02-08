@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <fstream>
 #include <mutex>
@@ -56,10 +57,48 @@ class SelfPlayGenerator {
     std::mutex file_mutex;
     std::atomic<int> games_completed{0};
     std::atomic<int> total_positions{0};
+    std::chrono::steady_clock::time_point start_time;
 
     void play_games(int num_games, const std::string& output_file, int thread_id);
 
     // Piece encoding: 0=empty, 1=wP, 2=wN, 3=wB, 4=wR, 5=wQ, 6=wK,
     //                 7=bP, 8=bN, 9=bB, 10=bR, 11=bQ, 12=bK
     static uint8_t encode_piece(const chess::Piece& piece);
+};
+
+class ModelComparator {
+   public:
+    struct Config {
+        int num_games = 1000;
+        int num_threads = 16;
+        std::string output_file;
+        int max_game_ply = 400;
+        int search_time_ms = 200;
+        int resign_threshold = 5000;
+        int resign_count = 3;
+    };
+
+    struct Result {
+        int new_wins = 0, old_wins = 0, draws = 0, total_positions = 0;
+        bool improved() const { return new_wins > old_wins; }
+    };
+
+    ModelComparator(const Config& config, const std::string& old_weights,
+                    const std::string& new_weights);
+
+    Result run();
+
+   private:
+    Config config;
+    std::string old_weights_path;
+    std::string new_weights_path;
+    std::mutex file_mutex;
+    std::atomic<int> games_completed{0};
+    std::atomic<int> new_wins{0};
+    std::atomic<int> old_wins{0};
+    std::atomic<int> draws{0};
+    std::atomic<int> total_positions{0};
+    std::chrono::steady_clock::time_point start_time;
+
+    void play_games(int num_games, int thread_id);
 };

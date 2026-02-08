@@ -1,4 +1,6 @@
+import shutil
 from glob import glob
+from pathlib import Path
 
 from invoke import task
 
@@ -14,6 +16,7 @@ BOT_EXE = _dep["paths"]["bot_exe"]
 _sp = _trn["self_play"]
 _train_cfg = _trn["training"]
 _inv = _trn["invoke"]
+_cmp = _trn.get("compare", {})
 
 
 @task
@@ -65,6 +68,7 @@ def prepare(c):
         "epochs": f"Training epochs (default: {_train_cfg['epochs']})",
         "batch_size": f"Training batch size (default: {_train_cfg['batch_size']})",
         "eval_weight": f"Search eval vs game result blend (default: {_train_cfg['eval_weight']})",
+        "compare_games": f"Comparison games (default: {_cmp.get('num_games', 1000)})",
     }
 )
 def train(
@@ -77,26 +81,52 @@ def train(
     epochs=_train_cfg["epochs"],
     batch_size=_train_cfg["batch_size"],
     eval_weight=_train_cfg["eval_weight"],
+    compare_games=_cmp.get("num_games", 1000),
 ):
-    """Prepare, generate self-play data, train NNUE, and export weights."""
-    print("=== Step 1/4: Prepare ===")
+    """Prepare, self-play, train NNUE, export weights, and compare models."""
+    weights_path = Path(weights)
+    old_exists = weights_path.exists()
+    backup_path = weights_path.with_suffix(".bin.bak")
+
+    print("=== Step 1/5: Prepare ===")
     prepare(c)
 
-    print(f"=== Step 2/4: Self-play ({games} games, {threads} threads) ===")
+    print(f"=== Step 2/5: Self-play ({games} games, {threads} threads) ===")
     c.run(f"{BOT_EXE} --selfplay {games} {depth} {data} {threads}")
 
-    print(f"=== Step 3/4: Train NNUE ({epochs} epochs) ===")
+    print(f"=== Step 3/5: Train NNUE ({epochs} epochs) ===")
     with c.cd("engine/train"):
         c.run(
             f"python train_nnue.py --data ../../{data} --output nnue_weights.pt "
             f"--epochs {epochs} --batch-size {batch_size} --eval-weight {eval_weight}"
         )
 
-    print(f"=== Step 4/4: Export NNUE to {weights} ===")
+    print(f"=== Step 4/5: Export NNUE to {weights} ===")
+    if old_exists:
+        shutil.copy2(weights, backup_path)
+        print(f"Backed up old weights to {backup_path}")
     with c.cd("engine/train"):
         c.run(f"python export_nnue.py --model nnue_weights.pt --output ../../{weights}")
 
-    print(f"Done. NNUE weights saved to {weights}")
+    print(f"=== Step 5/5: Compare models ({compare_games} games) ===")
+    old_arg = str(backup_path) if old_exists else "handcrafted"
+    result = c.run(
+        f"{BOT_EXE} --compare {old_arg} {weights} {compare_games} {data} {threads}",
+        warn=True,
+    )
+    if result.return_code != 0:
+        if old_exists:
+            shutil.copy2(backup_path, weights)
+            backup_path.unlink()
+            print(f"No improvement — restored old weights from {backup_path}")
+        else:
+            weights_path.unlink(missing_ok=True)
+            print("No improvement over handcrafted — removed new weights")
+        return
+
+    if old_exists:
+        backup_path.unlink()
+    print(f"Done. Improved NNUE weights saved to {weights}")
 
 
 _vps = _dep["vps"]
