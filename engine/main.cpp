@@ -86,14 +86,17 @@ class LichessBot {
 
         // Create engine based on type
         if (engine_type == EngineType::MCTS) {
-            engine = std::make_unique<MCTSEngine>(max_time_ms, eval_mode, nnue_model);
+            engine =
+                std::make_unique<MCTSEngine>(max_time_ms, this->eval_mode, nnue_model);
             Utils::log_info("Using MCTS engine");
         } else {
-            engine = std::make_unique<ChessEngine>(max_time_ms, eval_mode, nnue_model);
+            engine =
+                std::make_unique<ChessEngine>(max_time_ms, this->eval_mode, nnue_model);
             Utils::log_info("Using Negamax engine");
         }
 
-        std::string eval_name = eval_mode == EvalMode::NNUE ? "NNUE" : "Handcrafted";
+        std::string eval_name =
+            this->eval_mode == EvalMode::NNUE ? "NNUE" : "Handcrafted";
         Utils::log_info("Using " + eval_name + " evaluation");
 
         if (!get_account_info_with_retry()) {

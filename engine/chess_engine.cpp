@@ -294,8 +294,9 @@ SearchResult ChessEngine::iterative_deepening_search(const ChessBoard& board,
         return {ChessBoard::Move{}, score, 0, std::chrono::milliseconds(0), 0};
     }
 
-    SearchResult best_result{
-        legal_moves[0], -std::numeric_limits<float>::infinity(), 0, {}, 0};
+    float static_eval = evaluate(board);
+    static_eval = board.turn() == ChessBoard::WHITE ? static_eval : -static_eval;
+    SearchResult best_result{legal_moves[0], static_eval, 0, {}, 0};
     std::string pos_key = get_position_key(board);
 
     for (int depth = 1; depth <= config::search::MAX_DEPTH; ++depth) {
