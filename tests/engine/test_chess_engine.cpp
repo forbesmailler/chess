@@ -2,9 +2,9 @@
 
 #include <memory>
 
-#include "../chess_board.h"
-#include "../chess_engine.h"
-#include "../mcts_engine.h"
+#include "chess_board.h"
+#include "chess_engine.h"
+#include "mcts_engine.h"
 
 class ChessEngineTest : public ::testing::Test {};
 

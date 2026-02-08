@@ -171,6 +171,8 @@ static constexpr int MAX_GAME_PLY = 400;
 static constexpr int SEARCH_TIME_MS = 200;
 static constexpr int RESIGN_THRESHOLD = 5000;
 static constexpr int RESIGN_COUNT = 3;
+static constexpr int SOFTMAX_PLIES = 10;
+static constexpr float SOFTMAX_TEMPERATURE = 200.0f;
 }  // namespace self_play
 
 }  // namespace config

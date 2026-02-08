@@ -5,9 +5,9 @@
 #include <fstream>
 #include <random>
 
-#include "../chess_board.h"
-#include "../generated_config.h"
-#include "../nnue_model.h"
+#include "chess_board.h"
+#include "generated_config.h"
+#include "nnue_model.h"
 
 namespace {
 

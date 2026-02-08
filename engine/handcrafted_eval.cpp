@@ -222,5 +222,8 @@ float handcrafted_evaluate(const ChessBoard& board) {
 
     float eval =
         static_cast<float>(mg_score * mg_phase + eg_score * eg_phase) / config::eval::TOTAL_PHASE;
-    return eval;
+
+    // Scale to NNUE-compatible range: [-MATE_VALUE, +MATE_VALUE]
+    float scaled = (2.0f / (1.0f + std::exp(-eval / 400.0f)) - 1.0f) * config::MATE_VALUE;
+    return scaled;
 }

@@ -198,12 +198,14 @@ endif()
 # Unit tests
 if(BUILD_TESTS)
     add_executable(chess_tests
-        tests/test_chess_board.cpp
-        tests/test_chess_engine.cpp
-        tests/test_handcrafted_eval.cpp
-        tests/test_self_play.cpp
-        tests/test_nnue_model.cpp
+        ../tests/engine/test_chess_board.cpp
+        ../tests/engine/test_chess_engine.cpp
+        ../tests/engine/test_handcrafted_eval.cpp
+        ../tests/engine/test_self_play.cpp
+        ../tests/engine/test_nnue_model.cpp
     )
+
+    target_include_directories(chess_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
     target_link_libraries(chess_tests
         chess_engine_lib

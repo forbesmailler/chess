@@ -28,7 +28,7 @@ cd build
 ctest -C Release --output-on-failure
 ```
 
-Test files in `tests/`:
+Test files in `../tests/engine/`:
 - `test_chess_board.cpp` — board operations, FEN parsing, move generation
 - `test_chess_engine.cpp` — negamax search, time management
 - `test_handcrafted_eval.cpp` — evaluation terms

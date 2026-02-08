@@ -1,9 +1,13 @@
 #include "self_play.h"
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <numeric>
+#include <random>
 #include <thread>
 
 #include "chess_engine.h"
@@ -78,7 +82,7 @@ void SelfPlayGenerator::generate() {
     for (int t = 0; t < threads; ++t) {
         int n = games_per_thread + (t < remainder ? 1 : 0);
         if (n == 0) continue;
-        thread_pool.emplace_back(&SelfPlayGenerator::play_games, this, n, config.output_file);
+        thread_pool.emplace_back(&SelfPlayGenerator::play_games, this, n, config.output_file, t);
     }
 
     for (auto& t : thread_pool) t.join();
@@ -89,51 +93,77 @@ void SelfPlayGenerator::generate() {
               << total_positions.load() << " positions in " << elapsed.count() << "s" << std::endl;
 }
 
-void SelfPlayGenerator::play_games(int num_games, const std::string& output_file) {
-    // Each thread opens the shared file with mutex protection
+void SelfPlayGenerator::play_games(int num_games, const std::string& output_file, int thread_id) {
+    std::mt19937 rng(std::random_device{}() + thread_id);
+
     for (int g = 0; g < num_games; ++g) {
-        // Collect positions in memory first, then write under lock
         std::vector<TrainingPosition> positions;
         positions.reserve(config.max_game_ply);
 
-        // Create a local engine for this game (handcrafted eval)
         auto engine = std::make_unique<ChessEngine>(config.search_time_ms);
 
         ChessBoard board;
         uint16_t ply = 0;
         int consecutive_resign = 0;
-
-        // Game result from white's perspective: 0=black wins, 1=draw, 2=white wins
-        int white_result = 1;  // assume draw until determined
+        int white_result = 1;
 
         while (ply < config.max_game_ply) {
             if (board.is_game_over()) {
                 if (board.is_checkmate()) {
-                    // Side to move is checkmated
                     white_result = board.turn() == ChessBoard::WHITE ? 0 : 2;
                 } else {
-                    white_result = 1;  // draw
+                    white_result = 1;
                 }
                 break;
             }
 
-            // Get evaluation via search
-            TimeControl tc{60000, 0, 0};
-            engine->set_max_time(config.search_time_ms);
-            auto result = engine->get_best_move(board, tc);
+            float stm_eval;
+            ChessBoard::Move chosen_move;
 
-            // Eval from side-to-move's perspective
-            float stm_eval = board.turn() == ChessBoard::WHITE ? result.score : -result.score;
+            if (ply < config.softmax_plies) {
+                // Softmax move selection for opening diversity
+                auto legal_moves = board.get_legal_moves();
+                if (legal_moves.empty()) break;
 
-            // Record position
-            // Game result will be filled in after game ends
+                std::vector<float> scores(legal_moves.size());
+                for (size_t i = 0; i < legal_moves.size(); ++i) {
+                    ChessBoard copy = board;
+                    copy.make_move(legal_moves[i]);
+                    // Negate: evaluate returns from white's perspective,
+                    // we want score for the side that just moved
+                    float eval = engine->evaluate(copy);
+                    scores[i] = board.turn() == ChessBoard::WHITE ? eval : -eval;
+                }
+
+                // Softmax with temperature
+                float max_score = *std::max_element(scores.begin(), scores.end());
+                std::vector<float> probs(scores.size());
+                float sum = 0.0f;
+                for (size_t i = 0; i < scores.size(); ++i) {
+                    probs[i] = std::exp((scores[i] - max_score) / config.softmax_temperature);
+                    sum += probs[i];
+                }
+                for (auto& p : probs) p /= sum;
+
+                std::discrete_distribution<int> dist(probs.begin(), probs.end());
+                int idx = dist(rng);
+                chosen_move = legal_moves[idx];
+                stm_eval = scores[idx];
+            } else {
+                // Normal best-move search
+                TimeControl tc{60000, 0, 0};
+                engine->set_max_time(config.search_time_ms);
+                auto result = engine->get_best_move(board, tc);
+                stm_eval = board.turn() == ChessBoard::WHITE ? result.score : -result.score;
+                chosen_move = result.best_move;
+            }
+
             positions.push_back(encode_position(board, stm_eval, 1, ply));
 
             // Resign adjudication
             if (std::abs(stm_eval) > config.resign_threshold) {
                 consecutive_resign++;
                 if (consecutive_resign >= config.resign_count) {
-                    // The losing side is the current side to move if eval is very negative
                     if (stm_eval < 0) {
                         white_result = board.turn() == ChessBoard::WHITE ? 0 : 2;
                     } else {
@@ -145,25 +175,23 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
                 consecutive_resign = 0;
             }
 
-            // Make the best move
-            if (result.best_move.uci().empty()) break;
-            board.make_move(result.best_move);
+            if (chosen_move.uci().empty()) break;
+            board.make_move(chosen_move);
             ply++;
         }
 
-        // Fill in game results from each position's STM perspective
+        // Fill in game results
         for (auto& pos : positions) {
             bool white_stm = pos.side_to_move == 0;
-            if (white_result == 2) {  // white wins
+            if (white_result == 2) {
                 pos.game_result = white_stm ? 2 : 0;
-            } else if (white_result == 0) {  // black wins
+            } else if (white_result == 0) {
                 pos.game_result = white_stm ? 0 : 2;
             } else {
-                pos.game_result = 1;  // draw
+                pos.game_result = 1;
             }
         }
 
-        // Write all positions under lock
         {
             std::lock_guard<std::mutex> lock(file_mutex);
             std::ofstream out(output_file, std::ios::binary | std::ios::app);

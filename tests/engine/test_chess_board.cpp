@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "../chess_board.h"
+#include "chess_board.h"
 
 TEST(ChessBoardTest, DefaultConstructor) {
     ChessBoard board;

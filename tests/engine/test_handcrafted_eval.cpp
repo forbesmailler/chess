@@ -2,21 +2,21 @@
 
 #include <cmath>
 
-#include "../chess_board.h"
-#include "../generated_config.h"
-#include "../handcrafted_eval.h"
+#include "chess_board.h"
+#include "generated_config.h"
+#include "handcrafted_eval.h"
 
 TEST(HandcraftedEval, StartingPositionNearZero) {
     ChessBoard board;
     float eval = handcrafted_evaluate(board);
-    EXPECT_NEAR(eval, 0.0f, 50.0f);  // Within 50cp of 0
+    EXPECT_NEAR(eval, 0.0f, 500.0f);  // Sigmoid-scaled, near 0
 }
 
 TEST(HandcraftedEval, MaterialImbalanceDetected) {
     // Position with white missing a knight (black has extra knight)
     ChessBoard board("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/R1BQKBNR w KQkq - 0 1");
     float eval = handcrafted_evaluate(board);
-    EXPECT_LT(eval, -200.0f);  // White should be clearly worse
+    EXPECT_LT(eval, -2000.0f);  // Sigmoid-scaled: missing knight is large disadvantage
 }
 
 TEST(HandcraftedEval, WhiteWinningMaterial) {
@@ -28,7 +28,7 @@ TEST(HandcraftedEval, WhiteWinningMaterial) {
     ChessBoard board2("rnb1kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     float eval2 = handcrafted_evaluate(board2);
 
-    EXPECT_GT(eval2 - base_eval, 700.0f);  // Queen worth ~900cp
+    EXPECT_GT(eval2 - base_eval, 3000.0f);  // Sigmoid-scaled: queen advantage is large
 }
 
 TEST(HandcraftedEval, CheckmateWhiteLoses) {
@@ -84,7 +84,7 @@ TEST(HandcraftedEval, SymmetricPositionNearZero) {
     // A symmetric position should evaluate near zero
     ChessBoard board("r1bqkb1r/pppppppp/2n2n2/8/8/2N2N2/PPPPPPPP/R1BQKB1R w KQkq - 4 3");
     float eval = handcrafted_evaluate(board);
-    EXPECT_NEAR(eval, 0.0f, 30.0f);
+    EXPECT_NEAR(eval, 0.0f, 300.0f);  // Sigmoid-scaled, near 0
 }
 
 TEST(HandcraftedEval, EvalIsFinite) {

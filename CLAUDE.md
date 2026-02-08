@@ -26,15 +26,12 @@ ctest --output-on-failure
 ### Invoke Tasks
 
 ```bash
-invoke build-cpp          # build engine
-invoke test               # all tests (Python + C++)
-invoke test-cpp           # C++ tests only
-invoke test-py            # Python tests only
-invoke format             # format all (ruff + clang-format)
-invoke train              # self-play → train NNUE → export weights
-invoke run                # run bot with NNUE (reads LICHESS_TOKEN env var)
-invoke deploy             # deploy to Linux VPS (reads LICHESS_TOKEN env var)
 invoke gen-config         # regenerate engine/generated_config.h from YAML
+invoke format             # format all (ruff + clang-format)
+invoke test               # all tests (Python + C++)
+invoke prepare            # gen-config → format → test
+invoke train              # prepare → self-play → train NNUE → export weights
+invoke deploy             # pull → test → build → install → restart service on VPS
 ```
 
 ## Architecture
@@ -75,7 +72,7 @@ invoke gen-config         # regenerate engine/generated_config.h from YAML
 
 ### Tests
 
-- C++: `engine/tests/test_*.cpp` (GTest, run via ctest)
+- C++: `tests/engine/test_*.cpp` (GTest, run via ctest)
 
 ## Evaluation Modes
 

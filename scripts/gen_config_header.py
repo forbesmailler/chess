@@ -298,6 +298,10 @@ def generate() -> str:
         f"    static constexpr int RESIGN_THRESHOLD = {sp['resign_threshold']};"
     )
     lines.append(f"    static constexpr int RESIGN_COUNT = {sp['resign_count']};")
+    lines.append(f"    static constexpr int SOFTMAX_PLIES = {sp['softmax_plies']};")
+    lines.append(
+        f"    static constexpr float SOFTMAX_TEMPERATURE = {sp['softmax_temperature']:.1f}f;"
+    )
     lines.append("}  // namespace self_play")
     lines.append("")
 

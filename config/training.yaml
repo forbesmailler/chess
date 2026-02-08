@@ -7,6 +7,8 @@ self_play:
   search_time_ms: 200
   resign_threshold: 5000
   resign_count: 3
+  softmax_plies: 10
+  softmax_temperature: 200.0
 
 training:
   epochs: 100
@@ -20,17 +22,7 @@ training:
     patience: 3
     factor: 0.5
 
-invoke_defaults:
-  train:
-    games: 1000
-    depth: 6
-    threads: 16
-    data: "training_data.bin"
-    weights: "nnue.bin"
-    epochs: 100
-    batch_size: 4096
-    eval_weight: 0.75
-  run:
-    time: 1000
-    engine: "negamax"
-    weights: "nnue.bin"
+invoke:
+  train_games: 1000
+  train_threads: 16
+  weights: "nnue.bin"

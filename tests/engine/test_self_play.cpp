@@ -5,8 +5,8 @@
 #include <cstring>
 #include <fstream>
 
-#include "../chess_board.h"
-#include "../self_play.h"
+#include "chess_board.h"
+#include "self_play.h"
 
 namespace {
 
@@ -18,7 +18,7 @@ SelfPlayGenerator::Config make_test_config(const std::string& output_file, int n
     config.output_file = output_file;
     config.search_time_ms = 50;
     config.max_game_ply = 50;
-    config.resign_threshold = 500;
+    config.resign_threshold = 5000;
     return config;
 }
 
@@ -136,4 +136,56 @@ TEST(SelfPlay, MultiThreadedNoCorruption) {
     EXPECT_EQ(count, generator.get_total_positions());
 
     std::remove(tmp_file.c_str());
+}
+
+TEST(SelfPlay, SoftmaxProducesDiverseGames) {
+    // Run two games with softmax enabled — positions should differ
+    std::string file1 = "test_diversity_1.bin";
+    std::string file2 = "test_diversity_2.bin";
+    std::remove(file1.c_str());
+    std::remove(file2.c_str());
+
+    auto config1 = make_test_config(file1);
+    config1.softmax_plies = 10;
+    config1.softmax_temperature = 200.0f;
+    SelfPlayGenerator gen1(config1);
+    gen1.generate();
+
+    auto config2 = make_test_config(file2);
+    config2.softmax_plies = 10;
+    config2.softmax_temperature = 200.0f;
+    SelfPlayGenerator gen2(config2);
+    gen2.generate();
+
+    // Read positions from both games and compare piece placements at ply 5+
+    auto read_positions = [](const std::string& file) {
+        std::vector<TrainingPosition> positions;
+        std::ifstream in(file, std::ios::binary);
+        TrainingPosition pos;
+        while (SelfPlayGenerator::read_position(in, pos)) {
+            positions.push_back(pos);
+        }
+        return positions;
+    };
+
+    auto pos1 = read_positions(file1);
+    auto pos2 = read_positions(file2);
+
+    // Both games should have produced positions
+    ASSERT_GT(pos1.size(), 5u);
+    ASSERT_GT(pos2.size(), 5u);
+
+    // At least one position after ply 3 should differ (with overwhelming probability)
+    size_t compare_count = std::min(pos1.size(), pos2.size());
+    bool found_difference = false;
+    for (size_t i = 3; i < compare_count; ++i) {
+        if (std::memcmp(pos1[i].piece_placement, pos2[i].piece_placement, 32) != 0) {
+            found_difference = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(found_difference) << "Two softmax games produced identical positions";
+
+    std::remove(file1.c_str());
+    std::remove(file2.c_str());
 }

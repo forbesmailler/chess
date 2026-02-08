@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <fstream>
 #include <mutex>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -35,6 +36,8 @@ class SelfPlayGenerator {
         int search_time_ms = config::self_play::SEARCH_TIME_MS;
         int resign_threshold = config::self_play::RESIGN_THRESHOLD;
         int resign_count = config::self_play::RESIGN_COUNT;
+        int softmax_plies = config::self_play::SOFTMAX_PLIES;
+        float softmax_temperature = config::self_play::SOFTMAX_TEMPERATURE;
     };
 
     explicit SelfPlayGenerator(const Config& config);
@@ -54,8 +57,7 @@ class SelfPlayGenerator {
     std::atomic<int> games_completed{0};
     std::atomic<int> total_positions{0};
 
-    void play_games(int num_games, const std::string& output_file);
-    void play_single_game(std::ofstream& out);
+    void play_games(int num_games, const std::string& output_file, int thread_id);
 
     // Piece encoding: 0=empty, 1=wP, 2=wN, 3=wB, 4=wR, 5=wQ, 6=wK,
     //                 7=bP, 8=bN, 9=bB, 10=bR, 11=bQ, 12=bK
