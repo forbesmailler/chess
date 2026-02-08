@@ -58,6 +58,7 @@ class ChessBoard {
     void load_fen(const std::string& fen);
     std::string to_fen() const;
     std::vector<Move> get_legal_moves() const;
+    std::vector<Move> get_capture_moves() const;
     bool make_move(const Move& move);
     void unmake_move(const Move& move);
     bool is_checkmate() const;

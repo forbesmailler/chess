@@ -26,6 +26,21 @@ std::vector<ChessBoard::Move> ChessBoard::get_legal_moves() const {
     return result;
 }
 
+std::vector<ChessBoard::Move> ChessBoard::get_capture_moves() const {
+    chess::Movelist moves;
+    chess::movegen::legalmoves<chess::movegen::MoveGenType::CAPTURE>(moves, board);
+
+    std::vector<Move> result;
+    result.reserve(moves.size());
+    for (const auto& move : moves) {
+        Move m;
+        m.internal_move = move;
+        result.push_back(m);
+    }
+
+    return result;
+}
+
 bool ChessBoard::make_move(const Move& move) {
     chess::Move chess_move = move.internal_move;
     if (chess_move == chess::Move::NO_MOVE) {

@@ -127,7 +127,7 @@ float NNUEModel::predict(const ChessBoard& board) const {
 
     extract_features(board, active);
 
-    // Layer 1: sparse accumulation (input features are binary)
+    // Layer 1: sparse accumulation (input features are binary) — SSE vectorized
     std::memcpy(h1, b1.data(), HIDDEN1_SIZE * sizeof(float));
     for (size_t k = 0; k < active.size(); ++k) {
         const float* row = w1.data() + active[k] * HIDDEN1_SIZE;
@@ -136,16 +136,35 @@ float NNUEModel::predict(const ChessBoard& board) const {
                 reinterpret_cast<const char*>(w1.data() + active[k + 1] * HIDDEN1_SIZE),
                 _MM_HINT_T0);
         }
-        for (int j = 0; j < HIDDEN1_SIZE; ++j) h1[j] += row[j];
+        for (int j = 0; j < HIDDEN1_SIZE; j += 4) {
+            __m128 h = _mm_loadu_ps(&h1[j]);
+            __m128 r = _mm_loadu_ps(&row[j]);
+            _mm_storeu_ps(&h1[j], _mm_add_ps(h, r));
+        }
     }
-    for (int j = 0; j < HIDDEN1_SIZE; ++j)
-        h1[j] = std::max(0.0f, std::min(1.0f, h1[j]));
+    {
+        __m128 zero = _mm_setzero_ps();
+        __m128 one = _mm_set1_ps(1.0f);
+        for (int j = 0; j < HIDDEN1_SIZE; j += 4) {
+            __m128 h = _mm_loadu_ps(&h1[j]);
+            _mm_storeu_ps(&h1[j], _mm_max_ps(zero, _mm_min_ps(one, h)));
+        }
+    }
 
-    // Layer 2: dense, w2 transposed to (HIDDEN2_SIZE x HIDDEN1_SIZE)
+    // Layer 2: dense, w2 transposed to (HIDDEN2_SIZE x HIDDEN1_SIZE) — SSE vectorized
     for (int j = 0; j < HIDDEN2_SIZE; ++j) {
-        float sum = b2[j];
+        __m128 sum_vec = _mm_setzero_ps();
         const float* row = w2.data() + j * HIDDEN1_SIZE;
-        for (int i = 0; i < HIDDEN1_SIZE; ++i) sum += h1[i] * row[i];
+        for (int i = 0; i < HIDDEN1_SIZE; i += 4) {
+            __m128 h = _mm_loadu_ps(&h1[i]);
+            __m128 r = _mm_loadu_ps(&row[i]);
+            sum_vec = _mm_add_ps(sum_vec, _mm_mul_ps(h, r));
+        }
+        __m128 hi = _mm_movehl_ps(sum_vec, sum_vec);
+        sum_vec = _mm_add_ps(sum_vec, hi);
+        __m128 shuf = _mm_shuffle_ps(sum_vec, sum_vec, 1);
+        sum_vec = _mm_add_ss(sum_vec, shuf);
+        float sum = _mm_cvtss_f32(sum_vec) + b2[j];
         h2[j] = std::max(0.0f, std::min(1.0f, sum));
     }
 

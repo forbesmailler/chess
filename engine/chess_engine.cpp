@@ -45,9 +45,16 @@ void ChessEngine::order_moves(const ChessBoard& board,
     int scores[256];
     int n = static_cast<int>(moves.size());
     score_moves(board, moves, scores, tt_move, ply, prev_move);
-    for (int i = 0; i < n - 1; ++i) {
-        pick_move(moves, scores, i, n);
-    }
+
+    // Index-based O(n log n) sort
+    int idx[256];
+    for (int i = 0; i < n; ++i) idx[i] = i;
+    std::sort(idx, idx + n, [&scores](int a, int b) { return scores[a] > scores[b]; });
+
+    thread_local std::vector<ChessBoard::Move> temp;
+    temp.resize(n);
+    for (int i = 0; i < n; ++i) temp[i] = std::move(moves[idx[i]]);
+    for (int i = 0; i < n; ++i) moves[i] = std::move(temp[i]);
 }
 
 void ChessEngine::score_moves(const ChessBoard& board,
@@ -296,7 +303,10 @@ float ChessEngine::negamax(const ChessBoard& board, int depth, int ply, float al
 
     {
         auto& tt_slot = transposition_table[pos_key & TT_MASK];
-        if (tt_slot.key == pos_key || depth >= tt_slot.depth) {
+        int new_value = depth * 4 + (node_type == TranspositionEntry::EXACT ? 2 : 0);
+        int old_value =
+            tt_slot.depth * 4 + (tt_slot.type == TranspositionEntry::EXACT ? 2 : 0);
+        if (tt_slot.key == pos_key || new_value >= old_value) {
             tt_slot = {pos_key, best_score, depth, node_type, best_move.internal_move};
         }
     }
@@ -319,20 +329,12 @@ float ChessEngine::quiescence_search(const ChessBoard& board, float alpha, float
         if (stand_pat > alpha) alpha = stand_pat;
     }
 
-    auto legal_moves = board.get_legal_moves();
-
-    if (in_check && legal_moves.empty()) return -MATE_VALUE;
-
-    // When in check, all moves must be searched; otherwise only tactical moves
     std::vector<ChessBoard::Move> tactical_moves;
     if (in_check) {
-        tactical_moves = std::move(legal_moves);
+        tactical_moves = board.get_legal_moves();
+        if (tactical_moves.empty()) return -MATE_VALUE;
     } else {
-        for (const auto& move : legal_moves) {
-            if (board.is_capture_move(move) || move.is_promotion()) {
-                tactical_moves.push_back(move);
-            }
-        }
+        tactical_moves = board.get_capture_moves();
     }
 
     if (!tactical_moves.empty()) {
@@ -420,62 +422,13 @@ SearchResult ChessEngine::iterative_deepening_search(const ChessBoard& board,
             beta = std::numeric_limits<float>::infinity();
         }
 
-        ChessBoard::Move current_best_move = legal_moves[0];
-        float current_best_score = -std::numeric_limits<float>::infinity();
-
         ChessBoard temp_board = board;
         bool completed_depth = true;
-        int move_count = 0;
 
-        for (const auto& move : legal_moves) {
-            if (should_stop.load()) {
-                completed_depth = false;
-                break;
-            }
-
-            if (temp_board.make_move(move)) {
-                move_count++;
-
-                float score;
-                if (move_count == 1) {
-                    score = -negamax(temp_board, depth - 1, 1, -beta, -alpha, true,
-                                     move.internal_move);
-                } else {
-                    score = -negamax(temp_board, depth - 1, 1, -alpha - 1, -alpha,
-                                     false, move.internal_move);
-                    if (score > alpha && score < beta) {
-                        score = -negamax(temp_board, depth - 1, 1, -beta, -alpha, true,
-                                         move.internal_move);
-                    }
-                }
-                temp_board.unmake_move(move);
-
-                if (score == -SEARCH_INTERRUPTED || should_stop.load()) {
-                    completed_depth = false;
-                    break;
-                }
-
-                if (score > current_best_score) {
-                    current_best_score = score;
-                    current_best_move = move;
-                }
-
-                alpha = std::max(alpha, score);
-                if (alpha >= beta) break;
-            }
-        }
-
-        // Aspiration window fail: re-search with full window
-        if (completed_depth && !should_stop.load() && depth >= 3 &&
-            (current_best_score <= prev_score - ASPIRATION_DELTA ||
-             current_best_score >= prev_score + ASPIRATION_DELTA)) {
-            alpha = -std::numeric_limits<float>::infinity();
-            beta = std::numeric_limits<float>::infinity();
-            current_best_score = -std::numeric_limits<float>::infinity();
-            current_best_move = legal_moves[0];
-            move_count = 0;
-
-            order_moves(board, legal_moves, tt_move, 0);
+        for (int attempt = 0;; ++attempt) {
+            ChessBoard::Move current_best_move = legal_moves[0];
+            float current_best_score = -std::numeric_limits<float>::infinity();
+            int move_count = 0;
 
             for (const auto& move : legal_moves) {
                 if (should_stop.load()) {
@@ -514,9 +467,20 @@ SearchResult ChessEngine::iterative_deepening_search(const ChessBoard& board,
                     if (alpha >= beta) break;
                 }
             }
-        }
 
-        if (completed_depth && !should_stop.load()) {
+            if (!completed_depth || should_stop.load()) break;
+
+            // If aspiration window failed, widen and retry once
+            if (attempt == 0 && depth >= 3 &&
+                (current_best_score <= prev_score - ASPIRATION_DELTA ||
+                 current_best_score >= prev_score + ASPIRATION_DELTA)) {
+                alpha = -std::numeric_limits<float>::infinity();
+                beta = std::numeric_limits<float>::infinity();
+                order_moves(board, legal_moves, tt_move, 0);
+                continue;
+            }
+
+            // Successful completion — save results
             best_result = {current_best_move,
                            current_best_score,
                            depth,
@@ -527,11 +491,11 @@ SearchResult ChessEngine::iterative_deepening_search(const ChessBoard& board,
             transposition_table[pos_key & TT_MASK] = {pos_key, current_best_score,
                                                       depth, TranspositionEntry::EXACT,
                                                       current_best_move.internal_move};
-
-            if (std::abs(current_best_score) > MATE_VALUE - 500) break;
+            break;
         }
 
         if (!completed_depth) break;
+        if (std::abs(prev_score) > MATE_VALUE - 500) break;
     }
 
     best_result.time_used = std::chrono::duration_cast<std::chrono::milliseconds>(
