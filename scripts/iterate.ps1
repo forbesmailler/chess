@@ -3,11 +3,11 @@ param(
 )
 
 $Tasks = @(
-    @{ Name = "Bug fixes";    Prompt = "Search all source files for bugs: off-by-one errors, null/undefined access, unhandled error paths, race conditions, resource leaks, incorrect boundary checks, and wrong operator precedence. Fix each bug you find with a minimal targeted change." },
-    @{ Name = "Test coverage"; Prompt = "Identify untested and under-tested code paths. Add unit tests for: edge cases, error handling branches, boundary values, and any function lacking test coverage. Each test should assert exact expected values." },
-    @{ Name = "Dead code";     Prompt = "Remove dead code, unused imports, unreachable branches, and redundant logic. Inline trivial one-use helpers. Simplify overly nested conditionals with early returns. Preserve all external behavior." },
-    @{ Name = "Optimization";  Prompt = "Find inefficient algorithms, redundant computations, unnecessary allocations, and repeated work in hot paths. Apply targeted fixes: better data structures, caching repeated lookups, avoiding copies. Do not sacrifice readability for marginal gains." },
-    @{ Name = "Config";        Prompt = "Find hardcoded numeric constants, string literals, and thresholds scattered in source files that should be centralized in config files. Move them and wire up any config loading or generation needed." }
+    @{ Name = "Bug fixes";    Prompt = "Search every source file in the repo for bugs. Look for: off-by-one errors, race conditions, resource leaks, incorrect boundary checks, and silent data truncation. For each bug, make the smallest fix that corrects the issue." },
+    @{ Name = "Test coverage"; Prompt = "Find functions and branches that have no tests or weak tests. Write focused unit tests that cover: error handling paths, boundary values (zero, empty, max, negative), off-by-one boundaries, and uncommon but valid inputs. Each assertion should check an exact expected value, not just truthiness. When testing collections, also assert the count." },
+    @{ Name = "Conciseness";   Prompt = "Make the codebase more concise without changing behavior. Remove dead code, unused imports, unreachable branches, and commented-out code. Inline functions that are called only once and add no clarity. Replace deeply nested if/else chains with early returns or guard clauses. Merge duplicate logic into shared helpers only when there are 3+ copies." },
+    @{ Name = "Optimization";  Prompt = "Find performance bottlenecks in the codebase. Look for: O(n^2) or worse algorithms that could be O(n log n) or O(n), repeated lookups that should be cached, unnecessary copies of large objects, allocations inside tight loops, and redundant recomputation. Apply targeted fixes. Do not sacrifice readability for marginal gains." },
+    @{ Name = "Config";        Prompt = "Find hardcoded numeric constants, string literals, URLs, timeouts, thresholds, and tuning parameters scattered across source files. Move each to an appropriate yaml config file. If a config loading mechanism already exists, use it. If moved values are needed at compile time, update any config generation scripts accordingly." }
 )
 
 $Suffix = "After making changes, run all tests and the code formatter. Only make changes you are confident are correct. If no changes are needed, respond with exactly NO_CHANGES and nothing else."

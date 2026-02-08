@@ -29,7 +29,7 @@ Automated code improvement loop using Claude Code. Runs a sequence of tasks, eac
 |------|-------------|
 | Bug fixes | Off-by-one errors, null access, race conditions, resource leaks, boundary checks |
 | Test coverage | Add missing unit tests for edge cases, error branches, boundary values |
-| Dead code | Remove unused code, inline trivial helpers, simplify nested conditionals |
+| Conciseness | Remove dead code, inline trivial helpers, simplify nested conditionals, preserve behavior |
 | Optimization | Better data structures, caching, avoiding copies in hot paths |
 | Config | Move hardcoded constants and magic numbers to config files |
 
