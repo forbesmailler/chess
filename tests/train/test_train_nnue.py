@@ -12,6 +12,7 @@ from engine.train.train_nnue import (
     NNUE,
     SelfPlayDataset,
     extract_features,
+    main,
     train,
 )
 
@@ -534,3 +535,65 @@ def test_dataset_target_zero_eval():
         assert abs(target.item()) < 1e-6
     finally:
         Path(tmp_path).unlink()
+
+
+def test_train_saves_to_output_path(tmp_path):
+    """When args.output is set, train() saves best model to that path."""
+    data_file = tmp_path / "train.bin"
+    _make_training_data(data_file)
+    output_file = tmp_path / "model.pt"
+
+    train(_train_args(data_file, output_path=output_file))
+    assert output_file.exists()
+
+    loaded = torch.load(output_file, map_location="cpu", weights_only=True)
+    assert "fc1.weight" in loaded
+    assert "fc3.weight" in loaded
+
+
+def test_train_prints_saved_message(tmp_path, capsys):
+    """When output is set, train() prints save messages."""
+    data_file = tmp_path / "train.bin"
+    _make_training_data(data_file)
+    output_file = tmp_path / "model.pt"
+
+    train(_train_args(data_file, output_path=output_file))
+    output = capsys.readouterr().out
+    assert "Saved best model" in output
+    assert "Model saved" in output
+
+
+def test_train_no_output_path(tmp_path, capsys):
+    """When args.output is None, no file is saved."""
+    data_file = tmp_path / "train.bin"
+    _make_training_data(data_file)
+
+    train(_train_args(data_file, output_path=None))
+    output = capsys.readouterr().out
+    assert "Model saved" not in output
+
+
+def test_main_runs_training(tmp_path, monkeypatch):
+    """main() parses args and runs training."""
+    data_file = tmp_path / "train.bin"
+    _make_training_data(data_file, num_positions=20)
+    output_file = tmp_path / "weights.pt"
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "train_nnue.py",
+            "--data",
+            str(data_file),
+            "--output",
+            str(output_file),
+            "--epochs",
+            "2",
+            "--batch-size",
+            "8",
+            "--patience",
+            "10",
+        ],
+    )
+    main()
+    assert output_file.exists()

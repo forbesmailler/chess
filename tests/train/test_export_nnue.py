@@ -13,7 +13,7 @@ _train_dir = str(Path(__file__).resolve().parent.parent.parent / "engine" / "tra
 if _train_dir not in sys.path:
     sys.path.insert(0, _train_dir)
 
-from export_nnue import VERSION, export_state_dict  # noqa: E402
+from export_nnue import VERSION, export_model, export_state_dict, main  # noqa: E402
 
 from engine.train.train_nnue import (  # noqa: E402
     HIDDEN1_SIZE,
@@ -94,3 +94,65 @@ def test_export_no_extra_bytes():
         offset += in_sz * out_sz * 4  # weight
         offset += out_sz * 4  # bias
     assert offset == len(data)
+
+
+def test_export_model_writes_file(tmp_path):
+    """export_model writes a valid binary file from a saved PyTorch model."""
+    import torch
+
+    model = NNUE()
+    pt_path = tmp_path / "model.pt"
+    torch.save(model.state_dict(), pt_path)
+    out_path = tmp_path / "nnue.bin"
+    export_model(str(pt_path), str(out_path))
+
+    data = out_path.read_bytes()
+    assert data[:4] == b"NNUE"
+    total_params = sum(p.numel() for p in model.parameters())
+    assert len(data) == 24 + total_params * 4
+
+
+def test_export_model_prints_info(tmp_path, capsys):
+    """export_model prints architecture, parameter count, and file size."""
+    import torch
+
+    model = NNUE()
+    pt_path = tmp_path / "model.pt"
+    torch.save(model.state_dict(), pt_path)
+    out_path = tmp_path / "nnue.bin"
+    export_model(str(pt_path), str(out_path))
+
+    output = capsys.readouterr().out
+    assert "Exported NNUE model" in output
+    assert str(INPUT_SIZE) in output
+    assert str(HIDDEN1_SIZE) in output
+    assert str(HIDDEN2_SIZE) in output
+    assert str(OUTPUT_SIZE) in output
+    assert "Total parameters" in output
+    assert "File size" in output
+
+
+def test_export_main(tmp_path, monkeypatch):
+    """main() parses args and calls export_model."""
+    import torch
+
+    model = NNUE()
+    pt_path = tmp_path / "model.pt"
+    torch.save(model.state_dict(), pt_path)
+    out_path = tmp_path / "out.bin"
+    monkeypatch.setattr(
+        "sys.argv",
+        ["export_nnue.py", "--model", str(pt_path), "--output", str(out_path)],
+    )
+    main()
+    assert out_path.exists()
+    assert out_path.read_bytes()[:4] == b"NNUE"
+
+
+def test_export_state_dict_returns_param_count():
+    """export_state_dict returns the total parameter count."""
+    model = NNUE()
+    buf = io.BytesIO()
+    count = export_state_dict(model.state_dict(), buf)
+    expected = sum(p.numel() for p in model.parameters())
+    assert count == expected

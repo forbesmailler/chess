@@ -29,7 +29,8 @@ def fix(path: str):
             fixed += 1
 
     Path(path).write_bytes(data)
-    print(f"Fixed {fixed}/{n} positions ({fixed * 100 / n:.1f}% were black to move)")
+    pct = fixed * 100 / n if n else 0.0
+    print(f"Fixed {fixed}/{n} positions ({pct:.1f}% were black to move)")
 
 
 if __name__ == "__main__":

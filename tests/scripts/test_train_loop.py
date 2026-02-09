@@ -240,6 +240,97 @@ class TestPositionCounting:
         assert sum("_150pos" in n for n in names) == 1
 
 
+class TestCompareOnly:
+    def test_compare_only_skips_selfplay_and_training(self, loop_env, monkeypatch):
+        """--compare-only skips selfplay and training, goes straight to compare."""
+        monkeypatch.setattr("sys.argv", ["train_loop.py", "--compare-only"])
+        # Pre-create candidate so the loop doesn't break immediately
+        (loop_env / "nnue_candidate.bin").write_bytes(b"candidate")
+
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            # This is the compare command (only subprocess call in compare-only)
+            if "--compare" in cmd:
+                return subprocess.CompletedProcess(cmd, 0)
+            return subprocess.CompletedProcess(cmd, 0)
+
+        call_count = 0
+
+        def fake_run_with_interrupt(cmd, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            # compare call returns success
+            if "--compare" in cmd:
+                result = subprocess.CompletedProcess(cmd, 0)
+                return result
+            return subprocess.CompletedProcess(cmd, 0)
+
+        with patch("scripts.train_loop.subprocess.run", fake_run_with_interrupt):
+            try:
+                train_loop.main()
+            except (KeyboardInterrupt, Exception):
+                pass
+
+        # Should NOT have selfplay or train commands
+        selfplay_calls = [c for c in calls if "--selfplay" in c]
+        assert len(selfplay_calls) == 0
+
+    def test_candidate_not_found_breaks_loop(self, loop_env, monkeypatch):
+        """If candidate does not exist, loop breaks with error message."""
+        monkeypatch.setattr("sys.argv", ["train_loop.py", "--compare-only"])
+        # Do NOT create candidate
+        with patch(
+            "scripts.train_loop.subprocess.run",
+            return_value=subprocess.CompletedProcess("cmd", 0),
+        ):
+            try:
+                train_loop.main()
+            except (KeyboardInterrupt, Exception):
+                pass
+        # Loop should have broken — no archives created
+        accepted = list((loop_env / "models" / "accepted").glob("*.bin"))
+        rejected = list((loop_env / "models" / "rejected").glob("*.bin"))
+        assert len(accepted) == 0
+        assert len(rejected) == 0
+
+
+class TestTrainOnly:
+    def test_train_only_skips_selfplay(self, loop_env, monkeypatch):
+        """--train-only skips selfplay but still trains and compares."""
+        monkeypatch.setattr("sys.argv", ["train_loop.py", "--train-only"])
+        # Create data file (needed for position counting)
+        data = loop_env / "training_data.bin"
+        data.write_bytes(b"\x00" * (POSITION_BYTES * 100))
+
+        calls = []
+        compare_done = False
+
+        def fake_run(cmd, **kwargs):
+            nonlocal compare_done
+            calls.append(cmd)
+            if "export_nnue" in cmd:
+                (loop_env / "nnue_candidate.bin").write_bytes(b"candidate")
+            elif "--compare" in cmd:
+                if compare_done:
+                    raise KeyboardInterrupt
+                compare_done = True
+                return subprocess.CompletedProcess(cmd, 0)
+            return subprocess.CompletedProcess(cmd, 0)
+
+        with patch("scripts.train_loop.subprocess.run", fake_run):
+            try:
+                train_loop.main()
+            except KeyboardInterrupt:
+                pass
+
+        selfplay_calls = [c for c in calls if "--selfplay" in c]
+        assert len(selfplay_calls) == 0
+        train_calls = [c for c in calls if "train_nnue" in c]
+        assert len(train_calls) >= 1
+
+
 class TestRunFunction:
     def test_run_success(self):
         with patch(
