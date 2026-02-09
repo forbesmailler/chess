@@ -10,7 +10,6 @@ Usage:
     python iterate.py --model opus             # Specify model
     python iterate.py -p "Fix all TODOs" -p "Add docstrings"  # Custom prompts
     python iterate.py --max-iterations 10      # Override iteration cap
-    python iterate.py --parallel               # Run tasks on separate worktrees
 """
 
 from __future__ import annotations
@@ -26,8 +25,6 @@ from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import Optional
-
-# ─── Data types ───────────────────────────────────────────────────────────────
 
 
 class TaskStatus(Enum):
@@ -54,7 +51,7 @@ class TaskResult:
 class RunConfig:
     model: Optional[str] = None
     max_iterations: int = 20
-    default_wait_seconds: int = 900  # 15 min fallback for rate limits
+    default_wait_seconds: int = 900
     log_file: Path = field(
         default_factory=lambda: Path(__file__).parent / "iterate_log.md"
     )
@@ -106,9 +103,6 @@ DEFAULT_TASKS = [
 ]
 
 
-# ─── Git helpers ──────────────────────────────────────────────────────────────
-
-
 def git(*args: str, check: bool = True) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["git", *args],
@@ -123,10 +117,9 @@ def git_head_sha() -> str:
 
 
 def commit_changes(message: str) -> bool:
-    """Stage and commit. Returns True if a commit was created."""
     git("add", "-A", "--", ".", ":!scripts/iterate_log.md", check=False)
     result = git("diff", "--cached", "--quiet", check=False)
-    if result.returncode != 0:  # there are staged changes
+    if result.returncode != 0:
         git("commit", "-m", message)
         return True
     return False
@@ -143,9 +136,6 @@ def squash_task_commits(base_sha: str, message: str) -> None:
         git("commit", "-m", message)
 
 
-# ─── Claude Code runner ──────────────────────────────────────────────────────
-
-
 @dataclass
 class ClaudeResult:
     output: str
@@ -157,13 +147,10 @@ class ClaudeResult:
 
     @property
     def signalled_no_changes(self) -> bool:
-        """Only trust NO_CHANGES from a successful run."""
         return self.succeeded and "NO_CHANGES" in self.output
 
 
 class ClaudeRunner:
-    """Wraps Claude Code CLI invocation with rate-limit retry."""
-
     def __init__(self, config: RunConfig):
         self.config = config
         self._last_session_id: Optional[str] = None
@@ -172,13 +159,10 @@ class ClaudeRunner:
         args = ["claude", "-p", "--dangerously-skip-permissions"]
         if self.config.model:
             args += ["--model", self.config.model]
-        # Use JSON output so we can reliably extract session_id for --continue
         args += ["--output-format", "json"]
         return args
 
     def _parse_rate_limit_wait(self, text: str) -> int:
-        """Try to extract a wait duration from rate limit messages. Returns seconds."""
-        # Match "2:30 PM" style
         match = re.search(r"(\d{1,2}:\d{2}\s*(?:AM|PM))", text, re.IGNORECASE)
         if match:
             try:
@@ -192,7 +176,6 @@ class ClaudeRunner:
                 return int((reset_time - datetime.now()).total_seconds()) + 30
             except ValueError:
                 pass
-        # Match "N minutes"
         match = re.search(r"(\d+)\s*minutes?", text)
         if match:
             return int(match.group(1)) * 60 + 30
@@ -209,15 +192,6 @@ class ClaudeRunner:
         return any(re.search(p, text, re.IGNORECASE) for p in patterns)
 
     def invoke(self, prompt: str, continue_session: bool = False) -> ClaudeResult:
-        """
-        Call Claude Code, retrying on rate limits.
-
-        Args:
-            prompt: The prompt text to send.
-            continue_session: If True, use --continue to resume the most recent
-                              session. Claude Code's --continue flag works with -p
-                              to resume the last conversation.
-        """
         args = self._base_args()
         if continue_session:
             args.append("--continue")
@@ -233,14 +207,13 @@ class ClaudeRunner:
                     "%-I:%M %p"
                 )
                 print(
-                    f"  ⏳ Rate limit hit. Waiting {wait / 60:.1f} min (until ~{resume_at})...",
+                    f"  Rate limit hit. Waiting {wait / 60:.1f} min (until ~{resume_at})...",
                     flush=True,
                 )
                 time.sleep(wait)
-                print("  ▶ Resuming...", flush=True)
+                print("  Resuming...", flush=True)
                 continue
 
-            # Parse JSON output to get the text result
             output_text = combined
             try:
                 data = json.loads(result.stdout)
@@ -251,9 +224,6 @@ class ClaudeRunner:
                 output_text = result.stdout or result.stderr
 
             return ClaudeResult(output=output_text, exit_code=result.returncode)
-
-
-# ─── Task orchestrator ────────────────────────────────────────────────────────
 
 
 class TaskOrchestrator:
@@ -296,13 +266,11 @@ class TaskOrchestrator:
                 prompt = f"Keep going with the same task. {self.config.suffix}"
                 result = self.runner.invoke(prompt, continue_session=True)
 
-            # Print a truncated preview of output
             preview = result.output[:500] + ("..." if len(result.output) > 500 else "")
             print(f"  {preview}\n")
 
-            # Check exit code FIRST, independently of output content
             if not result.succeeded:
-                print(f"  ✗ Claude exited with code {result.exit_code}")
+                print(f"  FAIL: Claude exited with code {result.exit_code}")
                 self._log(
                     f"## Failed: {task.name} (iteration {iteration}, exit code {result.exit_code})\n"
                 )
@@ -310,31 +278,27 @@ class TaskOrchestrator:
                 discard_changes()
                 break
 
-            # Only check NO_CHANGES after confirming success
             if result.signalled_no_changes:
                 elapsed = (time.monotonic() - task_start) / 60
-                print(f"  ✓ Converged after {iteration} iteration(s) ({elapsed:.1f}m)")
+                print(f"  Converged after {iteration} iteration(s) ({elapsed:.1f}m)")
                 self._log(
                     f"## Completed: {task.name} in {iteration} iteration(s) ({elapsed:.1f}m)\n"
                 )
                 status = TaskStatus.CONVERGED
-                # Commit any final changes before declaring convergence
                 commit_changes(f"{task.name} - iteration {iteration}")
                 break
 
-            # Commit after each successful iteration
             commit_changes(f"{task.name} - iteration {iteration}")
             self._log(f"### {task.name} - iteration {iteration}\n")
 
         if status == TaskStatus.MAX_ITERATIONS:
             print(
-                f"  ⚠ Hit max iterations ({self.config.max_iterations}) for: {task.name}"
+                f"  Hit max iterations ({self.config.max_iterations}) for: {task.name}"
             )
             self._log(
                 f"## Max iterations: {task.name} after {self.config.max_iterations} iterations\n"
             )
 
-        # Squash per-iteration commits into one per task
         squash_task_commits(base_sha, f"{task.name} - automated iteration")
 
         elapsed = (time.monotonic() - task_start) / 60
@@ -346,9 +310,9 @@ class TaskOrchestrator:
 
     def _print_summary(self, elapsed_minutes: float) -> None:
         colors = {
-            TaskStatus.CONVERGED: "\033[32m",  # green
-            TaskStatus.FAILED: "\033[31m",  # red
-            TaskStatus.MAX_ITERATIONS: "\033[33m",  # yellow
+            TaskStatus.CONVERGED: "\033[32m",
+            TaskStatus.FAILED: "\033[31m",
+            TaskStatus.MAX_ITERATIONS: "\033[33m",
         }
         reset = "\033[0m"
 
@@ -361,9 +325,6 @@ class TaskOrchestrator:
                 f"  {c}{r.status.value:<15}{reset} {r.name} ({r.iterations} iter, {r.elapsed_minutes:.1f}m)"
             )
         print()
-
-
-# ─── CLI ──────────────────────────────────────────────────────────────────────
 
 
 def parse_args() -> argparse.Namespace:
@@ -404,7 +365,6 @@ def main() -> None:
     orchestrator = TaskOrchestrator(tasks, config)
     results = orchestrator.run_all()
 
-    # Exit with non-zero if any task failed
     if any(r.status == TaskStatus.FAILED for r in results):
         sys.exit(1)
 
