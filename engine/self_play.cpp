@@ -236,6 +236,13 @@ ModelComparator::ModelComparator(const Config& config, const std::string& old_we
                                  const std::string& new_weights)
     : config(config), old_weights_path(old_weights), new_weights_path(new_weights) {}
 
+ModelComparator::ModelComparator(const Config& config,
+                                 std::shared_ptr<NNUEModel> old_model,
+                                 std::shared_ptr<NNUEModel> new_model)
+    : config(config),
+      preloaded_old_model(std::move(old_model)),
+      preloaded_new_model(std::move(new_model)) {}
+
 ModelComparator::Result ModelComparator::run() {
     start_time = std::chrono::steady_clock::now();
     games_completed.store(0);
@@ -274,17 +281,20 @@ ModelComparator::Result ModelComparator::run() {
 }
 
 void ModelComparator::play_games(int num_games, int thread_id) {
-    // Load models once per thread
-    auto new_model = std::make_shared<NNUEModel>();
-    if (!new_model->load_weights(new_weights_path)) {
-        std::cerr << "Thread " << thread_id << ": Failed to load new weights"
-                  << std::endl;
-        return;
+    // Use pre-loaded models or load from file paths
+    std::shared_ptr<NNUEModel> new_model = preloaded_new_model;
+    if (!new_model) {
+        new_model = std::make_shared<NNUEModel>();
+        if (!new_model->load_weights(new_weights_path)) {
+            std::cerr << "Thread " << thread_id << ": Failed to load new weights"
+                      << std::endl;
+            return;
+        }
     }
 
-    std::shared_ptr<NNUEModel> old_model;
-    bool old_is_handcrafted = old_weights_path.empty();
-    if (!old_is_handcrafted) {
+    std::shared_ptr<NNUEModel> old_model = preloaded_old_model;
+    bool old_is_handcrafted = !old_model && old_weights_path.empty();
+    if (!old_model && !old_is_handcrafted) {
         old_model = std::make_shared<NNUEModel>();
         if (!old_model->load_weights(old_weights_path)) {
             std::cerr << "Thread " << thread_id << ": Failed to load old weights"

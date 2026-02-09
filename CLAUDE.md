@@ -77,6 +77,7 @@ invoke deploy             # pull → build → test → install → restart serv
 
 - C++: `tests/engine/test_*.cpp` (GTest, run via ctest)
 - Python: `tests/{config,scripts,train}/test_*.py` (pytest)
+- **No model files on disk**: Tests must not write NNUE weight or PyTorch model files to disk. Use in-memory construction: C++ via `load_weights(std::istream&)` with `std::istringstream`, Python via `export_state_dict()` with `io.BytesIO` and `train()` return value. Training data files (self-play positions) are fine.
 
 ## Evaluation Modes
 

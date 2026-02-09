@@ -33,8 +33,28 @@ $results = @()
 function Invoke-Claude {
     param([string[]]$ExtraArgs)
     $allArgs = @("-p", "--dangerously-skip-permissions") + $ModelArgs + $ExtraArgs
-    $output = & claude @allArgs 2>&1
-    return $output
+    while ($true) {
+        $output = & claude @allArgs 2>&1
+        $outputStr = ($output | Out-String)
+        if ($outputStr -match "(?i)(you've hit your limit|usage limit|rate limit|exceeded.*limit)") {
+            # Try to extract a reset time like "2:30 PM" or "14:30"
+            if ($outputStr -match "(\d{1,2}:\d{2}\s*(AM|PM))") {
+                $resetTime = [DateTime]::Parse($Matches[0])
+                if ($resetTime -lt (Get-Date)) { $resetTime = $resetTime.AddDays(1) }
+                $waitSeconds = [math]::Ceiling(($resetTime - (Get-Date)).TotalSeconds) + 30
+            } elseif ($outputStr -match "(\d+)\s*minutes?") {
+                $waitSeconds = [int]$Matches[1] * 60 + 30
+            } else {
+                $waitSeconds = 900  # default 15 min
+            }
+            $resumeAt = (Get-Date).AddSeconds($waitSeconds).ToString("h:mm tt")
+            Write-Host "Usage limit hit. Waiting $([math]::Round($waitSeconds / 60, 1)) minutes (until ~$resumeAt)..." -ForegroundColor Yellow
+            Start-Sleep -Seconds $waitSeconds
+            Write-Host "Resuming..." -ForegroundColor Cyan
+            continue
+        }
+        return $output
+    }
 }
 
 function Commit-Changes {

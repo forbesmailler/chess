@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdint>
 #include <fstream>
+#include <memory>
 #include <mutex>
 #include <random>
 #include <string>
@@ -11,6 +12,8 @@
 
 #include "chess_board.h"
 #include "generated_config.h"
+
+class NNUEModel;
 
 // Binary format for training data: 42 bytes per position
 #pragma pack(push, 1)
@@ -85,12 +88,17 @@ class ModelComparator {
     ModelComparator(const Config& config, const std::string& old_weights,
                     const std::string& new_weights);
 
+    ModelComparator(const Config& config, std::shared_ptr<NNUEModel> old_model,
+                    std::shared_ptr<NNUEModel> new_model);
+
     Result run();
 
    private:
     Config config;
     std::string old_weights_path;
     std::string new_weights_path;
+    std::shared_ptr<NNUEModel> preloaded_old_model;
+    std::shared_ptr<NNUEModel> preloaded_new_model;
     std::mutex file_mutex;
     std::atomic<int> games_completed{0};
     std::atomic<int> new_wins{0};

@@ -4,7 +4,9 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <memory>
 #include <random>
+#include <sstream>
 
 #include "chess_board.h"
 #include "generated_config.h"
@@ -194,7 +196,7 @@ TEST(SelfPlay, SoftmaxProducesDiverseGames) {
 
 namespace {
 
-std::string create_compare_weights(const std::string& path, unsigned int seed) {
+std::shared_ptr<NNUEModel> create_compare_model(unsigned int seed) {
     constexpr int INPUT = config::nnue::INPUT_SIZE;
     constexpr int H1 = config::nnue::HIDDEN1_SIZE;
     constexpr int H2 = config::nnue::HIDDEN2_SIZE;
@@ -203,15 +205,15 @@ std::string create_compare_weights(const std::string& path, unsigned int seed) {
     std::mt19937 rng(seed);
     std::normal_distribution<float> dist(0.0f, 0.01f);
 
-    std::ofstream f(path, std::ios::binary);
-    f.write("NNUE", 4);
+    std::ostringstream oss;
+    oss.write("NNUE", 4);
     uint32_t header[] = {1, INPUT, H1, H2, OUTPUT};
-    f.write(reinterpret_cast<char*>(header), sizeof(header));
+    oss.write(reinterpret_cast<char*>(header), sizeof(header));
 
     auto write_random = [&](size_t count) {
         for (size_t i = 0; i < count; ++i) {
             float val = dist(rng);
-            f.write(reinterpret_cast<char*>(&val), sizeof(float));
+            oss.write(reinterpret_cast<char*>(&val), sizeof(float));
         }
     };
 
@@ -222,14 +224,17 @@ std::string create_compare_weights(const std::string& path, unsigned int seed) {
     write_random(H2 * OUTPUT);
     write_random(OUTPUT);
 
-    return path;
+    auto model = std::make_shared<NNUEModel>();
+    std::istringstream stream(oss.str());
+    model->load_weights(stream);
+    return model;
 }
 
 }  // namespace
 
 TEST(ModelComparator, ComparisonProducesResults) {
-    std::string old_weights = create_compare_weights("test_cmp_old.bin", 42);
-    std::string new_weights = create_compare_weights("test_cmp_new.bin", 123);
+    auto old_model = create_compare_model(42);
+    auto new_model = create_compare_model(123);
     std::string output_file = "test_cmp_output.bin";
     std::remove(output_file.c_str());
 
@@ -240,7 +245,7 @@ TEST(ModelComparator, ComparisonProducesResults) {
     config.max_game_ply = 50;
     config.search_time_ms = 50;
 
-    ModelComparator comparator(config, old_weights, new_weights);
+    ModelComparator comparator(config, old_model, new_model);
     auto result = comparator.run();
 
     EXPECT_EQ(result.new_wins + result.old_wins + result.draws, 2);
@@ -253,7 +258,5 @@ TEST(ModelComparator, ComparisonProducesResults) {
     EXPECT_GT(file_size, 0);
     EXPECT_EQ(file_size % sizeof(TrainingPosition), 0);
 
-    std::remove(old_weights.c_str());
-    std::remove(new_weights.c_str());
     std::remove(output_file.c_str());
 }

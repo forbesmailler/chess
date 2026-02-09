@@ -23,27 +23,33 @@ from train_nnue import HIDDEN1_SIZE, HIDDEN2_SIZE, INPUT_SIZE, NNUE, OUTPUT_SIZE
 VERSION = 1
 
 
-def export_model(pytorch_path, output_path):
+def export_state_dict(state_dict, output):
+    """Export NNUE state_dict to a writable binary file-like object.
+
+    Returns total parameter count.
+    """
     model = NNUE()
-    model.load_state_dict(
-        torch.load(pytorch_path, map_location="cpu", weights_only=True)
-    )
+    model.load_state_dict(state_dict)
     model.eval()
 
+    output.write(b"NNUE")
+    output.write(
+        struct.pack("<5I", VERSION, INPUT_SIZE, HIDDEN1_SIZE, HIDDEN2_SIZE, OUTPUT_SIZE)
+    )
+
+    for layer in [model.fc1, model.fc2, model.fc3]:
+        output.write(layer.weight.data.numpy().T.astype(np.float32).tobytes())
+        output.write(layer.bias.data.numpy().astype(np.float32).tobytes())
+
+    return sum(p.numel() for p in model.parameters())
+
+
+def export_model(pytorch_path, output_path):
+    state_dict = torch.load(pytorch_path, map_location="cpu", weights_only=True)
+
     with open(output_path, "wb") as f:
-        f.write(b"NNUE")
-        f.write(
-            struct.pack(
-                "<5I", VERSION, INPUT_SIZE, HIDDEN1_SIZE, HIDDEN2_SIZE, OUTPUT_SIZE
-            )
-        )
+        total_params = export_state_dict(state_dict, f)
 
-        # PyTorch Linear stores weight as (out, in); C++ expects (in, out) row-major
-        for layer in [model.fc1, model.fc2, model.fc3]:
-            f.write(layer.weight.data.numpy().T.astype(np.float32).tobytes())
-            f.write(layer.bias.data.numpy().astype(np.float32).tobytes())
-
-    total_params = sum(p.numel() for p in model.parameters())
     file_size = 24 + total_params * 4
     print(f"Exported NNUE model to {output_path}")
     print(

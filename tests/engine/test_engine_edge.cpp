@@ -4,6 +4,7 @@
 #include <cstring>
 #include <fstream>
 #include <random>
+#include <sstream>
 
 #include "chess_board.h"
 #include "chess_engine.h"
@@ -14,9 +15,7 @@
 #include "self_play.h"
 
 namespace {
-std::string create_random_nnue_weights(unsigned int seed = 42) {
-    std::string path = "test_edge_nnue_weights.bin";
-
+std::string create_nnue_weights_buffer(unsigned int seed = 42) {
     constexpr int INPUT = config::nnue::INPUT_SIZE;
     constexpr int H1 = config::nnue::HIDDEN1_SIZE;
     constexpr int H2 = config::nnue::HIDDEN2_SIZE;
@@ -25,15 +24,15 @@ std::string create_random_nnue_weights(unsigned int seed = 42) {
     std::mt19937 rng(seed);
     std::normal_distribution<float> dist(0.0f, 0.01f);
 
-    std::ofstream f(path, std::ios::binary);
-    f.write("NNUE", 4);
+    std::ostringstream oss;
+    oss.write("NNUE", 4);
     uint32_t header[] = {1, INPUT, H1, H2, OUTPUT};
-    f.write(reinterpret_cast<char*>(header), sizeof(header));
+    oss.write(reinterpret_cast<char*>(header), sizeof(header));
 
     auto write_random = [&](size_t count) {
         for (size_t i = 0; i < count; ++i) {
             float val = dist(rng);
-            f.write(reinterpret_cast<char*>(&val), sizeof(float));
+            oss.write(reinterpret_cast<char*>(&val), sizeof(float));
         }
     };
 
@@ -44,7 +43,15 @@ std::string create_random_nnue_weights(unsigned int seed = 42) {
     write_random(H2 * OUTPUT);
     write_random(OUTPUT);
 
-    return path;
+    return oss.str();
+}
+
+std::shared_ptr<NNUEModel> load_nnue_from_buffer(unsigned int seed = 42) {
+    auto model = std::make_shared<NNUEModel>();
+    std::string buf = create_nnue_weights_buffer(seed);
+    std::istringstream stream(buf);
+    model->load_weights(stream);
+    return model;
 }
 // Expose protected calculate_search_time for direct testing
 class TestableEngine : public ChessEngine {
@@ -468,49 +475,38 @@ TEST(SelfPlayEdge, ReadPositionFromTruncatedFile) {
 
 // --- NNUE model error handling ---
 
-TEST(NNUEModelEdge, LoadTruncatedFile) {
-    std::string path = "test_truncated_nnue.bin";
-    {
-        std::ofstream f(path, std::ios::binary);
-        f.write("NNUE", 4);
-        uint32_t header[] = {1, config::nnue::INPUT_SIZE, config::nnue::HIDDEN1_SIZE,
-                             config::nnue::HIDDEN2_SIZE, config::nnue::OUTPUT_SIZE};
-        f.write(reinterpret_cast<char*>(header), sizeof(header));
-        // Write partial weights (just a few bytes)
-        float val = 1.0f;
-        f.write(reinterpret_cast<char*>(&val), sizeof(float));
-    }
+TEST(NNUEModelEdge, LoadTruncatedStream) {
+    std::ostringstream oss;
+    oss.write("NNUE", 4);
+    uint32_t header[] = {1, config::nnue::INPUT_SIZE, config::nnue::HIDDEN1_SIZE,
+                         config::nnue::HIDDEN2_SIZE, config::nnue::OUTPUT_SIZE};
+    oss.write(reinterpret_cast<char*>(header), sizeof(header));
+    float val = 1.0f;
+    oss.write(reinterpret_cast<char*>(&val), sizeof(float));
+
+    std::istringstream stream(oss.str());
     NNUEModel model;
-    EXPECT_FALSE(model.load_weights(path));
+    EXPECT_FALSE(model.load_weights(stream));
     EXPECT_FALSE(model.is_loaded());
-    std::remove(path.c_str());
 }
 
 TEST(NNUEModelEdge, LoadArchitectureMismatch) {
-    std::string path = "test_arch_mismatch.bin";
-    {
-        std::ofstream f(path, std::ios::binary);
-        f.write("NNUE", 4);
-        // Wrong dimensions
-        uint32_t header[] = {1, 100, 50, 10, 1};
-        f.write(reinterpret_cast<char*>(header), sizeof(header));
-    }
+    std::ostringstream oss;
+    oss.write("NNUE", 4);
+    uint32_t header[] = {1, 100, 50, 10, 1};
+    oss.write(reinterpret_cast<char*>(header), sizeof(header));
+
+    std::istringstream stream(oss.str());
     NNUEModel model;
-    EXPECT_FALSE(model.load_weights(path));
+    EXPECT_FALSE(model.load_weights(stream));
     EXPECT_FALSE(model.is_loaded());
-    std::remove(path.c_str());
 }
 
-TEST(NNUEModelEdge, LoadEmptyFile) {
-    std::string path = "test_empty_nnue.bin";
-    {
-        std::ofstream f(path, std::ios::binary);
-        // Write nothing
-    }
+TEST(NNUEModelEdge, LoadEmptyStream) {
+    std::istringstream stream("");
     NNUEModel model;
-    EXPECT_FALSE(model.load_weights(path));
+    EXPECT_FALSE(model.load_weights(stream));
     EXPECT_FALSE(model.is_loaded());
-    std::remove(path.c_str());
 }
 
 TEST(NNUEModelEdge, PredictUnloadedMultiplePositions) {
@@ -672,23 +668,19 @@ TEST(BaseEngineEdge, EvaluateBlackCheckmated) {
 // --- BaseEngine: raw_evaluate with loaded NNUE model ---
 
 TEST(BaseEngineEdge, EvaluateWithLoadedNNUE) {
-    auto path = create_random_nnue_weights();
-    auto nnue = std::make_shared<NNUEModel>();
-    ASSERT_TRUE(nnue->load_weights(path));
+    auto nnue = load_nnue_from_buffer();
+    ASSERT_TRUE(nnue->is_loaded());
 
     ChessEngine engine(100, EvalMode::NNUE, nnue);
     ChessBoard board;
     float eval = engine.evaluate(board);
     EXPECT_TRUE(std::isfinite(eval));
     EXPECT_LE(std::abs(eval), config::MATE_VALUE);
-
-    std::remove(path.c_str());
 }
 
 TEST(BaseEngineEdge, EvaluateNNUECheckmatePosition) {
-    auto path = create_random_nnue_weights();
-    auto nnue = std::make_shared<NNUEModel>();
-    ASSERT_TRUE(nnue->load_weights(path));
+    auto nnue = load_nnue_from_buffer();
+    ASSERT_TRUE(nnue->is_loaded());
 
     ChessEngine engine(100, EvalMode::NNUE, nnue);
     // White is checkmated (fool's mate) — raw_evaluate detects game over
@@ -696,8 +688,6 @@ TEST(BaseEngineEdge, EvaluateNNUECheckmatePosition) {
     ChessBoard mate("rnb1kbnr/pppp1ppp/4p3/8/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3");
     float eval = engine.evaluate(mate);
     EXPECT_FLOAT_EQ(eval, -config::MATE_VALUE);
-
-    std::remove(path.c_str());
 }
 
 // --- TrainingPosition struct size ---

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <istream>
 #include <string>
 #include <vector>
 
@@ -12,6 +13,9 @@ class NNUEModel {
 
     // Load binary weight file exported by export_nnue.py
     bool load_weights(const std::string& path);
+
+    // Load weights from an already-open stream (for in-memory loading)
+    bool load_weights(std::istream& stream);
 
     // Evaluate position, returns score from white's perspective in centipawns
     float predict(const ChessBoard& board) const;

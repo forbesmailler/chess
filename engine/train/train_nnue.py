@@ -193,6 +193,7 @@ def train(args):
 
     best_val_loss = float("inf")
     patience_counter = 0
+    best_state = None
 
     for epoch in range(args.epochs):
         # Training
@@ -235,8 +236,10 @@ def train(args):
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             patience_counter = 0
-            torch.save(model.state_dict(), args.output)
-            print(f"  Saved best model to {args.output}")
+            best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+            if args.output:
+                torch.save(best_state, args.output)
+                print(f"  Saved best model to {args.output}")
         else:
             patience_counter += 1
             if patience_counter >= args.patience:
@@ -244,7 +247,9 @@ def train(args):
                 break
 
     print(f"Training complete. Best val loss: {best_val_loss:.4f}")
-    print(f"Model saved to {args.output}")
+    if args.output:
+        print(f"Model saved to {args.output}")
+    return best_state
 
 
 def main():

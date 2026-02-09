@@ -219,11 +219,11 @@ def _make_training_data(path, num_positions=20):
             )
 
 
-def _train_args(data_path, output_path, **overrides):
+def _train_args(data_path, output_path=None, **overrides):
     """Build a Namespace mimicking argparse output for train()."""
     defaults = {
         "data": str(data_path),
-        "output": str(output_path),
+        "output": str(output_path) if output_path else None,
         "epochs": 3,
         "batch_size": 8,
         "lr": 0.001,
@@ -234,15 +234,12 @@ def _train_args(data_path, output_path, **overrides):
     return Namespace(**defaults)
 
 
-def test_train_saves_model(tmp_path):
+def test_train_returns_state_dict(tmp_path):
     data_file = tmp_path / "train.bin"
-    model_file = tmp_path / "model.pt"
     _make_training_data(data_file)
 
-    train(_train_args(data_file, model_file))
+    state = train(_train_args(data_file))
 
-    assert model_file.exists()
-    state = torch.load(model_file, weights_only=True)
     assert "fc1.weight" in state
     assert "fc2.weight" in state
     assert "fc3.weight" in state
@@ -250,13 +247,12 @@ def test_train_saves_model(tmp_path):
 
 def test_train_model_loadable(tmp_path):
     data_file = tmp_path / "train.bin"
-    model_file = tmp_path / "model.pt"
     _make_training_data(data_file)
 
-    train(_train_args(data_file, model_file))
+    state = train(_train_args(data_file))
 
     model = NNUE()
-    model.load_state_dict(torch.load(model_file, weights_only=True))
+    model.load_state_dict(state)
     x = torch.randn(1, 773)
     with torch.no_grad():
         out = model(x)
@@ -266,10 +262,9 @@ def test_train_model_loadable(tmp_path):
 
 def test_train_loss_decreases(tmp_path, capsys):
     data_file = tmp_path / "train.bin"
-    model_file = tmp_path / "model.pt"
     _make_training_data(data_file, num_positions=50)
 
-    train(_train_args(data_file, model_file, epochs=10, patience=20))
+    train(_train_args(data_file, epochs=10, patience=20))
 
     output = capsys.readouterr().out
     losses = []
@@ -284,10 +279,9 @@ def test_train_loss_decreases(tmp_path, capsys):
 
 def test_train_early_stopping(tmp_path, capsys):
     data_file = tmp_path / "train.bin"
-    model_file = tmp_path / "model.pt"
     _make_training_data(data_file)
 
-    train(_train_args(data_file, model_file, epochs=100, patience=2, lr=0.0))
+    train(_train_args(data_file, epochs=100, patience=2, lr=0.0))
 
     output = capsys.readouterr().out
     assert "Early stopping" in output
@@ -300,14 +294,9 @@ def test_train_respects_eval_weight(tmp_path):
     data_file = tmp_path / "train.bin"
     _make_training_data(data_file, num_positions=30)
 
-    model_a = tmp_path / "model_a.pt"
-    model_b = tmp_path / "model_b.pt"
+    state_a = train(_train_args(data_file, eval_weight=1.0, epochs=5))
+    state_b = train(_train_args(data_file, eval_weight=0.0, epochs=5))
 
-    train(_train_args(data_file, model_a, eval_weight=1.0, epochs=5))
-    train(_train_args(data_file, model_b, eval_weight=0.0, epochs=5))
-
-    state_a = torch.load(model_a, weights_only=True)
-    state_b = torch.load(model_b, weights_only=True)
     # Different eval weights should produce different trained weights
     diff = (state_a["fc3.weight"] - state_b["fc3.weight"]).abs().sum()
     assert diff > 0

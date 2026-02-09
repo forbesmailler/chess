@@ -14,7 +14,10 @@ bool NNUEModel::load_weights(const std::string& path) {
         std::cerr << "Failed to open NNUE weight file: " << path << std::endl;
         return false;
     }
+    return load_weights(file);
+}
 
+bool NNUEModel::load_weights(std::istream& file) {
     // Read header
     char magic[4];
     file.read(magic, 4);
