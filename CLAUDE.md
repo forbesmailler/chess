@@ -40,7 +40,7 @@ invoke deploy             # pull → build → test → install → restart serv
 
 | File | Purpose |
 |------|---------|
-| `base_engine.h` | Abstract `BaseEngine` interface: `evaluate()`, `get_best_move()`, `EvalMode` enum |
+| `base_engine.h/cpp` | Abstract `BaseEngine` interface, `raw_evaluate()`, `calculate_search_time()`, `EvalMode` enum |
 | `chess_engine.h/cpp` | Negamax with alpha-beta, transposition tables, quiescence search, iterative deepening |
 | `mcts_engine.h/cpp` | Monte Carlo Tree Search with UCT selection |
 | `handcrafted_eval.h/cpp` | Tapered eval: material, PSTs, pawn structure, mobility, king safety |

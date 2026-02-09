@@ -38,6 +38,9 @@ Set the `LICHESS_TOKEN` environment variable, then:
 
 # Generate self-play training data
 ./lichess_bot --selfplay [num_games] [search_depth] [output_file] [num_threads]
+
+# Compare two models
+./lichess_bot --compare <old_weights|handcrafted> <new_weights> [num_games] [output_file] [threads]
 ```
 
 ### Test
@@ -87,12 +90,14 @@ invoke deploy                 # deploy to Linux VPS
 
 ```
 engine/                         # C++ engine and Lichess bot
-├── base_engine.h               # BaseEngine interface, EvalMode enum
+├── base_engine.h/cpp           # BaseEngine interface, EvalMode enum
 ├── chess_engine.h/cpp          # Negamax search
 ├── mcts_engine.h/cpp           # MCTS search
 ├── handcrafted_eval.h/cpp      # Tapered evaluation
 ├── nnue_model.h/cpp            # NNUE inference
 ├── self_play.h/cpp             # Self-play data generator
+├── chess_board.h/cpp           # Board wrapper utilities
+├── utils.h/cpp                 # Shared helper functions
 ├── lichess_client.h/cpp        # Lichess API client (libcurl)
 ├── main.cpp                    # Entry point
 ├── generated_config.h          # Auto-generated from YAML

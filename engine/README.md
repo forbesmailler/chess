@@ -13,8 +13,8 @@ Set `LICHESS_TOKEN` environment variable, then:
 # Self-play data generation
 ./lichess_bot --selfplay [num_games] [search_depth] [output_file] [num_threads]
 
-# Test mode (no args)
-./lichess_bot
+# Compare two models
+./lichess_bot --compare <old_weights|handcrafted> <new_weights> [num_games] [output_file] [threads]
 ```
 
 ## Dependencies
@@ -30,7 +30,10 @@ ctest -C Release --output-on-failure
 
 Test files in `../tests/engine/`:
 - `test_chess_board.cpp` — board operations, FEN parsing, move generation
+- `test_chess_board_edge.cpp` — edge cases for board operations
 - `test_chess_engine.cpp` — negamax search, time management
+- `test_engine_edge.cpp` — edge cases for search
 - `test_handcrafted_eval.cpp` — evaluation terms
 - `test_nnue_model.cpp` — NNUE forward pass
 - `test_self_play.cpp` — self-play data generation
+- `test_utils.cpp` — utility functions
