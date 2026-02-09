@@ -17,11 +17,20 @@ static constexpr int OUTPUT_SIZE = 1;
 
 namespace search {
 static constexpr size_t CACHE_SIZE = 1000000;
+static constexpr size_t TT_SIZE = 1 << 20;
+static constexpr size_t TT_MASK = TT_SIZE - 1;
+static constexpr size_t EVAL_CACHE_SIZE = 1 << 18;
+static constexpr size_t EVAL_CACHE_MASK = EVAL_CACHE_SIZE - 1;
 static constexpr int TIME_CHECK_INTERVAL = 2048;
 static constexpr int MAX_DEPTH = 50;
 static constexpr int QUIESCENCE_MAX_DEPTH = 8;
 static constexpr int DEFAULT_MAX_TIME_MS = 2000;
 static constexpr int TIME_ALLOCATION_DIVISOR = 40;
+static constexpr int MIN_TIME_MS = 50;
+static constexpr int MAX_TIME_MS = 30000;
+static constexpr float ASPIRATION_DELTA = 50.0f;
+static constexpr int ASPIRATION_MIN_DEPTH = 3;
+static constexpr int MATE_THRESHOLD_MARGIN = 500;
 
 namespace null_move {
 static constexpr int MIN_DEPTH = 3;
@@ -38,6 +47,37 @@ static constexpr int MANY_MOVES_THRESHOLD = 7;
 static constexpr int SHALLOW_REDUCTION = 1;
 static constexpr int DEEP_REDUCTION = 2;
 }  // namespace lmr
+
+namespace move_scoring {
+static constexpr int PIECE_VALUES[] = {100, 320, 330, 500, 900, 0, 0};
+static constexpr int TT_MOVE_BONUS = 1000000;
+static constexpr int CAPTURE_BASE_SCORE = 100000;
+static constexpr int PROMOTION_BONUS = 90000;
+static constexpr int KILLER1_BONUS = 80000;
+static constexpr int KILLER2_BONUS = 70000;
+static constexpr int COUNTERMOVE_BONUS = 60000;
+static constexpr int HISTORY_MAX = 1000000;
+static constexpr int VICTIM_VALUE_MULTIPLIER = 10;
+}  // namespace move_scoring
+
+namespace tt_replacement {
+static constexpr int DEPTH_WEIGHT = 4;
+static constexpr int EXACT_BONUS = 2;
+}  // namespace tt_replacement
+
+namespace pruning {
+static constexpr float REVERSE_FUTILITY_MARGIN = 1500.0f;
+static constexpr float FUTILITY_MARGIN_DEPTH1 = 1500.0f;
+static constexpr float FUTILITY_MARGIN_DEPTH2 = 3000.0f;
+static constexpr int LMP_BASE = 3;
+}  // namespace pruning
+
+namespace quiescence {
+static constexpr float PIECE_VALUES[] = {1000.0f, 3200.0f, 3300.0f, 5000.0f,
+                                         9000.0f, 0.0f,    0.0f};
+static constexpr float DELTA_MARGIN = 2000.0f;
+static constexpr float EN_PASSANT_VALUE = 1000.0f;
+}  // namespace quiescence
 }  // namespace search
 
 namespace mcts {
@@ -48,6 +88,7 @@ static constexpr int DEFAULT_MAX_TIME_MS = 2000;
 static constexpr int EVAL_FREQUENCY = 10;
 static constexpr float EARLY_TERMINATION_FACTOR = 0.8f;
 static constexpr float PRIOR_SIGMOID_SCALE = 5000.0f;
+static constexpr int NODE_COUNT_INTERVAL = 1000;
 }  // namespace mcts
 
 namespace bot {
@@ -57,6 +98,10 @@ static constexpr int HEARTBEAT_INTERVAL_MS = 30000;
 static constexpr int CONNECTION_TIMEOUT_MS = 120000;
 static constexpr int MAX_CONSECUTIVE_ERRORS = 10;
 static constexpr int MAX_RESTARTS = 5;
+static constexpr int MAX_GAME_STREAM_RETRIES = 3;
+static constexpr int GAME_STREAM_RECONNECT_DELAY_S = 2;
+static constexpr int DRAW_RESPONSE_RETRY_DELAY_MS = 1000;
+static constexpr int MOVE_RETRY_DELAY_MS = 1000;
 static constexpr std::string_view USER_AGENT = "Lichess-Bot-CPP/1.0";
 static constexpr std::string_view LICHESS_BASE_URL = "https://lichess.org/api";
 static constexpr std::string_view CONNECTIVITY_TEST_URL = "http://www.google.com";
@@ -198,6 +243,16 @@ static constexpr int MAX_GAME_PLY = 400;
 static constexpr int SEARCH_TIME_MS = 200;
 static constexpr int SOFTMAX_PLIES = 10;
 static constexpr float SOFTMAX_TEMPERATURE = 200.0f;
+static constexpr int DEFAULT_TIME_CONTROL_MS = 60000;
+static constexpr int PROGRESS_LOG_INTERVAL = 10;
 }  // namespace self_play
+
+namespace compare {
+static constexpr int NUM_GAMES = 100;
+static constexpr int NUM_THREADS = 16;
+static constexpr int MAX_GAME_PLY = 400;
+static constexpr int SEARCH_TIME_MS = 200;
+static constexpr int PROGRESS_LOG_INTERVAL = 10;
+}  // namespace compare
 
 }  // namespace config

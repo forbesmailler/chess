@@ -165,11 +165,13 @@ def train(args):
     train_set, val_set = random_split(
         dataset,
         [train_size, val_size],
-        generator=torch.Generator().manual_seed(42),
+        generator=torch.Generator().manual_seed(_trn["training"]["random_seed"]),
     )
 
     use_cuda = device.type == "cuda"
-    num_workers = min(4, num_cores) if not use_cuda else 0
+    num_workers = (
+        min(_trn["training"]["max_data_workers"], num_cores) if not use_cuda else 0
+    )
     train_loader = DataLoader(
         train_set,
         batch_size=args.batch_size,

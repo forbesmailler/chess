@@ -57,7 +57,7 @@ SearchResult MCTSEngine::get_best_move(const ChessBoard& board,
         }
 
         iterations++;
-        if (iterations % 1000 == 0) {
+        if (iterations % config::mcts::NODE_COUNT_INTERVAL == 0) {
             nodes_searched.store(iterations);
         }
     }

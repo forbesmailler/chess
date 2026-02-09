@@ -99,7 +99,7 @@ bool LichessClient::test_connectivity() {
 
     if (res != CURLE_OK) return false;
 
-    auto response = make_request("https://lichess.org/api");
+    auto response = make_request(base_url);
     return response.status_code != 0;
 }
 

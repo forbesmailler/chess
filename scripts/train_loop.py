@@ -50,7 +50,7 @@ def main():
     p.add_argument("--epochs", type=int, default=_train_cfg["epochs"])
     p.add_argument("--batch-size", type=int, default=_train_cfg["batch_size"])
     p.add_argument("--eval-weight", type=float, default=_train_cfg["eval_weight"])
-    p.add_argument("--compare-games", type=int, default=_cmp.get("num_games", 1000))
+    p.add_argument("--compare-games", type=int, default=_cmp.get("num_games", 100))
     p.add_argument(
         "--compare-only",
         action="store_true",
@@ -66,8 +66,8 @@ def main():
     weights_path = Path(args.weights)
     data_path = Path(args.data)
     candidate_path = weights_path.with_name("nnue_candidate.bin")
-    accepted_dir = Path("models/accepted")
-    rejected_dir = Path("models/rejected")
+    accepted_dir = Path(_dep["paths"]["accepted_models_dir"])
+    rejected_dir = Path(_dep["paths"]["rejected_models_dir"])
     accepted_dir.mkdir(parents=True, exist_ok=True)
     rejected_dir.mkdir(parents=True, exist_ok=True)
 

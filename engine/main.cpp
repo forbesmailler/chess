@@ -407,7 +407,7 @@ class LichessBot {
             game_state = it->second;  // Keep shared_ptr alive
         }
 
-        constexpr int MAX_STREAM_RETRIES = 3;
+        constexpr int MAX_STREAM_RETRIES = config::bot::MAX_GAME_STREAM_RETRIES;
         for (int attempt = 1; attempt <= MAX_STREAM_RETRIES; ++attempt) {
             if (shutdown_requested.load() || !game_state->is_active.load()) break;
 
@@ -455,7 +455,8 @@ class LichessBot {
                                    ": Stream disconnected, reconnecting (attempt " +
                                    std::to_string(attempt + 1) + "/" +
                                    std::to_string(MAX_STREAM_RETRIES) + ")");
-                std::this_thread::sleep_for(std::chrono::seconds(2));
+                std::this_thread::sleep_for(
+                    std::chrono::seconds(config::bot::GAME_STREAM_RECONNECT_DELAY_S));
             }
         }
 
@@ -599,7 +600,8 @@ class LichessBot {
 
     bool make_move_with_retry(const std::string& game_id, const std::string& uci) {
         return retry_with_backoff([&]() { return client.make_move(game_id, uci); },
-                                  "game " + game_id + " move " + uci, 1000);
+                                  "game " + game_id + " move " + uci,
+                                  config::bot::MOVE_RETRY_DELAY_MS);
     }
 
     void handle_draw_offer_safely(const std::string& game_id,
@@ -624,7 +626,8 @@ class LichessBot {
                 if (attempt == 1) {
                     Utils::log_warning("Game " + game_id +
                                        ": Draw response failed, retrying...");
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+                    std::this_thread::sleep_for(std::chrono::milliseconds(
+                        config::bot::DRAW_RESPONSE_RETRY_DELAY_MS));
                 }
             }
 
@@ -820,10 +823,12 @@ int main(int argc, char* argv[]) {
         } else {
             try {
                 max_time_ms = std::stoi(arg);
-                if (max_time_ms < 50 || max_time_ms > 30000) {
-                    std::cerr
-                        << "Warning: Max time should be between 50-30000ms. Using "
-                        << max_time_ms << "ms" << std::endl;
+                if (max_time_ms < config::search::MIN_TIME_MS ||
+                    max_time_ms > config::search::MAX_TIME_MS) {
+                    std::cerr << "Warning: Max time should be between "
+                              << config::search::MIN_TIME_MS << "-"
+                              << config::search::MAX_TIME_MS << "ms. Using "
+                              << max_time_ms << "ms" << std::endl;
                 }
             } catch (const std::exception& e) {
                 std::cerr << "Invalid parameter: " << arg << ", ignoring" << std::endl;

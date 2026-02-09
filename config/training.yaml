@@ -7,6 +7,8 @@ self_play:
   search_time_ms: 200
   softmax_plies: 10
   softmax_temperature: 200.0
+  default_time_control_ms: 60000
+  progress_log_interval: 10
 
 training:
   epochs: 100
@@ -15,6 +17,8 @@ training:
   patience: 10
   eval_weight: 0.75
   val_split: 0.1
+  random_seed: 42
+  max_data_workers: 4
 
 invoke:
   train_games: 50000
@@ -23,3 +27,7 @@ invoke:
 
 compare:
   num_games: 100
+  num_threads: 16
+  max_game_ply: 400
+  search_time_ms: 200
+  progress_log_interval: 10

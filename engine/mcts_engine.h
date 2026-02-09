@@ -57,7 +57,7 @@ class MCTSEngine : public BaseEngine {
         uint64_t key = 0;
         float score = 0;
     };
-    static constexpr size_t EVAL_CACHE_SIZE = 1 << 18;
-    static constexpr size_t EVAL_CACHE_MASK = EVAL_CACHE_SIZE - 1;
+    static constexpr size_t EVAL_CACHE_SIZE = config::search::EVAL_CACHE_SIZE;
+    static constexpr size_t EVAL_CACHE_MASK = config::search::EVAL_CACHE_MASK;
     std::vector<CacheEntry> eval_cache;
 };

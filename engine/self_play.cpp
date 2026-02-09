@@ -175,7 +175,7 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
                 stm_eval = scores[idx];
             } else {
                 // Normal best-move search
-                TimeControl tc{60000, 0, 0};
+                TimeControl tc{config::self_play::DEFAULT_TIME_CONTROL_MS, 0, 0};
                 engine->set_max_time(config.search_time_ms);
                 auto result = engine->get_best_move(board, tc);
                 stm_eval = result.score;
@@ -218,7 +218,7 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
         std::cout << "Game " << completed << "/" << config.num_games << ": " << ply
                   << " plies, result=" << result_str << std::endl;
 
-        if (completed % 10 == 0) {
+        if (completed % config::self_play::PROGRESS_LOG_INTERVAL == 0) {
             auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::steady_clock::now() - start_time);
             std::cout << "Self-play progress: " << completed << "/" << config.num_games
@@ -339,7 +339,7 @@ void ModelComparator::play_games(int num_games, int thread_id) {
             bool new_to_move = (white_to_move == new_is_white);
             ChessEngine* active = new_to_move ? new_engine.get() : old_engine.get();
 
-            TimeControl tc{60000, 0, 0};
+            TimeControl tc{config::self_play::DEFAULT_TIME_CONTROL_MS, 0, 0};
             active->set_max_time(config.search_time_ms);
             auto result = active->get_best_move(board, tc);
             float stm_eval = result.score;
@@ -395,7 +395,7 @@ void ModelComparator::play_games(int num_games, int thread_id) {
                   << ply << " plies, " << result_str << " (" << color_str << ")"
                   << std::endl;
 
-        if (completed % 10 == 0) {
+        if (completed % config::compare::PROGRESS_LOG_INTERVAL == 0) {
             auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::steady_clock::now() - start_time);
             std::cout << "Compare progress: " << completed << "/" << config.num_games

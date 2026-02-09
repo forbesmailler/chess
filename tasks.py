@@ -79,7 +79,7 @@ def prepare(c):
         "epochs": f"Training epochs (default: {_train_cfg['epochs']})",
         "batch_size": f"Training batch size (default: {_train_cfg['batch_size']})",
         "eval_weight": f"Search eval vs game result blend (default: {_train_cfg['eval_weight']})",
-        "compare_games": f"Comparison games (default: {_cmp.get('num_games', 1000)})",
+        "compare_games": f"Comparison games (default: {_cmp.get('num_games', 100)})",
     }
 )
 def train(
@@ -92,7 +92,7 @@ def train(
     epochs=_train_cfg["epochs"],
     batch_size=_train_cfg["batch_size"],
     eval_weight=_train_cfg["eval_weight"],
-    compare_games=_cmp.get("num_games", 1000),
+    compare_games=_cmp.get("num_games", 100),
 ):
     """Prepare then run continuous RL loop (Ctrl+C to stop)."""
     prepare(c)

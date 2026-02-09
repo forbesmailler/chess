@@ -55,7 +55,7 @@ void ChessEngine::order_moves(const ChessBoard& board, chess::Movelist& moves,
 void ChessEngine::score_moves(const ChessBoard& board, const chess::Movelist& moves,
                               int* scores, chess::Move tt_move, int ply,
                               chess::Move prev_move) {
-    constexpr int PIECE_VALUES[] = {100, 320, 330, 500, 900, 0, 0};
+    constexpr auto& PIECE_VALUES = config::search::move_scoring::PIECE_VALUES;
     bool has_tt_move = tt_move != chess::Move::NO_MOVE;
     bool has_prev = prev_move != chess::Move::NO_MOVE;
     chess::Move cm = chess::Move::NO_MOVE;
@@ -71,26 +71,28 @@ void ChessEngine::score_moves(const ChessBoard& board, const chess::Movelist& mo
             move.typeOf() == chess::Move::ENPASSANT || to_piece != chess::Piece::NONE;
 
         if (has_tt_move && move == tt_move) {
-            score = 1000000;
+            score = config::search::move_scoring::TT_MOVE_BONUS;
         } else if (is_capture) {
             int victim = move.typeOf() == chess::Move::ENPASSANT
                              ? PIECE_VALUES[0]
                              : PIECE_VALUES[static_cast<int>(to_piece.type())];
             int attacker =
                 PIECE_VALUES[static_cast<int>(board.board.at(move.from()).type())];
-            score = 100000 + victim * 10 - attacker;
+            score = config::search::move_scoring::CAPTURE_BASE_SCORE +
+                    victim * config::search::move_scoring::VICTIM_VALUE_MULTIPLIER -
+                    attacker;
         } else if (move.typeOf() == chess::Move::PROMOTION) {
-            score = 90000;
+            score = config::search::move_scoring::PROMOTION_BONUS;
         } else {
             if (ply < MAX_PLY) {
                 if (move == killers[ply][0]) {
-                    score = 80000;
+                    score = config::search::move_scoring::KILLER1_BONUS;
                 } else if (move == killers[ply][1]) {
-                    score = 70000;
+                    score = config::search::move_scoring::KILLER2_BONUS;
                 }
             }
             if (score == 0 && cm != chess::Move::NO_MOVE && move == cm) {
-                score = 60000;
+                score = config::search::move_scoring::COUNTERMOVE_BONUS;
             }
             if (score == 0) {
                 score = history[move.from().index()][move.to().index()];
@@ -176,7 +178,9 @@ float ChessEngine::negamax(ChessBoard& board, int depth, int ply, float alpha,
         static_eval = board.turn() == ChessBoard::WHITE ? static_eval : -static_eval;
 
         // Reverse futility pruning (static null move pruning)
-        if (depth <= 3 && static_eval - depth * 1500.0f >= beta) {
+        if (depth <= 3 &&
+            static_eval - depth * config::search::pruning::REVERSE_FUTILITY_MARGIN >=
+                beta) {
             return static_eval;
         }
     }
@@ -224,13 +228,15 @@ float ChessEngine::negamax(ChessBoard& board, int depth, int ply, float alpha,
 
         // Futility pruning: skip quiet moves unlikely to raise alpha
         if (have_static_eval && depth <= 2 && is_quiet && moves_searched > 0) {
-            float margin = depth == 1 ? 1500.0f : 3000.0f;
+            float margin = depth == 1 ? config::search::pruning::FUTILITY_MARGIN_DEPTH1
+                                      : config::search::pruning::FUTILITY_MARGIN_DEPTH2;
             if (static_eval + margin <= alpha) continue;
         }
 
         // Late move pruning: skip quiet late moves at shallow depth
         if (!in_check && !is_pv && depth <= 3 && is_quiet && moves_searched > 0) {
-            if (moves_searched >= 3 + depth * depth) continue;
+            if (moves_searched >= config::search::pruning::LMP_BASE + depth * depth)
+                continue;
         }
 
         board.board.makeMove(move);
@@ -286,7 +292,8 @@ float ChessEngine::negamax(ChessBoard& board, int depth, int ply, float alpha,
                 }
                 int& h = history[move.from().index()][move.to().index()];
                 h += depth * depth;
-                if (h > 1000000) h = 1000000;
+                if (h > config::search::move_scoring::HISTORY_MAX)
+                    h = config::search::move_scoring::HISTORY_MAX;
                 if (prev_move != chess::Move::NO_MOVE) {
                     countermoves[prev_move.from().index()][prev_move.to().index()] =
                         move;
@@ -303,9 +310,14 @@ float ChessEngine::negamax(ChessBoard& board, int depth, int ply, float alpha,
 
     {
         auto& tt_slot = transposition_table[pos_key & TT_MASK];
-        int new_value = depth * 4 + (node_type == TranspositionEntry::EXACT ? 2 : 0);
-        int old_value =
-            tt_slot.depth * 4 + (tt_slot.type == TranspositionEntry::EXACT ? 2 : 0);
+        int new_value = depth * config::search::tt_replacement::DEPTH_WEIGHT +
+                        (node_type == TranspositionEntry::EXACT
+                             ? config::search::tt_replacement::EXACT_BONUS
+                             : 0);
+        int old_value = tt_slot.depth * config::search::tt_replacement::DEPTH_WEIGHT +
+                        (tt_slot.type == TranspositionEntry::EXACT
+                             ? config::search::tt_replacement::EXACT_BONUS
+                             : 0);
         if (tt_slot.key == pos_key || new_value >= old_value) {
             tt_slot = {pos_key, best_score, depth, node_type, best_move};
         }
@@ -340,9 +352,8 @@ float ChessEngine::quiescence_search(ChessBoard& board, float alpha, float beta,
 
     if (tactical_moves.empty()) return alpha;
 
-    constexpr float QS_PIECE_VALUES[] = {1000.0f, 3200.0f, 3300.0f, 5000.0f,
-                                         9000.0f, 0.0f,    0.0f};
-    constexpr float QS_DELTA_MARGIN = 2000.0f;
+    constexpr auto& QS_PIECE_VALUES = config::search::quiescence::PIECE_VALUES;
+    constexpr float QS_DELTA_MARGIN = config::search::quiescence::DELTA_MARGIN;
 
     int qs_scores[256];
     int qs_n = tactical_moves.size();
@@ -356,7 +367,8 @@ float ChessEngine::quiescence_search(ChessBoard& board, float alpha, float beta,
         if (!in_check && move.typeOf() != chess::Move::PROMOTION) {
             int pt = static_cast<int>(board.board.at(move.to()).type());
             float victim = QS_PIECE_VALUES[pt];
-            if (victim == 0.0f) victim = 1000.0f;  // en passant
+            if (victim == 0.0f)
+                victim = config::search::quiescence::EN_PASSANT_VALUE;  // en passant
             if (stand_pat + victim + QS_DELTA_MARGIN < alpha) continue;
         }
 
@@ -417,9 +429,9 @@ SearchResult ChessEngine::iterative_deepening_search(ChessBoard board,
 
         order_moves(board, legal_moves, tt_move, 0);
 
-        // Aspiration windows: use narrow window around previous score for depth >= 3
+        // Aspiration windows: use narrow window around previous score
         float alpha, beta;
-        if (depth >= 3) {
+        if (depth >= config::search::ASPIRATION_MIN_DEPTH) {
             alpha = prev_score - ASPIRATION_DELTA;
             beta = prev_score + ASPIRATION_DELTA;
         } else {
@@ -474,7 +486,7 @@ SearchResult ChessEngine::iterative_deepening_search(ChessBoard board,
             if (!completed_depth || should_stop.load()) break;
 
             // If aspiration window failed, widen and retry once
-            if (attempt == 0 && depth >= 3 &&
+            if (attempt == 0 && depth >= config::search::ASPIRATION_MIN_DEPTH &&
                 (current_best_score <= prev_score - ASPIRATION_DELTA ||
                  current_best_score >= prev_score + ASPIRATION_DELTA)) {
                 alpha = -std::numeric_limits<float>::infinity();
@@ -500,7 +512,8 @@ SearchResult ChessEngine::iterative_deepening_search(ChessBoard board,
         }
 
         if (!completed_depth) break;
-        if (std::abs(prev_score) > MATE_VALUE - 500) break;
+        if (std::abs(prev_score) > MATE_VALUE - config::search::MATE_THRESHOLD_MARGIN)
+            break;
     }
 
     best_result.time_used = std::chrono::duration_cast<std::chrono::milliseconds>(

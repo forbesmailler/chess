@@ -67,6 +67,12 @@ def generate() -> str:
     s = eng["search"]
     lines.append("namespace search {")
     lines.append(f"    static constexpr size_t CACHE_SIZE = {s['cache_size']};")
+    tt_log2 = s["tt_size_log2"]
+    lines.append(f"    static constexpr size_t TT_SIZE = 1 << {tt_log2};")
+    lines.append("    static constexpr size_t TT_MASK = TT_SIZE - 1;")
+    ec_log2 = s["eval_cache_size_log2"]
+    lines.append(f"    static constexpr size_t EVAL_CACHE_SIZE = 1 << {ec_log2};")
+    lines.append("    static constexpr size_t EVAL_CACHE_MASK = EVAL_CACHE_SIZE - 1;")
     lines.append(
         f"    static constexpr int TIME_CHECK_INTERVAL = {s['time_check_interval']};"
     )
@@ -79,6 +85,17 @@ def generate() -> str:
     )
     lines.append(
         f"    static constexpr int TIME_ALLOCATION_DIVISOR = {s['time_allocation_divisor']};"
+    )
+    lines.append(f"    static constexpr int MIN_TIME_MS = {s['min_time_ms']};")
+    lines.append(f"    static constexpr int MAX_TIME_MS = {s['max_time_ms']};")
+    lines.append(
+        f"    static constexpr float ASPIRATION_DELTA = {s['aspiration_delta']:.1f}f;"
+    )
+    lines.append(
+        f"    static constexpr int ASPIRATION_MIN_DEPTH = {s['aspiration_min_depth']};"
+    )
+    lines.append(
+        f"    static constexpr int MATE_THRESHOLD_MARGIN = {s['mate_threshold_margin']};"
     )
     lines.append("")
     nm = s["null_move"]
@@ -112,6 +129,66 @@ def generate() -> str:
         f"        static constexpr int DEEP_REDUCTION = {lmr['deep_reduction']};"
     )
     lines.append("    }  // namespace lmr")
+    lines.append("")
+    ms = s["move_scoring"]
+    lines.append("    namespace move_scoring {")
+    ms_pv = ms["piece_values"]
+    pv_vals = ", ".join(str(v) for v in ms_pv)
+    lines.append(f"        static constexpr int PIECE_VALUES[] = {{{pv_vals}}};")
+    lines.append(f"        static constexpr int TT_MOVE_BONUS = {ms['tt_move_bonus']};")
+    lines.append(
+        f"        static constexpr int CAPTURE_BASE_SCORE = {ms['capture_base_score']};"
+    )
+    lines.append(
+        f"        static constexpr int PROMOTION_BONUS = {ms['promotion_bonus']};"
+    )
+    lines.append(f"        static constexpr int KILLER1_BONUS = {ms['killer1_bonus']};")
+    lines.append(f"        static constexpr int KILLER2_BONUS = {ms['killer2_bonus']};")
+    lines.append(
+        f"        static constexpr int COUNTERMOVE_BONUS = {ms['countermove_bonus']};"
+    )
+    lines.append(f"        static constexpr int HISTORY_MAX = {ms['history_max']};")
+    lines.append(
+        f"        static constexpr int VICTIM_VALUE_MULTIPLIER = {ms['victim_value_multiplier']};"
+    )
+    lines.append("    }  // namespace move_scoring")
+    lines.append("")
+    tt_repl = s["tt_replacement"]
+    lines.append("    namespace tt_replacement {")
+    lines.append(
+        f"        static constexpr int DEPTH_WEIGHT = {tt_repl['depth_weight']};"
+    )
+    lines.append(
+        f"        static constexpr int EXACT_BONUS = {tt_repl['exact_bonus']};"
+    )
+    lines.append("    }  // namespace tt_replacement")
+    lines.append("")
+    pr = s["pruning"]
+    lines.append("    namespace pruning {")
+    lines.append(
+        f"        static constexpr float REVERSE_FUTILITY_MARGIN = {pr['reverse_futility_margin']:.1f}f;"
+    )
+    lines.append(
+        f"        static constexpr float FUTILITY_MARGIN_DEPTH1 = {pr['futility_margin_depth1']:.1f}f;"
+    )
+    lines.append(
+        f"        static constexpr float FUTILITY_MARGIN_DEPTH2 = {pr['futility_margin_depth2']:.1f}f;"
+    )
+    lines.append(f"        static constexpr int LMP_BASE = {pr['lmp_base']};")
+    lines.append("    }  // namespace pruning")
+    lines.append("")
+    qs = s["quiescence"]
+    lines.append("    namespace quiescence {")
+    qs_pv = qs["piece_values"]
+    qs_vals = ", ".join(f"{v:.1f}f" for v in qs_pv)
+    lines.append(f"        static constexpr float PIECE_VALUES[] = {{{qs_vals}}};")
+    lines.append(
+        f"        static constexpr float DELTA_MARGIN = {qs['delta_margin']:.1f}f;"
+    )
+    lines.append(
+        f"        static constexpr float EN_PASSANT_VALUE = {qs['en_passant_value']:.1f}f;"
+    )
+    lines.append("    }  // namespace quiescence")
     lines.append("}  // namespace search")
     lines.append("")
 
@@ -135,6 +212,9 @@ def generate() -> str:
     lines.append(
         f"    static constexpr float PRIOR_SIGMOID_SCALE = {m['prior_sigmoid_scale']:.1f}f;"
     )
+    lines.append(
+        f"    static constexpr int NODE_COUNT_INTERVAL = {m['node_count_interval']};"
+    )
     lines.append("}  // namespace mcts")
     lines.append("")
 
@@ -153,6 +233,18 @@ def generate() -> str:
         f"    static constexpr int MAX_CONSECUTIVE_ERRORS = {b['max_consecutive_errors']};"
     )
     lines.append(f"    static constexpr int MAX_RESTARTS = {b['max_restarts']};")
+    lines.append(
+        f"    static constexpr int MAX_GAME_STREAM_RETRIES = {b['max_game_stream_retries']};"
+    )
+    lines.append(
+        f"    static constexpr int GAME_STREAM_RECONNECT_DELAY_S = {b['game_stream_reconnect_delay_s']};"
+    )
+    lines.append(
+        f"    static constexpr int DRAW_RESPONSE_RETRY_DELAY_MS = {b['draw_response_retry_delay_ms']};"
+    )
+    lines.append(
+        f"    static constexpr int MOVE_RETRY_DELAY_MS = {b['move_retry_delay_ms']};"
+    )
     lines.append(
         f'    static constexpr std::string_view USER_AGENT = "{b["user_agent"]}";'
     )
@@ -306,7 +398,32 @@ def generate() -> str:
     lines.append(
         f"    static constexpr float SOFTMAX_TEMPERATURE = {sp['softmax_temperature']:.1f}f;"
     )
+    lines.append(
+        f"    static constexpr int DEFAULT_TIME_CONTROL_MS = {sp['default_time_control_ms']};"
+    )
+    lines.append(
+        f"    static constexpr int PROGRESS_LOG_INTERVAL = {sp['progress_log_interval']};"
+    )
     lines.append("}  // namespace self_play")
+    lines.append("")
+
+    # compare
+    cmp = trn.get("compare", {})
+    lines.append("namespace compare {")
+    lines.append(f"    static constexpr int NUM_GAMES = {cmp.get('num_games', 100)};")
+    lines.append(
+        f"    static constexpr int NUM_THREADS = {cmp.get('num_threads', 16)};"
+    )
+    lines.append(
+        f"    static constexpr int MAX_GAME_PLY = {cmp.get('max_game_ply', 400)};"
+    )
+    lines.append(
+        f"    static constexpr int SEARCH_TIME_MS = {cmp.get('search_time_ms', 200)};"
+    )
+    lines.append(
+        f"    static constexpr int PROGRESS_LOG_INTERVAL = {cmp.get('progress_log_interval', 10)};"
+    )
+    lines.append("}  // namespace compare")
     lines.append("")
 
     lines.append("}  // namespace config")

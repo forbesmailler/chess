@@ -1,5 +1,7 @@
 paths:
   bot_exe: "engine/build/Release/lichess_bot.exe"
+  accepted_models_dir: "models/accepted"
+  rejected_models_dir: "models/rejected"
 
 vps:
   repo_dir: "/opt/chess-bot-src"

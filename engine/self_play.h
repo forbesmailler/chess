@@ -73,11 +73,11 @@ class SelfPlayGenerator {
 class ModelComparator {
    public:
     struct Config {
-        int num_games = 1000;
-        int num_threads = 16;
+        int num_games = config::compare::NUM_GAMES;
+        int num_threads = config::compare::NUM_THREADS;
         std::string output_file;
-        int max_game_ply = 400;
-        int search_time_ms = 200;
+        int max_game_ply = config::compare::MAX_GAME_PLY;
+        int search_time_ms = config::compare::SEARCH_TIME_MS;
     };
 
     struct Result {

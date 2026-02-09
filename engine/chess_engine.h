@@ -39,13 +39,13 @@ class ChessEngine : public BaseEngine {
     void check_time();
 
     // TT: power-of-2 flat array for O(1) cache-friendly lookup
-    static constexpr size_t TT_SIZE = 1 << 20;
-    static constexpr size_t TT_MASK = TT_SIZE - 1;
+    static constexpr size_t TT_SIZE = config::search::TT_SIZE;
+    static constexpr size_t TT_MASK = config::search::TT_MASK;
     std::vector<TranspositionEntry> transposition_table;
 
     // Eval cache: power-of-2 flat array
-    static constexpr size_t EVAL_CACHE_SIZE = 1 << 18;
-    static constexpr size_t EVAL_CACHE_MASK = EVAL_CACHE_SIZE - 1;
+    static constexpr size_t EVAL_CACHE_SIZE = config::search::EVAL_CACHE_SIZE;
+    static constexpr size_t EVAL_CACHE_MASK = config::search::EVAL_CACHE_MASK;
     std::vector<EvalCacheEntry> eval_cache;
 
     // Killer move heuristic: 2 killer moves per ply (chess::Move = 4 bytes)
@@ -59,7 +59,7 @@ class ChessEngine : public BaseEngine {
     chess::Move countermoves[64][64];
 
     // Aspiration window
-    static constexpr float ASPIRATION_DELTA = 50.0f;
+    static constexpr float ASPIRATION_DELTA = config::search::ASPIRATION_DELTA;
 
     SearchResult iterative_deepening_search(ChessBoard board, int max_time_ms);
     float negamax(ChessBoard& board, int depth, int ply, float alpha, float beta,

@@ -8,11 +8,18 @@ nnue:
 
 search:
   cache_size: 1000000
+  tt_size_log2: 20
+  eval_cache_size_log2: 18
   time_check_interval: 2048
   max_depth: 50
   quiescence_max_depth: 8
   default_max_time_ms: 2000
   time_allocation_divisor: 40
+  min_time_ms: 50
+  max_time_ms: 30000
+  aspiration_delta: 50.0
+  aspiration_min_depth: 3
+  mate_threshold_margin: 500
   null_move:
     min_depth: 3
     mate_margin: 1000
@@ -25,6 +32,28 @@ search:
     many_moves_threshold: 7
     shallow_reduction: 1
     deep_reduction: 2
+  move_scoring:
+    piece_values: [100, 320, 330, 500, 900, 0, 0]
+    tt_move_bonus: 1000000
+    capture_base_score: 100000
+    promotion_bonus: 90000
+    killer1_bonus: 80000
+    killer2_bonus: 70000
+    countermove_bonus: 60000
+    history_max: 1000000
+    victim_value_multiplier: 10
+  tt_replacement:
+    depth_weight: 4
+    exact_bonus: 2
+  pruning:
+    reverse_futility_margin: 1500.0
+    futility_margin_depth1: 1500.0
+    futility_margin_depth2: 3000.0
+    lmp_base: 3
+  quiescence:
+    piece_values: [1000.0, 3200.0, 3300.0, 5000.0, 9000.0, 0.0, 0.0]
+    delta_margin: 2000.0
+    en_passant_value: 1000.0
 
 mcts:
   exploration_constant: 1.4
@@ -34,6 +63,7 @@ mcts:
   eval_frequency: 10
   early_termination_factor: 0.8
   prior_sigmoid_scale: 5000.0
+  node_count_interval: 1000
 
 bot:
   max_retries: 3
@@ -42,6 +72,10 @@ bot:
   connection_timeout_ms: 120000
   max_consecutive_errors: 10
   max_restarts: 5
+  max_game_stream_retries: 3
+  game_stream_reconnect_delay_s: 2
+  draw_response_retry_delay_ms: 1000
+  move_retry_delay_ms: 1000
   user_agent: "Lichess-Bot-CPP/1.0"
   lichess_base_url: "https://lichess.org/api"
   connectivity_test_url: "http://www.google.com"
