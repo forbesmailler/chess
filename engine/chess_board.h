@@ -78,7 +78,6 @@ class ChessBoard {
     PieceType piece_type_at(int square) const;
     PieceType piece_type_at(const std::string& square_str) const;
     bool is_capture_move(const Move& move) const;
-    PieceType piece_at(int square) const;  // Alias for piece_type_at
 
     // Static utility methods
     static int square_from_string(const std::string& sq);

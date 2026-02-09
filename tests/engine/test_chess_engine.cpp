@@ -1,7 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <memory>
-
 #include "chess_board.h"
 #include "chess_engine.h"
 #include "mcts_engine.h"

@@ -78,12 +78,6 @@ bool LichessClient::decline_draw(const std::string& game_id) {
     return response.status_code == 200;
 }
 
-bool LichessClient::offer_draw(const std::string& game_id) {
-    auto response =
-        make_request(base_url + "/bot/game/" + game_id + "/draw/yes", "POST");
-    return response.status_code == 200;
-}
-
 bool LichessClient::test_connectivity() {
     CURL* curl = curl_easy_init();
     if (!curl) return false;

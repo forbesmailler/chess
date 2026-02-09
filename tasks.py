@@ -1,4 +1,3 @@
-from glob import glob
 from pathlib import Path
 
 from invoke import task
@@ -29,10 +28,6 @@ def format(c):
     """Format all code (Python + C++)."""
     c.run("ruff format .")
     c.run("ruff check --fix --unsafe-fixes .")
-    files = []
-    for pattern in CPP_FILES.split():
-        files.extend(glob(pattern))
-    print(f"Formatting {len(files)} C++ files...")
     c.run(f"clang-format -i {CPP_FILES}")
 
 

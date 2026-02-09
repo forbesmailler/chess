@@ -251,23 +251,9 @@ class TestCompareOnly:
 
         def fake_run(cmd, **kwargs):
             calls.append(cmd)
-            # This is the compare command (only subprocess call in compare-only)
-            if "--compare" in cmd:
-                return subprocess.CompletedProcess(cmd, 0)
             return subprocess.CompletedProcess(cmd, 0)
 
-        call_count = 0
-
-        def fake_run_with_interrupt(cmd, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            # compare call returns success
-            if "--compare" in cmd:
-                result = subprocess.CompletedProcess(cmd, 0)
-                return result
-            return subprocess.CompletedProcess(cmd, 0)
-
-        with patch("scripts.train_loop.subprocess.run", fake_run_with_interrupt):
+        with patch("scripts.train_loop.subprocess.run", fake_run):
             try:
                 train_loop.main()
             except (KeyboardInterrupt, Exception):

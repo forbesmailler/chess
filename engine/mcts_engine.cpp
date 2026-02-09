@@ -1,6 +1,5 @@
 #include "mcts_engine.h"
 
-#include <algorithm>
 #include <cmath>
 #include <limits>
 

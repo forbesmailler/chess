@@ -147,7 +147,3 @@ bool ChessBoard::is_capture_move(const Move& move) const {
     return move.internal_move.typeOf() == chess::Move::ENPASSANT ||
            board.at(move.internal_move.to()) != chess::Piece::NONE;
 }
-
-ChessBoard::PieceType ChessBoard::piece_at(int square) const {
-    return piece_type_at(square);
-}

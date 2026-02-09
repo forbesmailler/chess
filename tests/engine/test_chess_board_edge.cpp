@@ -68,13 +68,6 @@ TEST(ChessBoardEdge, PieceTypeAtAllStartingPieces) {
     }
 }
 
-TEST(ChessBoardEdge, PieceAtIsAlias) {
-    ChessBoard board;
-    for (int sq = 0; sq < 64; ++sq) {
-        EXPECT_EQ(board.piece_at(sq), board.piece_type_at(sq)) << "sq=" << sq;
-    }
-}
-
 TEST(ChessBoardEdge, PieceTypeAtByString) {
     ChessBoard board;
     EXPECT_EQ(board.piece_type_at("e1"), ChessBoard::KING);

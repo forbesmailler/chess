@@ -6,12 +6,10 @@
 #include <cstring>
 #include <iostream>
 #include <memory>
-#include <numeric>
 #include <random>
 #include <thread>
 
 #include "chess_engine.h"
-#include "handcrafted_eval.h"
 #include "nnue_model.h"
 
 SelfPlayGenerator::SelfPlayGenerator(const Config& config) : config(config) {}

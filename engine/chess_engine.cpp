@@ -246,24 +246,17 @@ float ChessEngine::negamax(ChessBoard& board, int depth, int ply, float alpha,
                           depth > config::search::lmr::MIN_DEPTH && !in_check &&
                           is_quiet;
 
+            int search_depth = depth - 1;
             if (do_lmr) {
                 int reduction =
                     moves_searched > config::search::lmr::MANY_MOVES_THRESHOLD
                         ? config::search::lmr::DEEP_REDUCTION
                         : config::search::lmr::SHALLOW_REDUCTION;
-                int reduced_depth = depth - 1 - reduction;
-
-                if (reduced_depth >= 0) {
-                    score = -negamax(board, reduced_depth, ply + 1, -alpha - 1, -alpha,
-                                     false, move);
-                } else {
-                    score = -negamax(board, depth - 1, ply + 1, -alpha - 1, -alpha,
-                                     false, move);
-                }
-            } else {
-                score = -negamax(board, depth - 1, ply + 1, -alpha - 1, -alpha, false,
-                                 move);
+                int reduced = depth - 1 - reduction;
+                if (reduced >= 0) search_depth = reduced;
             }
+            score =
+                -negamax(board, search_depth, ply + 1, -alpha - 1, -alpha, false, move);
 
             // PVS re-search: if null window failed high, re-search with full window
             if (score > alpha && score < beta) {
@@ -345,38 +338,38 @@ float ChessEngine::quiescence_search(ChessBoard& board, float alpha, float beta,
                                                                          board.board);
     }
 
-    if (!tactical_moves.empty()) {
-        constexpr float QS_PIECE_VALUES[] = {1000.0f, 3200.0f, 3300.0f, 5000.0f,
-                                             9000.0f, 0.0f,    0.0f};
-        constexpr float QS_DELTA_MARGIN = 2000.0f;
+    if (tactical_moves.empty()) return alpha;
 
-        int qs_scores[256];
-        int qs_n = tactical_moves.size();
-        score_moves(board, tactical_moves, qs_scores, chess::Move::NO_MOVE, 0);
+    constexpr float QS_PIECE_VALUES[] = {1000.0f, 3200.0f, 3300.0f, 5000.0f,
+                                         9000.0f, 0.0f,    0.0f};
+    constexpr float QS_DELTA_MARGIN = 2000.0f;
 
-        for (int i = 0; i < qs_n; ++i) {
-            pick_move(tactical_moves, qs_scores, i, qs_n);
-            chess::Move move = tactical_moves[i];
+    int qs_scores[256];
+    int qs_n = tactical_moves.size();
+    score_moves(board, tactical_moves, qs_scores, chess::Move::NO_MOVE, 0);
 
-            // Delta pruning: skip captures that can't raise alpha
-            if (!in_check && move.typeOf() != chess::Move::PROMOTION) {
-                int pt = static_cast<int>(board.board.at(move.to()).type());
-                float victim = QS_PIECE_VALUES[pt];
-                if (victim == 0.0f) victim = 1000.0f;  // en passant
-                if (stand_pat + victim + QS_DELTA_MARGIN < alpha) continue;
-            }
+    for (int i = 0; i < qs_n; ++i) {
+        pick_move(tactical_moves, qs_scores, i, qs_n);
+        chess::Move move = tactical_moves[i];
 
-            board.board.makeMove(move);
-            bool child_in_check = board.board.inCheck();
-            float score =
-                -quiescence_search(board, -beta, -alpha, qs_depth + 1, child_in_check);
-            board.board.unmakeMove(move);
-
-            if (score == -SEARCH_INTERRUPTED || should_stop.load())
-                return SEARCH_INTERRUPTED;
-            if (score >= beta) return beta;
-            if (score > alpha) alpha = score;
+        // Delta pruning: skip captures that can't raise alpha
+        if (!in_check && move.typeOf() != chess::Move::PROMOTION) {
+            int pt = static_cast<int>(board.board.at(move.to()).type());
+            float victim = QS_PIECE_VALUES[pt];
+            if (victim == 0.0f) victim = 1000.0f;  // en passant
+            if (stand_pat + victim + QS_DELTA_MARGIN < alpha) continue;
         }
+
+        board.board.makeMove(move);
+        bool child_in_check = board.board.inCheck();
+        float score =
+            -quiescence_search(board, -beta, -alpha, qs_depth + 1, child_in_check);
+        board.board.unmakeMove(move);
+
+        if (score == -SEARCH_INTERRUPTED || should_stop.load())
+            return SEARCH_INTERRUPTED;
+        if (score >= beta) return beta;
+        if (score > alpha) alpha = score;
     }
 
     return alpha;

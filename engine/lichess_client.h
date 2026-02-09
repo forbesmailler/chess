@@ -36,7 +36,6 @@ class LichessClient {
     bool make_move(const std::string& game_id, const std::string& uci_move);
     bool accept_draw(const std::string& game_id);
     bool decline_draw(const std::string& game_id);
-    bool offer_draw(const std::string& game_id);
 
     // Connectivity test
     bool test_connectivity();
