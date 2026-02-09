@@ -35,7 +35,8 @@ class MCTSEngine : public BaseEngine {
             return visits > 0 ? total_score / visits : 0.0f;
         }
 
-        float get_uct_value(float exploration_constant, int parent_visits) const;
+        float get_uct_value(float exploration_constant, float log_parent,
+                            float sqrt_parent) const;
         const std::vector<ChessBoard::Move>& get_legal_moves() const;
         bool is_leaf() const { return children.empty(); }
     };
@@ -46,8 +47,6 @@ class MCTSEngine : public BaseEngine {
     void backpropagate(MCTSNode* node, float score);
 
     float evaluate_position(const ChessBoard& board);
-    float get_move_prior(const ChessBoard& board, const ChessBoard::Move& move,
-                         float parent_eval);
 
     float exploration_constant = config::mcts::EXPLORATION_CONSTANT;
     int max_simulation_depth = config::mcts::MAX_SIMULATION_DEPTH;

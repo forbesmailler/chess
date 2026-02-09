@@ -182,21 +182,21 @@ size_t LichessClient::write_callback(void* contents, size_t size, size_t nmemb,
 size_t LichessClient::stream_callback(void* contents, size_t size, size_t nmemb,
                                       StreamData* stream_data) {
     size_t total_size = size * nmemb;
-    std::string chunk(static_cast<char*>(contents), total_size);
+    stream_data->buffer.append(static_cast<char*>(contents), total_size);
 
-    stream_data->buffer += chunk;
-
-    // Process complete lines
-    size_t pos = 0;
-    while ((pos = stream_data->buffer.find('\n')) != std::string::npos) {
-        std::string line = stream_data->buffer.substr(0, pos);
-        // Remove carriage return if present
+    // Process complete lines — scan once, erase consumed prefix once at the end
+    size_t start = 0;
+    size_t pos;
+    while ((pos = stream_data->buffer.find('\n', start)) != std::string::npos) {
+        std::string line = stream_data->buffer.substr(start, pos - start);
         if (!line.empty() && line.back() == '\r') {
             line.pop_back();
         }
-
         stream_data->callback(line);
-        stream_data->buffer.erase(0, pos + 1);
+        start = pos + 1;
+    }
+    if (start > 0) {
+        stream_data->buffer.erase(0, start);
     }
 
     return total_size;

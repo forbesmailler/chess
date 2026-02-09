@@ -511,7 +511,7 @@ SearchResult ChessEngine::iterative_deepening_search(ChessBoard board,
 
 void ChessEngine::clear_caches() {
     std::memset(eval_cache.data(), 0, EVAL_CACHE_SIZE * sizeof(EvalCacheEntry));
-    transposition_table.assign(TT_SIZE, TranspositionEntry{});
+    std::memset(transposition_table.data(), 0, TT_SIZE * sizeof(TranspositionEntry));
     std::memset(killers, 0, sizeof(killers));
     std::memset(history, 0, sizeof(history));
     std::memset(countermoves, 0, sizeof(countermoves));

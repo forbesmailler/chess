@@ -88,11 +88,16 @@ MCTSEngine::MCTSNode* MCTSEngine::select(MCTSNode* root) {
 
     // Traverse tree until we reach a leaf node
     while (!current->is_leaf() && !current->is_terminal) {
+        // Precompute log/sqrt of parent visits (same for all siblings)
+        float log_parent = std::log(static_cast<float>(current->visits));
+        float sqrt_parent = std::sqrt(static_cast<float>(current->visits));
+
         MCTSNode* best_child = nullptr;
         float best_uct = -std::numeric_limits<float>::infinity();
 
         for (const auto& child : current->children) {
-            float uct = child->get_uct_value(exploration_constant, current->visits);
+            float uct =
+                child->get_uct_value(exploration_constant, log_parent, sqrt_parent);
             if (uct > best_uct) {
                 best_uct = uct;
                 best_child = child.get();
@@ -131,12 +136,19 @@ void MCTSEngine::expand(MCTSNode* node) {
 
         // Apply the move
         if (child->board.make_move(move)) {
-            // Set prior probability based on move evaluation
-            child->prior_probability = get_move_prior(node->board, move, parent_eval);
+            // Evaluate child position (already copied, avoid redundant copy in
+            // get_move_prior)
+            float child_eval = evaluate_position(child->board);
+            float improvement = node->board.turn() == ChessBoard::WHITE
+                                    ? child_eval - parent_eval
+                                    : parent_eval - child_eval;
+            child->prior_probability =
+                1.0f /
+                (1.0f + std::exp(-improvement / config::mcts::PRIOR_SIGMOID_SCALE));
 
-            // Check if this is a terminal position
-            auto child_legal_moves = child->board.get_legal_moves();
-            if (child_legal_moves.empty()) {
+            // Check if terminal without heap-allocating a move vector
+            auto [reason, result] = child->board.board.isGameOver();
+            if (result != chess::GameResult::NONE) {
                 child->is_terminal = true;
             }
 
@@ -153,14 +165,15 @@ float MCTSEngine::simulate(const ChessBoard& board) {
 
     // Random simulation with early termination based on evaluation
     while (depth < max_simulation_depth) {
-        auto legal_moves = sim_board.get_legal_moves();
-        if (legal_moves.empty()) {
-            // Game over
-            if (sim_board.is_checkmate()) {
+        // Use stack-allocated Movelist to avoid heap allocation per iteration
+        chess::Movelist moves;
+        chess::movegen::legalmoves(moves, sim_board.board);
+        if (moves.empty()) {
+            // No legal moves: checkmate if in check, else stalemate
+            if (sim_board.board.inCheck()) {
                 return sim_board.turn() == board.turn() ? -MATE_VALUE : MATE_VALUE;
-            } else {
-                return 0.0f;  // Stalemate or draw
             }
+            return 0.0f;
         }
 
         // Use evaluation to guide simulation occasionally
@@ -173,13 +186,10 @@ float MCTSEngine::simulate(const ChessBoard& board) {
             }
         }
 
-        // Select random move (could be improved with better heuristics)
-        std::uniform_int_distribution<> dist(0, legal_moves.size() - 1);
-        ChessBoard::Move selected_move = legal_moves[dist(rng)];
-
-        if (!sim_board.make_move(selected_move)) {
-            break;
-        }
+        // Select random move
+        std::uniform_int_distribution<int> dist(0, moves.size() - 1);
+        chess::Move selected = moves[dist(rng)];
+        sim_board.board.makeMove(selected);
 
         depth++;
     }
@@ -213,35 +223,19 @@ float MCTSEngine::evaluate_position(const ChessBoard& board) {
     return eval;
 }
 
-float MCTSEngine::get_move_prior(const ChessBoard& board, const ChessBoard::Move& move,
-                                 float parent_eval) {
-    ChessBoard temp_board = board;
-    if (!temp_board.make_move(move)) return 0.0f;
-
-    float eval_after = evaluate_position(temp_board);
-
-    // Normalize the improvement
-    float improvement = board.turn() == ChessBoard::WHITE ? eval_after - parent_eval
-                                                          : parent_eval - eval_after;
-
-    // Convert to probability (sigmoid-like function)
-    return 1.0f / (1.0f + std::exp(-improvement / config::mcts::PRIOR_SIGMOID_SCALE));
-}
-
-float MCTSEngine::MCTSNode::get_uct_value(float exploration_constant,
-                                          int parent_visits) const {
+float MCTSEngine::MCTSNode::get_uct_value(float exploration_constant, float log_parent,
+                                          float sqrt_parent) const {
     if (visits == 0) {
         return std::numeric_limits<float>::infinity();  // Unvisited nodes have highest
                                                         // priority
     }
 
     float exploitation = -get_average_score();
-    float exploration =
-        exploration_constant * std::sqrt(std::log(parent_visits) / visits);
+    float exploration = exploration_constant * std::sqrt(log_parent / visits);
 
     // Add prior knowledge
-    float prior_bonus = prior_probability * exploration_constant *
-                        std::sqrt(parent_visits) / (1 + visits);
+    float prior_bonus =
+        prior_probability * exploration_constant * sqrt_parent / (1 + visits);
 
     return exploitation + exploration + prior_bonus;
 }
