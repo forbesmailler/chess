@@ -187,7 +187,7 @@ def main():
         )
         wld = run_compare(
             f"{BOT_EXE} --compare {old_arg} {candidate_path}"
-            f' {args.compare_games} "" {args.threads}'
+            f" {args.compare_games} {data_path} {args.threads}"
         )
         improved = wld["improved"]
 

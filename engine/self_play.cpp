@@ -242,12 +242,16 @@ ModelComparator::Result ModelComparator::run() {
     int games_per_thread = config.num_games / threads;
     int remainder = config.num_games % threads;
 
+    int actual_threads = 0;
     std::cout << "Loading models on " << threads << " thread(s)..." << std::endl;
+    std::vector<std::vector<TaggedPosition>> thread_positions(threads);
     std::vector<std::thread> thread_pool;
     for (int t = 0; t < threads; ++t) {
         int n = games_per_thread + (t < remainder ? 1 : 0);
         if (n == 0) continue;
-        thread_pool.emplace_back(&ModelComparator::play_games, this, n, t);
+        thread_pool.emplace_back(&ModelComparator::play_games, this, n, t,
+                                 std::ref(thread_positions[t]));
+        actual_threads++;
     }
 
     for (auto& t : thread_pool) t.join();
@@ -264,10 +268,30 @@ ModelComparator::Result ModelComparator::run() {
     result.old_wins = old_wins.load();
     result.draws = draws.load();
     result.total_positions = total_positions.load();
+
+    // Write positions from the overall winning engine only
+    if (!config.output_file.empty() && result.new_wins != result.old_wins) {
+        bool new_won_overall = result.new_wins > result.old_wins;
+        std::ofstream out(config.output_file, std::ios::binary | std::ios::app);
+        int written = 0;
+        for (auto& tvec : thread_positions) {
+            for (auto& tp : tvec) {
+                if (tp.from_new_engine == new_won_overall) {
+                    SelfPlayGenerator::write_position(out, tp.pos);
+                    written++;
+                }
+            }
+        }
+        std::cout << "Wrote " << written << " positions from "
+                  << (new_won_overall ? "new" : "old") << " engine to "
+                  << config.output_file << std::endl;
+    }
+
     return result;
 }
 
-void ModelComparator::play_games(int num_games, int thread_id) {
+void ModelComparator::play_games(int num_games, int thread_id,
+                                std::vector<TaggedPosition>& out_positions) {
     std::shared_ptr<NNUEModel> new_model = preloaded_new_model;
     if (!new_model) {
         new_model = std::make_shared<NNUEModel>();
@@ -303,7 +327,9 @@ void ModelComparator::play_games(int num_games, int thread_id) {
         new_engine->clear_caches();
         old_engine->clear_caches();
         std::vector<TrainingPosition> positions;
+        std::vector<bool> from_new_engine;
         positions.reserve(config.max_game_ply);
+        from_new_engine.reserve(config.max_game_ply);
 
         bool new_is_white = (thread_id + g) % 2 == 0;
 
@@ -333,13 +359,20 @@ void ModelComparator::play_games(int num_games, int thread_id) {
 
             positions.push_back(
                 SelfPlayGenerator::encode_position(board, stm_eval, 1, ply));
+            from_new_engine.push_back(new_to_move);
 
             if (result.best_move.uci().empty()) break;
             board.make_move(result.best_move);
             ply++;
         }
 
-        for (auto& pos : positions) {
+        bool new_won =
+            (new_is_white && white_result == 2) || (!new_is_white && white_result == 0);
+        bool old_won =
+            (new_is_white && white_result == 0) || (!new_is_white && white_result == 2);
+
+        for (size_t i = 0; i < positions.size(); ++i) {
+            auto& pos = positions[i];
             bool white_stm = pos.side_to_move == 0;
             if (white_result == 2) {
                 pos.game_result = white_stm ? 2 : 0;
@@ -350,18 +383,10 @@ void ModelComparator::play_games(int num_games, int thread_id) {
             }
         }
 
-        if (!config.output_file.empty()) {
-            std::lock_guard<std::mutex> lock(file_mutex);
-            std::ofstream out(config.output_file, std::ios::binary | std::ios::app);
-            for (const auto& pos : positions) {
-                SelfPlayGenerator::write_position(out, pos);
-            }
+        // Collect positions with engine tags for deferred writing
+        for (size_t i = 0; i < positions.size(); ++i) {
+            out_positions.push_back({positions[i], from_new_engine[i]});
         }
-
-        bool new_won =
-            (new_is_white && white_result == 2) || (!new_is_white && white_result == 0);
-        bool old_won =
-            (new_is_white && white_result == 0) || (!new_is_white && white_result == 2);
 
         if (new_won)
             new_wins.fetch_add(1);

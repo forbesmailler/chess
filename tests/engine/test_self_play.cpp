@@ -251,12 +251,15 @@ TEST(ModelComparator, ComparisonProducesResults) {
     EXPECT_EQ(result.new_wins + result.old_wins + result.draws, 2);
     EXPECT_GT(result.total_positions, 0);
 
-    // Verify binary output is valid
+    // Positions only written when there's a decisive overall winner
+    bool has_overall_winner = result.new_wins != result.old_wins;
     std::ifstream in(output_file, std::ios::binary | std::ios::ate);
-    EXPECT_TRUE(in.is_open());
-    auto file_size = in.tellg();
-    EXPECT_GT(file_size, 0);
-    EXPECT_EQ(file_size % sizeof(TrainingPosition), 0);
+    if (has_overall_winner) {
+        EXPECT_TRUE(in.is_open());
+        auto file_size = in.tellg();
+        EXPECT_GT(file_size, 0);
+        EXPECT_EQ(file_size % sizeof(TrainingPosition), 0);
+    }
 
     std::remove(output_file.c_str());
 }

@@ -107,5 +107,11 @@ class ModelComparator {
     std::atomic<int> total_positions{0};
     std::chrono::steady_clock::time_point start_time;
 
-    void play_games(int num_games, int thread_id);
+    struct TaggedPosition {
+        TrainingPosition pos;
+        bool from_new_engine;
+    };
+
+    void play_games(int num_games, int thread_id,
+                    std::vector<TaggedPosition>& out_positions);
 };
