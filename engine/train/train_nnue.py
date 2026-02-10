@@ -104,84 +104,103 @@ def extract_features(piece_placement, side_to_move, castling=0, en_passant_file=
     return features
 
 
-def _extract_all(data: bytes, num_positions: int, eval_weight: float):
-    """Vectorized extraction of all positions into feature and target arrays."""
+MAX_ACTIVE = 37  # 32 pieces + 4 castling + 1 EP
+
+
+def _extract_sparse(data: bytes, num_positions: int, eval_weight: float):
+    """Extract sparse feature indices and targets from binary data.
+
+    Returns (indices, counts, targets) where:
+    - indices: (N, MAX_ACTIVE) int16, padded with 0
+    - counts: (N,) uint8, number of active features per position
+    - targets: (N,) float32
+    """
     mate_value = float(_eng["mate_value"])
 
     raw = np.frombuffer(data, dtype=np.uint8).reshape(num_positions, POSITION_SIZE)
 
-    # Decode piece nibbles: 32 bytes -> 64 nibbles per position
+    # Decode piece nibbles
     piece_bytes = raw[:, :32]
-    high = (piece_bytes >> 4) & 0x0F  # even squares
-    low = piece_bytes & 0x0F  # odd squares
+    high = (piece_bytes >> 4) & 0x0F
+    low = piece_bytes & 0x0F
     nibbles = np.empty((num_positions, 64), dtype=np.uint8)
     nibbles[:, 0::2] = high
     nibbles[:, 1::2] = low
 
-    side_to_move = raw[:, 32]  # (N,)
+    side_to_move = raw[:, 32]
     castling = raw[:, 33]
     en_passant_file = raw[:, 34]
 
-    # Targets: eval + result blending
+    # Targets
     eval_bytes = raw[:, 35:39].copy()
     search_eval = eval_bytes.view(np.float32).reshape(num_positions)
     eval_scalar = np.clip(search_eval / mate_value, -1.0, 1.0)
     result_scalar = raw[:, 39].astype(np.float32) - 1.0
     targets = eval_weight * eval_scalar + (1.0 - eval_weight) * result_scalar
 
-    # Vectorized feature extraction
-    white_to_move = side_to_move == 0  # (N,)
-    features = np.zeros((num_positions, INPUT_SIZE), dtype=np.float32)
+    # Sparse feature indices
+    white_to_move = side_to_move == 0
+    indices = np.zeros((num_positions, MAX_ACTIVE), dtype=np.int16)
+    counts = np.zeros(num_positions, dtype=np.uint8)
 
     for sq in range(64):
-        nib = nibbles[:, sq]  # (N,)
+        nib = nibbles[:, sq]
         occupied = nib > 0
+        occ_idx = np.where(occupied)[0]
+        if len(occ_idx) == 0:
+            continue
 
-        # Piece type and color from nibble
-        is_white_piece = (nib >= 1) & (nib <= 6)
-        nib_int = nib.astype(np.int32)
-        piece_type = np.where(is_white_piece, nib_int - 1, nib_int - 7)  # 0-5
+        nib_occ = nib[occ_idx].astype(np.int32)
+        is_white_piece = nib_occ <= 6
+        piece_type = np.where(is_white_piece, nib_occ - 1, nib_occ - 7)
+        is_own = is_white_piece == white_to_move[occ_idx]
+        feature_sq = np.where(white_to_move[occ_idx], sq, sq ^ 56)
+        feat_idx = np.where(is_own, 0, 384) + piece_type * 64 + feature_sq
 
-        # Is this piece "own" from STM perspective?
-        is_own = (is_white_piece == white_to_move) & occupied
+        c = counts[occ_idx]
+        indices[occ_idx, c] = feat_idx.astype(np.int16)
+        counts[occ_idx] = c + 1
 
-        # Feature square: flip for black STM
-        feature_sq = np.where(white_to_move, np.int32(sq), np.int32(sq ^ 56))
-
-        # Feature index: offset + piece_type * 64 + feature_sq
-        own_idx = piece_type * 64 + feature_sq
-        opp_idx = 384 + piece_type * 64 + feature_sq
-
-        # Set features for occupied squares
-        own_mask = occupied & is_own
-        opp_mask = occupied & ~is_own
-
-        pos_indices = np.where(own_mask)[0]
-        if len(pos_indices) > 0:
-            features[pos_indices, own_idx[pos_indices]] = 1.0
-
-        pos_indices = np.where(opp_mask)[0]
-        if len(pos_indices) > 0:
-            features[pos_indices, opp_idx[pos_indices]] = 1.0
-
-    # Castling: 4 features (768-771)
+    # Castling
     wk = (castling >> 3) & 1
     wq = (castling >> 2) & 1
     bk = (castling >> 1) & 1
     bq = castling & 1
-    features[:, 768] = np.where(white_to_move, wk, bk).astype(np.float32)
-    features[:, 769] = np.where(white_to_move, wq, bq).astype(np.float32)
-    features[:, 770] = np.where(white_to_move, bk, wk).astype(np.float32)
-    features[:, 771] = np.where(white_to_move, bq, wq).astype(np.float32)
+
+    cast_feats = np.stack(
+        [
+            np.where(white_to_move, wk, bk),
+            np.where(white_to_move, wq, bq),
+            np.where(white_to_move, bk, wk),
+            np.where(white_to_move, bq, wq),
+        ],
+        axis=1,
+    )  # (N, 4)
+
+    for i in range(4):
+        active = cast_feats[:, i] > 0
+        active_idx = np.where(active)[0]
+        if len(active_idx) > 0:
+            c = counts[active_idx]
+            indices[active_idx, c] = np.int16(768 + i)
+            counts[active_idx] = c + 1
 
     # En passant
-    features[:, 772] = (en_passant_file != 255).astype(np.float32)
+    ep_active = en_passant_file != 255
+    ep_idx = np.where(ep_active)[0]
+    if len(ep_idx) > 0:
+        c = counts[ep_idx]
+        indices[ep_idx, c] = np.int16(772)
+        counts[ep_idx] = c + 1
 
-    return features, targets
+    return indices, counts, targets
 
 
 class SelfPlayDataset(Dataset):
-    """Dataset that pre-extracts all features and targets at load time."""
+    """Dataset storing sparse feature indices for memory efficiency.
+
+    15M positions: ~1.2 GB (sparse) vs ~48 GB (dense float32).
+    """
 
     def __init__(self, filepath, eval_weight=0.75):
         file_size = Path(filepath).stat().st_size
@@ -190,17 +209,22 @@ class SelfPlayDataset(Dataset):
         with open(filepath, "rb") as f:
             data = f.read()
 
-        print(f"Pre-extracting {num_positions} positions...")
-        features, targets = _extract_all(data, num_positions, eval_weight)
-        self.features = torch.from_numpy(features)
-        self.targets = torch.from_numpy(targets)
+        print(f"Pre-extracting {num_positions} positions (sparse)...")
+        indices, counts, targets = _extract_sparse(data, num_positions, eval_weight)
+        self.indices = torch.from_numpy(indices)  # (N, 37) int16
+        self.counts = torch.from_numpy(counts)  # (N,) uint8
+        self.targets = torch.from_numpy(targets)  # (N,) float32
         print("Pre-extraction complete.")
 
     def __len__(self):
         return len(self.targets)
 
     def __getitem__(self, idx):
-        return self.features[idx], self.targets[idx]
+        # Scatter active indices into dense feature vector
+        features = torch.zeros(INPUT_SIZE, dtype=torch.float32)
+        n = self.counts[idx]
+        features[self.indices[idx, :n].long()] = 1.0
+        return features, self.targets[idx]
 
 
 def train(args):
@@ -222,17 +246,22 @@ def train(args):
     )
 
     use_cuda = device.type == "cuda"
+    num_workers = num_cores if not use_cuda else 0
     train_loader = DataLoader(
         train_set,
         batch_size=args.batch_size,
         shuffle=True,
         pin_memory=use_cuda,
+        num_workers=num_workers,
+        persistent_workers=num_workers > 0,
     )
     val_loader = DataLoader(
         val_set,
         batch_size=args.batch_size,
         shuffle=False,
         pin_memory=use_cuda,
+        num_workers=num_workers,
+        persistent_workers=num_workers > 0,
     )
 
     model = NNUE().to(device)
