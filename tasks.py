@@ -114,14 +114,10 @@ _pointer_file = _dep["paths"]["current_best_file"]
 )
 def deploy(c, weights=None):
     """Deploy the bot on a Linux VPS: pull, build, test, install, restart service."""
-    if weights is None:
-        pf = Path(_pointer_file)
-        if pf.exists():
-            weights = pf.read_text().strip()
-
     repo_dir = _vps["repo_dir"]
     install_dir = _vps["install_dir"]
     service = _vps["service_name"]
+    pointer = f"{repo_dir}/{_pointer_file}"
 
     print("=== Step 1/5: Pull latest code ===")
     with c.cd(repo_dir):
@@ -138,7 +134,13 @@ def deploy(c, weights=None):
     c.run(f"mkdir -p {install_dir}")
     c.run(f"cp {repo_dir}/engine/build/lichess_bot {install_dir}/")
     if weights:
-        c.run(f"cp {repo_dir}/{weights} {install_dir}/", warn=True)
+        c.run(f"cp {weights} {install_dir}/nnue.bin")
+    else:
+        c.run(
+            f'test -f {pointer}'
+            f' && cp "{repo_dir}/$(cat {pointer})" {install_dir}/nnue.bin',
+            warn=True,
+        )
     c.run(f"cp {repo_dir}/{_vps['service_file']} {_vps['systemd_path']}")
 
     print("=== Step 5/5: Restart service ===")
