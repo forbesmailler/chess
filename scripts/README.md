@@ -23,7 +23,7 @@ Automated code improvement loop using Claude Code. Runs a sequence of tasks, eac
 
 ## How it works
 
-1. Runs each task sequentially (bug fixes, test coverage, dead code, optimization, config)
+1. Runs each task sequentially (bug fixes, test coverage, conciseness, optimization, config)
 2. For each task, Claude iterates until it responds with `NO_CHANGES`
 3. Within a task, `--continue` preserves conversation context across iterations
 4. Each iteration is committed individually to preserve progress on crash

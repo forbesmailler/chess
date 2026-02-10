@@ -265,5 +265,7 @@ dependencies:
   - zstd=1.5.6=h0ea2cb4_0
   - pip:
     - berserk==0.14.0
+    - pytest-cov==7.0.0
+    - torch==2.10.0+cpu
 
 prefix: "C:\\Users\\forbe\\.local\\share\\mamba\\envs\\chess"

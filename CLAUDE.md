@@ -110,4 +110,4 @@ invoke deploy             # pull → build → test → install → restart serv
 ## Dependencies
 
 - **C++**: CMake 3.16+, C++17, libcurl, nlohmann-json, [chess-library](https://github.com/Disservin/chess-library) (FetchContent)
-- **Python**: see `pyproject.toml` — chess, numpy, tqdm; optional: torch (NNUE training), invoke/pytest/ruff (dev)
+- **Python**: see `pyproject.toml` — chess, numpy, pyyaml, tqdm; optional: torch (NNUE training), invoke/pytest/ruff (dev)

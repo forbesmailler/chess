@@ -117,4 +117,4 @@ deploy/                         # systemd service & deployment guide
 ## Dependencies
 
 - **C++**: CMake 3.16+, C++17, libcurl, nlohmann-json, [chess-library](https://github.com/Disservin/chess-library) (fetched automatically)
-- **Python**: chess, numpy, tqdm; torch (NNUE training)
+- **Python**: chess, numpy, pyyaml, tqdm; torch (NNUE training)

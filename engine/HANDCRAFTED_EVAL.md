@@ -1,6 +1,6 @@
 # Handcrafted Evaluation
 
-The handcrafted eval scores a position in centipawns from white's perspective using **tapered evaluation** — separate middlegame (MG) and endgame (EG) scores blended by a game-phase weight.
+The handcrafted eval scores a position from white's perspective using **tapered evaluation** — separate middlegame (MG) and endgame (EG) scores blended by a game-phase weight. The raw centipawn score is then sigmoid-scaled to the (-MATE_VALUE, +MATE_VALUE) range.
 
 ## Tapered Eval
 
@@ -37,7 +37,7 @@ Each piece type has separate MG and EG values (centipawns):
 
 ## Piece-Square Tables
 
-Per-square bonuses for each piece type, encouraging good piece placement. Separate MG and EG tables exist for pawns and kings; other pieces share the same table across both phases.
+Per-square bonuses for each piece type, encouraging good piece placement. All piece types have separate MG and EG tables.
 
 Key ideas encoded in the tables:
 - **Pawns**: MG penalizes unmoved center pawns, encourages center control. EG rewards advancement (up to +80 on the 7th rank).
