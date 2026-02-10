@@ -194,7 +194,7 @@ def test_dataset_from_binary():
         ds = SelfPlayDataset(tmp_path)
         assert len(ds) == 1
 
-        features, target = ds[0]
+        features, target = ds.get_dense(0)
         assert features.shape == (773,)
         assert target.shape == ()
         assert -1.0 <= target.item() <= 1.0
@@ -314,7 +314,7 @@ def test_dataset_target_win():
         tmp_path = f.name
     try:
         ds = SelfPlayDataset(tmp_path, eval_weight=0.0)  # pure result
-        _, target = ds[0]
+        _, target = ds.get_dense(0)
         assert abs(target.item() - 1.0) < 1e-6
     finally:
         Path(tmp_path).unlink()
@@ -328,7 +328,7 @@ def test_dataset_target_loss():
         tmp_path = f.name
     try:
         ds = SelfPlayDataset(tmp_path, eval_weight=0.0)
-        _, target = ds[0]
+        _, target = ds.get_dense(0)
         assert abs(target.item() - (-1.0)) < 1e-6
     finally:
         Path(tmp_path).unlink()
@@ -342,7 +342,7 @@ def test_dataset_target_draw():
         tmp_path = f.name
     try:
         ds = SelfPlayDataset(tmp_path, eval_weight=0.0)
-        _, target = ds[0]
+        _, target = ds.get_dense(0)
         assert abs(target.item()) < 1e-6
     finally:
         Path(tmp_path).unlink()
@@ -357,7 +357,7 @@ def test_dataset_target_pure_eval():
         tmp_path = f.name
     try:
         ds = SelfPlayDataset(tmp_path, eval_weight=1.0)
-        _, target = ds[0]
+        _, target = ds.get_dense(0)
         expected = np.clip(5000.0 / mate_value, -1.0, 1.0)
         assert abs(target.item() - expected) < 1e-6
     finally:
@@ -372,7 +372,7 @@ def test_dataset_target_eval_clipping():
         tmp_path = f.name
     try:
         ds = SelfPlayDataset(tmp_path, eval_weight=1.0)
-        _, target = ds[0]
+        _, target = ds.get_dense(0)
         assert abs(target.item() - 1.0) < 1e-6
     finally:
         Path(tmp_path).unlink()
@@ -387,7 +387,7 @@ def test_dataset_target_blending():
         tmp_path = f.name
     try:
         ds = SelfPlayDataset(tmp_path, eval_weight=0.75)
-        _, target = ds[0]
+        _, target = ds.get_dense(0)
         eval_scalar = np.clip(5000.0 / mate_value, -1.0, 1.0)
         result_scalar = 1.0  # win
         expected = 0.75 * eval_scalar + 0.25 * result_scalar
@@ -444,7 +444,7 @@ def test_dataset_target_eval_clipping_negative():
         tmp_path = f.name
     try:
         ds = SelfPlayDataset(tmp_path, eval_weight=1.0)
-        _, target = ds[0]
+        _, target = ds.get_dense(0)
         assert abs(target.item() - (-1.0)) < 1e-6
     finally:
         Path(tmp_path).unlink()
@@ -467,7 +467,7 @@ def test_dataset_multiple_positions():
         ds = SelfPlayDataset(tmp_path)
         assert len(ds) == 5
         for i in range(5):
-            features, target = ds[i]
+            features, target = ds.get_dense(i)
             assert features.shape == (773,)
             assert -1.0 <= target.item() <= 1.0
     finally:
@@ -509,7 +509,7 @@ def test_dataset_target_half_blend():
         tmp_path = f.name
     try:
         ds = SelfPlayDataset(tmp_path, eval_weight=0.5)
-        _, target = ds[0]
+        _, target = ds.get_dense(0)
         expected = 0.5 * (2000.0 / mate_value) + 0.5 * 1.0
         assert abs(target.item() - expected) < 1e-6
     finally:
@@ -531,7 +531,7 @@ def test_dataset_target_zero_eval():
         tmp_path = f.name
     try:
         ds = SelfPlayDataset(tmp_path, eval_weight=1.0)
-        _, target = ds[0]
+        _, target = ds.get_dense(0)
         assert abs(target.item()) < 1e-6
     finally:
         Path(tmp_path).unlink()
@@ -631,7 +631,7 @@ def test_training_data_known_position():
 
     try:
         ds = SelfPlayDataset(tmp_path, eval_weight=0.75)
-        features, target = ds[0]
+        features, target = ds.get_dense(0)
         features = features.numpy()
 
         # Compare against directly computed features
@@ -694,7 +694,7 @@ def test_training_data_black_to_move():
 
     try:
         ds = SelfPlayDataset(tmp_path, eval_weight=1.0)
-        features, target = ds[0]
+        features, target = ds.get_dense(0)
         features = features.numpy()
 
         # Black to move: board is flipped

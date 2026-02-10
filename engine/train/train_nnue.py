@@ -17,7 +17,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import Dataset
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from config.load_config import engine, training
@@ -220,7 +220,10 @@ class SelfPlayDataset(Dataset):
         return len(self.targets)
 
     def __getitem__(self, idx):
-        # Scatter active indices into dense feature vector
+        return self.indices[idx], self.counts[idx], self.targets[idx]
+
+    def get_dense(self, idx):
+        """Return (dense_features, target) for a single position."""
         features = torch.zeros(INPUT_SIZE, dtype=torch.float32)
         n = self.counts[idx]
         features[self.indices[idx, :n].long()] = 1.0
@@ -236,34 +239,20 @@ def train(args):
     num_positions = len(dataset)
     print(f"Loaded {num_positions} positions from {args.data}")
 
-    # Split into train/val
-    val_size = max(1, int(len(dataset) * _trn["training"]["val_split"]))
-    train_size = len(dataset) - val_size
-    train_set, val_set = random_split(
-        dataset,
-        [train_size, val_size],
-        generator=torch.Generator().manual_seed(_trn["training"]["random_seed"]),
-    )
+    # Split into train/val via index permutation
+    rng = torch.Generator().manual_seed(_trn["training"]["random_seed"])
+    perm = torch.randperm(num_positions, generator=rng)
+    val_size = max(1, int(num_positions * _trn["training"]["val_split"]))
+    train_size = num_positions - val_size
+    train_idx = perm[:train_size]
+    val_idx = perm[train_size:]
+
+    # Pre-slice val set (never shuffled)
+    val_indices = dataset.indices[val_idx]
+    val_counts = dataset.counts[val_idx]
+    val_targets = dataset.targets[val_idx]
 
     use_cuda = device.type == "cuda"
-    num_workers = num_cores if not use_cuda else 0
-    train_loader = DataLoader(
-        train_set,
-        batch_size=args.batch_size,
-        shuffle=True,
-        pin_memory=use_cuda,
-        num_workers=num_workers,
-        persistent_workers=num_workers > 0,
-    )
-    val_loader = DataLoader(
-        val_set,
-        batch_size=args.batch_size,
-        shuffle=False,
-        pin_memory=use_cuda,
-        num_workers=num_workers,
-        persistent_workers=num_workers > 0,
-    )
-
     model = NNUE().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     scaler = torch.amp.GradScaler(enabled=use_cuda)
@@ -272,13 +261,28 @@ def train(args):
     patience_counter = 0
     best_state = None
     epoch_log = []
+    batch_size = args.batch_size
+
+    def sparse_to_dense(idx_batch, cnt_batch):
+        B = idx_batch.shape[0]
+        max_c = int(cnt_batch.max())
+        active = idx_batch[:, :max_c].long()
+        mask = torch.arange(max_c).unsqueeze(0) < cnt_batch.unsqueeze(1)
+        features = torch.zeros(B, INPUT_SIZE, dtype=torch.float32)
+        features.scatter_(1, active * mask.long(), mask.float())
+        return features
 
     for epoch in range(args.epochs):
-        # Training
+        # Training: shuffle train indices each epoch
+        shuf = train_idx[torch.randperm(train_size)]
         model.train()
         train_loss = 0.0
-        for features, targets in train_loader:
-            features, targets = features.to(device), targets.to(device)
+        for start in range(0, train_size, batch_size):
+            batch = shuf[start : start + batch_size]
+            features = sparse_to_dense(
+                dataset.indices[batch], dataset.counts[batch]
+            ).to(device)
+            targets = dataset.targets[batch].to(device)
 
             with torch.amp.autocast(device_type=device.type, enabled=use_cuda):
                 output = model(features)
@@ -288,7 +292,7 @@ def train(args):
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
-            train_loss += loss.item() * features.size(0)
+            train_loss += loss.item() * len(batch)
 
         train_loss /= train_size
 
@@ -296,12 +300,16 @@ def train(args):
         model.eval()
         val_loss = 0.0
         with torch.no_grad():
-            for features, targets in val_loader:
-                features, targets = features.to(device), targets.to(device)
+            for start in range(0, val_size, batch_size):
+                end = min(start + batch_size, val_size)
+                features = sparse_to_dense(
+                    val_indices[start:end], val_counts[start:end]
+                ).to(device)
+                targets = val_targets[start:end].to(device)
                 with torch.amp.autocast(device_type=device.type, enabled=use_cuda):
                     output = model(features)
                     loss = F.mse_loss(output, targets)
-                val_loss += loss.item() * features.size(0)
+                val_loss += loss.item() * (end - start)
 
         val_loss /= val_size
 
