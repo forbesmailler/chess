@@ -12,7 +12,7 @@ self_play:
 
 training:
   epochs: 100
-  batch_size: 4096
+  batch_size: 20000
   lr: 0.001
   patience: 10
   eval_weight: 0.75

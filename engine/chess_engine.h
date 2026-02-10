@@ -62,6 +62,7 @@ class ChessEngine : public BaseEngine {
                   bool is_pv = false, chess::Move prev_move = chess::Move::NO_MOVE);
     float quiescence_search(ChessBoard& board, float alpha, float beta, int depth = 0,
                             bool in_check = false);
+    float search_evaluate(const ChessBoard& board);
     void order_moves(const ChessBoard& board, chess::Movelist& moves,
                      chess::Move tt_move, int ply,
                      chess::Move prev_move = chess::Move::NO_MOVE);

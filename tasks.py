@@ -95,7 +95,7 @@ def train(
     """Prepare then run continuous RL loop (Ctrl+C to stop)."""
     prepare(c)
     c.run(
-        f"python scripts/train_loop.py"
+        f"python -u scripts/train_loop.py"
         f" --games {games} --depth {depth} --threads {threads}"
         f" --data {data}"
         f" --epochs {epochs} --batch-size {batch_size}"

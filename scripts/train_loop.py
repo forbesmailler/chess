@@ -107,6 +107,12 @@ def main():
         "--candidate",
         help="Candidate weights path (required with --compare-only).",
     )
+    p.add_argument(
+        "--iterations",
+        type=int,
+        default=0,
+        help="Max iterations (0 = infinite, default: 0).",
+    )
     args = p.parse_args()
 
     pointer_file = Path(_dep["paths"]["current_best_file"])
@@ -119,7 +125,7 @@ def main():
     rejected_dir.mkdir(parents=True, exist_ok=True)
 
     iteration = 0
-    while True:
+    while args.iterations == 0 or iteration < args.iterations:
         iteration += 1
         print(f"\n{'=' * 60}")
         print(f"=== Iteration {iteration} ===")

@@ -25,6 +25,19 @@ float ChessEngine::evaluate(const ChessBoard& board) {
     return eval;
 }
 
+float ChessEngine::search_evaluate(const ChessBoard& board) {
+    uint64_t pos_key = board.hash();
+    auto& entry = eval_cache[pos_key & EVAL_CACHE_MASK];
+    if (entry.key == pos_key) return entry.score;
+
+    // Search already handles terminal positions (draws, checkmate, stalemate)
+    // before calling this, so skip the redundant isGameOver() check
+    // which internally generates all legal moves.
+    float eval = position_evaluate(board);
+    entry = {pos_key, eval};
+    return eval;
+}
+
 static void pick_move(chess::Movelist& moves, int* scores, int start, int count) {
     int best_idx = start;
     for (int i = start + 1; i < count; ++i) {
@@ -175,7 +188,7 @@ float ChessEngine::negamax(ChessBoard& board, int depth, int ply, float alpha,
     float static_eval = 0.0f;
     bool have_static_eval = !in_check && !is_pv;
     if (have_static_eval) {
-        static_eval = evaluate(board);
+        static_eval = search_evaluate(board);
         static_eval = board.turn() == ChessBoard::WHITE ? static_eval : -static_eval;
 
         // Reverse futility pruning (static null move pruning)
@@ -340,7 +353,7 @@ float ChessEngine::quiescence_search(ChessBoard& board, float alpha, float beta,
                                      int qs_depth, bool in_check) {
     if (should_stop.load()) return SEARCH_INTERRUPTED;
 
-    float stand_pat = evaluate(board);
+    float stand_pat = search_evaluate(board);
     auto stm = board.turn();
     stand_pat = stm == ChessBoard::WHITE ? stand_pat : -stand_pat;
 
@@ -431,7 +444,7 @@ SearchResult ChessEngine::iterative_deepening_search(ChessBoard board,
 
     if (use_acc) nnue_model->init_accumulator(board);
 
-    float static_eval = evaluate(board);
+    float static_eval = search_evaluate(board);
     static_eval = stm == ChessBoard::WHITE ? static_eval : -static_eval;
     ChessBoard::Move first_move;
     first_move.internal_move = legal_moves[0];

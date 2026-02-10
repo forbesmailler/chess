@@ -56,4 +56,8 @@ class BaseEngine {
 
     int calculate_search_time(const TimeControl& time_control);
     float raw_evaluate(const ChessBoard& board);
+
+    // Eval dispatch without terminal-position check (for use in search,
+    // where game-over is already detected before calling evaluate).
+    float position_evaluate(const ChessBoard& board);
 };

@@ -20,7 +20,10 @@ float BaseEngine::raw_evaluate(const ChessBoard& board) {
             return board.turn() == ChessBoard::WHITE ? -MATE_VALUE : MATE_VALUE;
         return 0.0f;
     }
+    return position_evaluate(board);
+}
 
+float BaseEngine::position_evaluate(const ChessBoard& board) {
     if (eval_mode == EvalMode::NNUE && nnue_model) {
         if (nnue_model->has_accumulator())
             return nnue_model->predict_from_accumulator(board);
