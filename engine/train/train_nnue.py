@@ -9,7 +9,6 @@ blended target of search eval and game result.
 
 import argparse
 import os
-import struct
 import sys
 import warnings
 from pathlib import Path
@@ -105,50 +104,103 @@ def extract_features(piece_placement, side_to_move, castling=0, en_passant_file=
     return features
 
 
+def _extract_all(data: bytes, num_positions: int, eval_weight: float):
+    """Vectorized extraction of all positions into feature and target arrays."""
+    mate_value = float(_eng["mate_value"])
+
+    raw = np.frombuffer(data, dtype=np.uint8).reshape(num_positions, POSITION_SIZE)
+
+    # Decode piece nibbles: 32 bytes -> 64 nibbles per position
+    piece_bytes = raw[:, :32]
+    high = (piece_bytes >> 4) & 0x0F  # even squares
+    low = piece_bytes & 0x0F  # odd squares
+    nibbles = np.empty((num_positions, 64), dtype=np.uint8)
+    nibbles[:, 0::2] = high
+    nibbles[:, 1::2] = low
+
+    side_to_move = raw[:, 32]  # (N,)
+    castling = raw[:, 33]
+    en_passant_file = raw[:, 34]
+
+    # Targets: eval + result blending
+    eval_bytes = raw[:, 35:39].copy()
+    search_eval = eval_bytes.view(np.float32).reshape(num_positions)
+    eval_scalar = np.clip(search_eval / mate_value, -1.0, 1.0)
+    result_scalar = raw[:, 39].astype(np.float32) - 1.0
+    targets = eval_weight * eval_scalar + (1.0 - eval_weight) * result_scalar
+
+    # Vectorized feature extraction
+    white_to_move = side_to_move == 0  # (N,)
+    features = np.zeros((num_positions, INPUT_SIZE), dtype=np.float32)
+
+    for sq in range(64):
+        nib = nibbles[:, sq]  # (N,)
+        occupied = nib > 0
+
+        # Piece type and color from nibble
+        is_white_piece = (nib >= 1) & (nib <= 6)
+        nib_int = nib.astype(np.int32)
+        piece_type = np.where(is_white_piece, nib_int - 1, nib_int - 7)  # 0-5
+
+        # Is this piece "own" from STM perspective?
+        is_own = (is_white_piece == white_to_move) & occupied
+
+        # Feature square: flip for black STM
+        feature_sq = np.where(white_to_move, np.int32(sq), np.int32(sq ^ 56))
+
+        # Feature index: offset + piece_type * 64 + feature_sq
+        own_idx = piece_type * 64 + feature_sq
+        opp_idx = 384 + piece_type * 64 + feature_sq
+
+        # Set features for occupied squares
+        own_mask = occupied & is_own
+        opp_mask = occupied & ~is_own
+
+        pos_indices = np.where(own_mask)[0]
+        if len(pos_indices) > 0:
+            features[pos_indices, own_idx[pos_indices]] = 1.0
+
+        pos_indices = np.where(opp_mask)[0]
+        if len(pos_indices) > 0:
+            features[pos_indices, opp_idx[pos_indices]] = 1.0
+
+    # Castling: 4 features (768-771)
+    wk = (castling >> 3) & 1
+    wq = (castling >> 2) & 1
+    bk = (castling >> 1) & 1
+    bq = castling & 1
+    features[:, 768] = np.where(white_to_move, wk, bk).astype(np.float32)
+    features[:, 769] = np.where(white_to_move, wq, bq).astype(np.float32)
+    features[:, 770] = np.where(white_to_move, bk, wk).astype(np.float32)
+    features[:, 771] = np.where(white_to_move, bq, wq).astype(np.float32)
+
+    # En passant
+    features[:, 772] = (en_passant_file != 255).astype(np.float32)
+
+    return features, targets
+
+
 class SelfPlayDataset(Dataset):
-    """Dataset reading binary training positions."""
+    """Dataset that pre-extracts all features and targets at load time."""
 
     def __init__(self, filepath, eval_weight=0.75):
-        self.filepath = filepath
-        self.eval_weight = eval_weight
-
         file_size = Path(filepath).stat().st_size
-        self.num_positions = file_size // POSITION_SIZE
+        num_positions = file_size // POSITION_SIZE
 
         with open(filepath, "rb") as f:
-            self.data = f.read()
+            data = f.read()
+
+        print(f"Pre-extracting {num_positions} positions...")
+        features, targets = _extract_all(data, num_positions, eval_weight)
+        self.features = torch.from_numpy(features)
+        self.targets = torch.from_numpy(targets)
+        print("Pre-extraction complete.")
 
     def __len__(self):
-        return self.num_positions
+        return len(self.targets)
 
     def __getitem__(self, idx):
-        offset = idx * POSITION_SIZE
-        raw = self.data[offset : offset + POSITION_SIZE]
-
-        piece_placement = raw[0:32]
-        side_to_move = raw[32]
-        castling = raw[33]
-        en_passant_file = raw[34]
-        search_eval = struct.unpack("<f", raw[35:39])[0]
-        game_result = raw[39]
-
-        features = extract_features(
-            piece_placement, side_to_move, castling, en_passant_file
-        )
-
-        # Eval target: clip search eval to [-1, 1]
-        mate_value = float(_eng["mate_value"])
-        eval_scalar = np.clip(search_eval / mate_value, -1.0, 1.0)
-
-        # Result target: 0=loss -> -1, 1=draw -> 0, 2=win -> +1
-        result_scalar = float(game_result - 1)
-
-        # Blend eval and result targets
-        target = (
-            self.eval_weight * eval_scalar + (1.0 - self.eval_weight) * result_scalar
-        )
-
-        return torch.from_numpy(features), torch.tensor(target, dtype=torch.float32)
+        return self.features[idx], self.targets[idx]
 
 
 def train(args):
@@ -170,24 +222,17 @@ def train(args):
     )
 
     use_cuda = device.type == "cuda"
-    num_workers = (
-        min(_trn["training"]["max_data_workers"], num_cores) if not use_cuda else 0
-    )
     train_loader = DataLoader(
         train_set,
         batch_size=args.batch_size,
         shuffle=True,
-        num_workers=num_workers,
         pin_memory=use_cuda,
-        persistent_workers=num_workers > 0,
     )
     val_loader = DataLoader(
         val_set,
         batch_size=args.batch_size,
         shuffle=False,
-        num_workers=num_workers,
         pin_memory=use_cuda,
-        persistent_workers=num_workers > 0,
     )
 
     model = NNUE().to(device)
