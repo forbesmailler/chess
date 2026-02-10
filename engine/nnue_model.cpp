@@ -187,21 +187,17 @@ std::vector<int> NNUEModel::get_active_features(const ChessBoard& board) const {
 float NNUEModel::predict(const ChessBoard& board) const {
     if (!loaded) return 0.0f;
 
-    int active_arr[MAX_ACTIVE_FEATURES];
-    int count = extract_features(board, active_arr);
-
     alignas(32) int16_t h1_q[H1_PADDED];
-    alignas(32) float h2[HIDDEN2_SIZE];
-
-    // Layer 1: sparse accumulation in int16
     std::memcpy(h1_q, b1_q.get(), H1_PADDED * sizeof(int16_t));
-    for (int k = 0; k < count; ++k) {
-        const int16_t* row = w1_q.get() + active_arr[k] * H1_PADDED;
-        if (k + 1 < count) {
-            _mm_prefetch(
-                reinterpret_cast<const char*>(w1_q.get() + active_arr[k + 1] * H1_PADDED),
-                _MM_HINT_T0);
-        }
+
+    // Fused feature extraction + Layer 1 sparse accumulation.
+    // Accumulate directly as features are discovered (no intermediate array).
+    const auto& b = board.board;
+    bool white_to_move = b.sideToMove() == chess::Color::WHITE;
+    const int16_t* w1 = w1_q.get();
+
+    auto acc_add = [&](int feature) {
+        const int16_t* row = w1 + feature * H1_PADDED;
 #ifdef __AVX2__
         for (int j = 0; j < H1_PADDED; j += 16) {
             __m256i h = _mm256_load_si256(reinterpret_cast<const __m256i*>(&h1_q[j]));
@@ -213,15 +209,56 @@ float NNUEModel::predict(const ChessBoard& board) const {
         for (int j = 0; j < H1_PADDED; j += 8) {
             __m128i h = _mm_load_si128(reinterpret_cast<const __m128i*>(&h1_q[j]));
             __m128i r = _mm_load_si128(reinterpret_cast<const __m128i*>(&row[j]));
-            _mm_store_si128(reinterpret_cast<__m128i*>(&h1_q[j]), _mm_adds_epi16(h, r));
+            _mm_store_si128(reinterpret_cast<__m128i*>(&h1_q[j]),
+                            _mm_adds_epi16(h, r));
         }
 #endif
+    };
+
+    static constexpr chess::PieceType PIECE_TYPES[] = {
+        chess::PieceType::PAWN, chess::PieceType::KNIGHT, chess::PieceType::BISHOP,
+        chess::PieceType::ROOK, chess::PieceType::QUEEN,  chess::PieceType::KING};
+
+    auto own_color = white_to_move ? chess::Color::WHITE : chess::Color::BLACK;
+    auto opp_color = white_to_move ? chess::Color::BLACK : chess::Color::WHITE;
+
+    for (int pt = 0; pt < 6; ++pt) {
+        int own_base = pt * 64;
+        int opp_base = 384 + pt * 64;
+
+        auto own_pieces = b.pieces(PIECE_TYPES[pt], own_color);
+        while (own_pieces) {
+            int sq = static_cast<int>(own_pieces.pop());
+            if (!white_to_move) sq ^= 56;
+            acc_add(own_base + sq);
+        }
+
+        auto opp_pieces = b.pieces(PIECE_TYPES[pt], opp_color);
+        while (opp_pieces) {
+            int sq = static_cast<int>(opp_pieces.pop());
+            if (!white_to_move) sq ^= 56;
+            acc_add(opp_base + sq);
+        }
     }
 
-    // Forward from Layer 1 output through Layer 2+3
+    int cr = b.castlingRights().hashIndex();
+    if (white_to_move) {
+        if (cr & 1) acc_add(768);
+        if (cr & 2) acc_add(769);
+        if (cr & 4) acc_add(770);
+        if (cr & 8) acc_add(771);
+    } else {
+        if (cr & 4) acc_add(768);
+        if (cr & 8) acc_add(769);
+        if (cr & 1) acc_add(770);
+        if (cr & 2) acc_add(771);
+    }
+
+    if (b.enpassantSq() != chess::Square::NO_SQ) acc_add(772);
+
+    // Forward from Layer 1 output through Layer 2+3 (with fused clamp)
     float stm_eval = forward_from_accumulator(h1_q);
 
-    bool white_to_move = board.turn() == ChessBoard::WHITE;
     return white_to_move ? stm_eval : -stm_eval;
 }
 
@@ -508,87 +545,81 @@ void NNUEModel::update_accumulator_null_move(const ChessBoard& board_after) cons
 }
 
 float NNUEModel::forward_from_accumulator(const int16_t* h1_acc) const {
-    alignas(32) int16_t h1_q[H1_PADDED];
     alignas(32) float h2[HIDDEN2_SIZE];
 
-    std::memcpy(h1_q, h1_acc, H1_PADDED * sizeof(int16_t));
-
+    // Fused ClippedReLU + Layer 2: clamp h1 on-the-fly during dot product
+    // (no copy, no separate clamp pass)
 #ifdef __AVX2__
     {
         __m256i zero = _mm256_setzero_si256();
         __m256i qmax = _mm256_set1_epi16(static_cast<int16_t>(Q1_SCALE));
-        for (int j = 0; j < H1_PADDED; j += 16) {
-            __m256i h = _mm256_load_si256(reinterpret_cast<const __m256i*>(&h1_q[j]));
-            h = _mm256_max_epi16(zero, _mm256_min_epi16(qmax, h));
-            _mm256_store_si256(reinterpret_cast<__m256i*>(&h1_q[j]), h);
+        for (int j = 0; j < HIDDEN2_SIZE; j += 4) {
+            __m256i s0 = _mm256_setzero_si256();
+            __m256i s1 = _mm256_setzero_si256();
+            __m256i s2 = _mm256_setzero_si256();
+            __m256i s3 = _mm256_setzero_si256();
+            const int16_t* r0 = w2_q.get() + (j + 0) * H1_PADDED;
+            const int16_t* r1 = w2_q.get() + (j + 1) * H1_PADDED;
+            const int16_t* r2 = w2_q.get() + (j + 2) * H1_PADDED;
+            const int16_t* r3 = w2_q.get() + (j + 3) * H1_PADDED;
+            for (int i = 0; i < H1_PADDED; i += 16) {
+                __m256i h = _mm256_load_si256(
+                    reinterpret_cast<const __m256i*>(&h1_acc[i]));
+                h = _mm256_max_epi16(zero, _mm256_min_epi16(qmax, h));
+                s0 = _mm256_add_epi32(
+                    s0, _mm256_madd_epi16(
+                            h, _mm256_load_si256(
+                                   reinterpret_cast<const __m256i*>(&r0[i]))));
+                s1 = _mm256_add_epi32(
+                    s1, _mm256_madd_epi16(
+                            h, _mm256_load_si256(
+                                   reinterpret_cast<const __m256i*>(&r1[i]))));
+                s2 = _mm256_add_epi32(
+                    s2, _mm256_madd_epi16(
+                            h, _mm256_load_si256(
+                                   reinterpret_cast<const __m256i*>(&r2[i]))));
+                s3 = _mm256_add_epi32(
+                    s3, _mm256_madd_epi16(
+                            h, _mm256_load_si256(
+                                   reinterpret_cast<const __m256i*>(&r3[i]))));
+            }
+            __m256i h01 = _mm256_hadd_epi32(s0, s1);
+            __m256i h23 = _mm256_hadd_epi32(s2, s3);
+            __m256i h0123 = _mm256_hadd_epi32(h01, h23);
+            __m128i lo = _mm256_castsi256_si128(h0123);
+            __m128i hi = _mm256_extracti128_si256(h0123, 1);
+            __m128i sums = _mm_add_epi32(lo, hi);
+            __m128 f = _mm_cvtepi32_ps(sums);
+            f = _mm_add_ps(_mm_mul_ps(f, _mm_set1_ps(DEQUANT_SCALE)),
+                           _mm_loadu_ps(b2.get() + j));
+            f = _mm_max_ps(_mm_setzero_ps(), _mm_min_ps(_mm_set1_ps(1.0f), f));
+            _mm_storeu_ps(h2 + j, f);
         }
-    }
-
-    for (int j = 0; j < HIDDEN2_SIZE; j += 4) {
-        __m256i s0 = _mm256_setzero_si256();
-        __m256i s1 = _mm256_setzero_si256();
-        __m256i s2 = _mm256_setzero_si256();
-        __m256i s3 = _mm256_setzero_si256();
-        const int16_t* r0 = w2_q.get() + (j + 0) * H1_PADDED;
-        const int16_t* r1 = w2_q.get() + (j + 1) * H1_PADDED;
-        const int16_t* r2 = w2_q.get() + (j + 2) * H1_PADDED;
-        const int16_t* r3 = w2_q.get() + (j + 3) * H1_PADDED;
-        for (int i = 0; i < H1_PADDED; i += 16) {
-            __m256i h = _mm256_load_si256(reinterpret_cast<const __m256i*>(&h1_q[i]));
-            s0 = _mm256_add_epi32(
-                s0,
-                _mm256_madd_epi16(
-                    h, _mm256_load_si256(reinterpret_cast<const __m256i*>(&r0[i]))));
-            s1 = _mm256_add_epi32(
-                s1,
-                _mm256_madd_epi16(
-                    h, _mm256_load_si256(reinterpret_cast<const __m256i*>(&r1[i]))));
-            s2 = _mm256_add_epi32(
-                s2,
-                _mm256_madd_epi16(
-                    h, _mm256_load_si256(reinterpret_cast<const __m256i*>(&r2[i]))));
-            s3 = _mm256_add_epi32(
-                s3,
-                _mm256_madd_epi16(
-                    h, _mm256_load_si256(reinterpret_cast<const __m256i*>(&r3[i]))));
-        }
-        __m256i h01 = _mm256_hadd_epi32(s0, s1);
-        __m256i h23 = _mm256_hadd_epi32(s2, s3);
-        __m256i h0123 = _mm256_hadd_epi32(h01, h23);
-        __m128i lo = _mm256_castsi256_si128(h0123);
-        __m128i hi = _mm256_extracti128_si256(h0123, 1);
-        __m128i sums = _mm_add_epi32(lo, hi);
-        __m128 f = _mm_cvtepi32_ps(sums);
-        f = _mm_add_ps(_mm_mul_ps(f, _mm_set1_ps(DEQUANT_SCALE)),
-                       _mm_loadu_ps(b2.get() + j));
-        f = _mm_max_ps(_mm_setzero_ps(), _mm_min_ps(_mm_set1_ps(1.0f), f));
-        _mm_storeu_ps(h2 + j, f);
     }
 #else
     {
         __m128i zero = _mm_setzero_si128();
         __m128i qmax = _mm_set1_epi16(static_cast<int16_t>(Q1_SCALE));
-        for (int j = 0; j < H1_PADDED; j += 8) {
-            __m128i h = _mm_load_si128(reinterpret_cast<const __m128i*>(&h1_q[j]));
-            h = _mm_max_epi16(zero, _mm_min_epi16(qmax, h));
-            _mm_store_si128(reinterpret_cast<__m128i*>(&h1_q[j]), h);
+        for (int j = 0; j < HIDDEN2_SIZE; ++j) {
+            __m128i sum_vec = _mm_setzero_si128();
+            const int16_t* row = w2_q.get() + j * H1_PADDED;
+            for (int i = 0; i < H1_PADDED; i += 8) {
+                __m128i h = _mm_load_si128(
+                    reinterpret_cast<const __m128i*>(&h1_acc[i]));
+                h = _mm_max_epi16(zero, _mm_min_epi16(qmax, h));
+                __m128i w = _mm_load_si128(
+                    reinterpret_cast<const __m128i*>(&row[i]));
+                sum_vec = _mm_add_epi32(sum_vec, _mm_madd_epi16(h, w));
+            }
+            __m128i hi_s = _mm_shuffle_epi32(sum_vec, _MM_SHUFFLE(1, 0, 3, 2));
+            sum_vec = _mm_add_epi32(sum_vec, hi_s);
+            hi_s = _mm_shuffle_epi32(sum_vec, _MM_SHUFFLE(0, 1, 0, 1));
+            sum_vec = _mm_add_epi32(sum_vec, hi_s);
+            float sum =
+                static_cast<float>(_mm_cvtsi128_si32(sum_vec)) * DEQUANT_SCALE +
+                b2[j];
+            h2[j] = std::max(0.0f, std::min(1.0f, sum));
         }
-    }
-    for (int j = 0; j < HIDDEN2_SIZE; ++j) {
-        __m128i sum_vec = _mm_setzero_si128();
-        const int16_t* row = w2_q.get() + j * H1_PADDED;
-        for (int i = 0; i < H1_PADDED; i += 8) {
-            __m128i h = _mm_load_si128(reinterpret_cast<const __m128i*>(&h1_q[i]));
-            __m128i w = _mm_load_si128(reinterpret_cast<const __m128i*>(&row[i]));
-            sum_vec = _mm_add_epi32(sum_vec, _mm_madd_epi16(h, w));
-        }
-        __m128i hi_s = _mm_shuffle_epi32(sum_vec, _MM_SHUFFLE(1, 0, 3, 2));
-        sum_vec = _mm_add_epi32(sum_vec, hi_s);
-        hi_s = _mm_shuffle_epi32(sum_vec, _MM_SHUFFLE(0, 1, 0, 1));
-        sum_vec = _mm_add_epi32(sum_vec, hi_s);
-        float sum =
-            static_cast<float>(_mm_cvtsi128_si32(sum_vec)) * DEQUANT_SCALE + b2[j];
-        h2[j] = std::max(0.0f, std::min(1.0f, sum));
     }
 #endif
 

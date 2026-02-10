@@ -26,18 +26,21 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Optimization flags
-if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
-    if(MSVC)
-        # MSVC optimizations
-        add_compile_options(/O2 /Ob2 /Oi /Ot /GL /arch:AVX2)
-        add_link_options(/LTCG)
-        message(STATUS "Added MSVC optimization flags")
-    else()
-        # GCC/Clang optimizations
-        add_compile_options(-O3 -march=native -flto -funroll-loops -fomit-frame-pointer)
-        add_link_options(-flto)
-        message(STATUS "Added GCC/Clang optimization flags")
-    endif()
+# For multi-config generators (Visual Studio), use generator expressions;
+# for single-config generators, check CMAKE_BUILD_TYPE.
+if(MSVC)
+    # MSVC: use generator expressions since Visual Studio is multi-config
+    add_compile_options(
+        "$<$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>:/O2;/Ob2;/Oi;/Ot;/GL>"
+        /arch:AVX2
+    )
+    add_link_options("$<$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>:/LTCG>")
+    message(STATUS "Added MSVC optimization flags (AVX2 always enabled)")
+elseif(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+    # GCC/Clang optimizations (single-config generators)
+    add_compile_options(-O3 -march=native -flto -funroll-loops -fomit-frame-pointer)
+    add_link_options(-flto)
+    message(STATUS "Added GCC/Clang optimization flags")
 endif()
 
 # Include FetchContent module

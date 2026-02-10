@@ -540,4 +540,9 @@ TEST_F(NNUEModelTest, EvalSpeedBenchmarkIncremental) {
               << "  Ratio:            " << ratio
               << "x (NNUE incremental / Handcrafted)\n"
               << "==============================================\n";
+
+    // Incremental NNUE must be faster than handcrafted eval
+    EXPECT_LT(inc_us, hc_us) << "NNUE incremental (" << inc_us / NUM_EVALS
+                              << " us/eval) must be faster than handcrafted ("
+                              << hc_us / NUM_EVALS << " us/eval)";
 }
