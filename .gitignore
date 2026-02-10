@@ -9,10 +9,10 @@ build/
 *.pkl
 *.pth
 *.txt
+!**current_best.txt
 !**/CMakeLists.txt
 *.pyc
 *.env
-*.bin
-!**.nnue.bin
+*training_data.bin
 *.pt
 nul

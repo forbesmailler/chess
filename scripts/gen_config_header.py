@@ -375,7 +375,8 @@ def generate() -> str:
     # self_play
     sp = trn["self_play"]
     lines.append("namespace self_play {")
-    lines.append(f"    static constexpr int NUM_GAMES = {sp['num_games']};")
+    inv = trn.get("invoke", {})
+    lines.append(f"    static constexpr int NUM_GAMES = {inv['train_games']};")
     lines.append(f"    static constexpr int SEARCH_DEPTH = {sp['search_depth']};")
     lines.append(f"    static constexpr int NUM_THREADS = {sp['num_threads']};")
     lines.append(f"    static constexpr int SEARCH_TIME_MS = {sp['search_time_ms']};")

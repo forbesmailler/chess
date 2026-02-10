@@ -32,9 +32,15 @@ def run(cmd: str) -> subprocess.CompletedProcess:
 
 def run_compare(cmd: str) -> dict:
     print(f"$ {cmd}")
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-    stdout = result.stdout or ""
-    print(stdout, end="")
+    proc = subprocess.Popen(
+        cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+    )
+    lines = []
+    for line in proc.stdout:
+        print(line, end="", flush=True)
+        lines.append(line)
+    proc.wait()
+    stdout = "".join(lines)
 
     if m := _WLD_RE.search(stdout):
         new_wins, old_wins, draws = (int(g) for g in m.groups())
@@ -42,7 +48,7 @@ def run_compare(cmd: str) -> dict:
         new_wins, old_wins, draws = 0, 0, 0
 
     return {
-        "improved": result.returncode == 0,
+        "improved": proc.returncode == 0,
         "new_wins": new_wins,
         "old_wins": old_wins,
         "draws": draws,
@@ -123,6 +129,7 @@ def main():
     models_dir.mkdir(parents=True, exist_ok=True)
     accepted_dir.mkdir(parents=True, exist_ok=True)
     rejected_dir.mkdir(parents=True, exist_ok=True)
+    log_path = None
 
     iteration = 0
     while args.iterations == 0 or iteration < args.iterations:
@@ -212,6 +219,9 @@ def main():
             archive_path = rejected_dir / archive_name
             shutil.move(str(candidate_path), str(archive_path))
             status = "REJECTED"
+
+        if log_path and log_path.exists():
+            shutil.move(str(log_path), str(archive_path.parent / log_path.name))
 
         write_report(archive_path, status, candidate_path.stem, old_name, wld)
 

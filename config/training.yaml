@@ -1,5 +1,4 @@
 self_play:
-  num_games: 100
   search_depth: 6
   num_threads: 16
   output_file: "training_data.bin"
@@ -20,7 +19,7 @@ training:
   max_data_workers: 4
 
 invoke:
-  train_games: 5000
+  train_games: 20000
 
 compare:
   num_games: 200

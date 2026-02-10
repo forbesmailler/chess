@@ -187,7 +187,7 @@ class TestGenerate:
     def test_self_play_constants(self):
         result = generate()
         assert "namespace self_play {" in result
-        assert "NUM_GAMES = 100" in result
+        assert "NUM_GAMES = 20000" in result
         assert "SEARCH_DEPTH = 6" in result
         assert "NUM_THREADS = 16" in result
         assert "SEARCH_TIME_MS = 500" in result

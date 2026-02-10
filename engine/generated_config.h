@@ -232,7 +232,7 @@ static constexpr float SIGMOID_SCALE = 400.0f;
 }  // namespace eval
 
 namespace self_play {
-static constexpr int NUM_GAMES = 100;
+static constexpr int NUM_GAMES = 20000;
 static constexpr int SEARCH_DEPTH = 6;
 static constexpr int NUM_THREADS = 16;
 static constexpr int SEARCH_TIME_MS = 500;

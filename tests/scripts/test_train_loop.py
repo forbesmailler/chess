@@ -2,7 +2,7 @@
 
 import subprocess
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -13,13 +13,13 @@ WLD_LINE = "New wins: {new}, Old wins: {old}, Draws: {draws}"
 
 
 class FakeSubprocess:
-    """Mock subprocess.run that simulates the training pipeline.
+    """Mock subprocess.run/Popen that simulates the training pipeline.
 
     Each iteration has 4 subprocess calls in order:
-      0: self-play  (creates/extends data file)
-      1: train
-      2: export     (creates candidate file at --output path)
-      3: compare    (returns W/L/D stdout + returncode per compare_results)
+      0: self-play  (run - creates/extends data file)
+      1: train      (run)
+      2: export     (run - creates candidate file at --output path)
+      3: compare    (Popen - returns W/L/D stdout + returncode)
 
     Raises KeyboardInterrupt when all iterations are exhausted.
     """
@@ -40,6 +40,7 @@ class FakeSubprocess:
         self._iter_idx = 0
 
     def __call__(self, cmd, **kwargs):
+        """Handle subprocess.run calls (phases 0-2)."""
         phase = self._call_idx % 4
 
         if phase == 0 and self._iter_idx >= len(self.compare_results):
@@ -52,8 +53,15 @@ class FakeSubprocess:
             data = self.tmp_path / "training_data.bin"
             with open(data, "ab") as f:
                 f.write(b"\x00" * (POSITION_BYTES * self.positions_per_iter))
+        elif phase == 1:
+            parts = cmd.split()
+            for i, part in enumerate(parts):
+                if part == "--log" and i + 1 < len(parts):
+                    log_file = self.tmp_path / parts[i + 1]
+                    log_file.parent.mkdir(parents=True, exist_ok=True)
+                    log_file.write_text("# Training Log\n")
+                    break
         elif phase == 2:
-            # Parse --output <path> from the export command
             parts = cmd.split()
             output_path = None
             for i, part in enumerate(parts):
@@ -63,16 +71,26 @@ class FakeSubprocess:
             if output_path:
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 output_path.write_bytes(b"candidate")
-        elif phase == 3:
-            improved = self.compare_results[self._iter_idx]
-            self._iter_idx += 1
-            new_w, old_w, draws = self.wld
-            if not improved:
-                new_w, old_w = old_w, new_w
-            stdout = WLD_LINE.format(new=new_w, old=old_w, draws=draws)
-            return subprocess.CompletedProcess(cmd, 0 if improved else 1, stdout=stdout)
 
         return subprocess.CompletedProcess(cmd, 0, stdout="")
+
+    def popen(self, cmd, **kwargs):
+        """Handle subprocess.Popen calls (phase 3: compare)."""
+        self.commands.append(cmd)
+        self._call_idx += 1
+
+        improved = self.compare_results[self._iter_idx]
+        self._iter_idx += 1
+        new_w, old_w, draws = self.wld
+        if not improved:
+            new_w, old_w = old_w, new_w
+        stdout = WLD_LINE.format(new=new_w, old=old_w, draws=draws) + "\n"
+
+        mock_proc = MagicMock()
+        mock_proc.stdout = iter(stdout.splitlines(keepends=True))
+        mock_proc.wait.return_value = None
+        mock_proc.returncode = 0 if improved else 1
+        return mock_proc
 
     @property
     def compare_commands(self):
@@ -89,7 +107,10 @@ def loop_env(tmp_path, monkeypatch):
 
 def run_loop(tmp_path, compare_results, **kwargs):
     fake = FakeSubprocess(tmp_path, compare_results, **kwargs)
-    with patch("scripts.train_loop.subprocess.run", fake):
+    with (
+        patch("scripts.train_loop.subprocess.run", fake),
+        patch("scripts.train_loop.subprocess.Popen", fake.popen),
+    ):
         try:
             train_loop.main()
         except KeyboardInterrupt:
@@ -242,11 +263,19 @@ class TestDirectories:
 
 
 class TestRunCompare:
+    @staticmethod
+    def _mock_popen(stdout_text, returncode=0):
+        mock_proc = MagicMock()
+        mock_proc.stdout = iter(stdout_text.splitlines(keepends=True))
+        mock_proc.wait.return_value = None
+        mock_proc.returncode = returncode
+        return mock_proc
+
     def test_parses_wld(self):
-        stdout = "Some output\nNew wins: 55, Old wins: 40, Draws: 5\nDone"
+        stdout = "Some output\nNew wins: 55, Old wins: 40, Draws: 5\nDone\n"
         with patch(
-            "scripts.train_loop.subprocess.run",
-            return_value=subprocess.CompletedProcess("cmd", 0, stdout=stdout),
+            "scripts.train_loop.subprocess.Popen",
+            return_value=self._mock_popen(stdout, 0),
         ):
             result = train_loop.run_compare("cmd")
             assert result == {
@@ -258,8 +287,8 @@ class TestRunCompare:
 
     def test_no_match_returns_zeros(self):
         with patch(
-            "scripts.train_loop.subprocess.run",
-            return_value=subprocess.CompletedProcess("cmd", 1, stdout="no match"),
+            "scripts.train_loop.subprocess.Popen",
+            return_value=self._mock_popen("no match\n", 1),
         ):
             result = train_loop.run_compare("cmd")
             assert result == {
@@ -270,10 +299,10 @@ class TestRunCompare:
             }
 
     def test_failure_returncode(self):
-        stdout = "New wins: 30, Old wins: 70, Draws: 0"
+        stdout = "New wins: 30, Old wins: 70, Draws: 0\n"
         with patch(
-            "scripts.train_loop.subprocess.run",
-            return_value=subprocess.CompletedProcess("cmd", 1, stdout=stdout),
+            "scripts.train_loop.subprocess.Popen",
+            return_value=self._mock_popen(stdout, 1),
         ):
             result = train_loop.run_compare("cmd")
             assert result["improved"] is False
@@ -312,23 +341,39 @@ class TestPositionCounting:
 class TestReportFiles:
     def test_accepted_has_report(self, loop_env):
         run_loop(loop_env, [True])
-        reports = list((loop_env / "models" / "accepted").glob("*.md"))
+        reports = [
+            r
+            for r in (loop_env / "models" / "accepted").glob("*.md")
+            if not r.name.endswith("_train.md")
+        ]
         assert len(reports) == 1
 
     def test_rejected_has_report(self, loop_env):
         run_loop(loop_env, [False])
-        reports = list((loop_env / "models" / "rejected").glob("*.md"))
+        reports = [
+            r
+            for r in (loop_env / "models" / "rejected").glob("*.md")
+            if not r.name.endswith("_train.md")
+        ]
         assert len(reports) == 1
 
     def test_report_contains_status(self, loop_env):
         run_loop(loop_env, [True])
-        report = list((loop_env / "models" / "accepted").glob("*.md"))[0]
+        report = [
+            r
+            for r in (loop_env / "models" / "accepted").glob("*.md")
+            if not r.name.endswith("_train.md")
+        ][0]
         content = report.read_text()
         assert "## ACCEPTED" in content
 
     def test_report_contains_wld_table(self, loop_env):
         run_loop(loop_env, [True], wld=(55, 40, 5))
-        report = list((loop_env / "models" / "accepted").glob("*.md"))[0]
+        report = [
+            r
+            for r in (loop_env / "models" / "accepted").glob("*.md")
+            if not r.name.endswith("_train.md")
+        ][0]
         content = report.read_text()
         assert "| W | L | D |" in content
         assert "55" in content
@@ -337,7 +382,11 @@ class TestReportFiles:
 
     def test_report_contains_model_names(self, loop_env):
         run_loop(loop_env, [False])
-        report = list((loop_env / "models" / "rejected").glob("*.md"))[0]
+        report = [
+            r
+            for r in (loop_env / "models" / "rejected").glob("*.md")
+            if not r.name.endswith("_train.md")
+        ][0]
         content = report.read_text()
         assert "handcrafted" in content
         assert "(new)" in content
@@ -345,19 +394,66 @@ class TestReportFiles:
 
     def test_report_rejected_status(self, loop_env):
         run_loop(loop_env, [False])
-        report = list((loop_env / "models" / "rejected").glob("*.md"))[0]
+        report = [
+            r
+            for r in (loop_env / "models" / "rejected").glob("*.md")
+            if not r.name.endswith("_train.md")
+        ][0]
         content = report.read_text()
         assert "## REJECTED" in content
 
     def test_multiple_iterations_have_reports(self, loop_env):
         run_loop(loop_env, [True, False, True])
-        accepted_reports = list((loop_env / "models" / "accepted").glob("*.md"))
-        rejected_reports = list((loop_env / "models" / "rejected").glob("*.md"))
+        accepted_reports = [
+            r
+            for r in (loop_env / "models" / "accepted").glob("*.md")
+            if not r.name.endswith("_train.md")
+        ]
+        rejected_reports = [
+            r
+            for r in (loop_env / "models" / "rejected").glob("*.md")
+            if not r.name.endswith("_train.md")
+        ]
         assert len(accepted_reports) == 2
         assert len(rejected_reports) == 1
 
+    def test_accepted_has_train_log(self, loop_env):
+        run_loop(loop_env, [True])
+        logs = list((loop_env / "models" / "accepted").glob("*_train.md"))
+        assert len(logs) == 1
+
+    def test_rejected_has_train_log(self, loop_env):
+        run_loop(loop_env, [False])
+        logs = list((loop_env / "models" / "rejected").glob("*_train.md"))
+        assert len(logs) == 1
+
+    def test_no_train_log_in_models_root(self, loop_env):
+        run_loop(loop_env, [True])
+        logs = list((loop_env / "models").glob("*_train.md"))
+        assert len(logs) == 0
+
+    def test_multiple_iterations_train_logs(self, loop_env):
+        run_loop(loop_env, [True, False, True])
+        accepted_logs = list((loop_env / "models" / "accepted").glob("*_train.md"))
+        rejected_logs = list((loop_env / "models" / "rejected").glob("*_train.md"))
+        assert len(accepted_logs) == 2
+        assert len(rejected_logs) == 1
+
 
 class TestCompareOnly:
+    @staticmethod
+    def _fake_popen(calls, returncode=0):
+        def popen(cmd, **kwargs):
+            calls.append(cmd)
+            stdout = "New wins: 60, Old wins: 40, Draws: 0\n"
+            mock_proc = MagicMock()
+            mock_proc.stdout = iter(stdout.splitlines(keepends=True))
+            mock_proc.wait.return_value = None
+            mock_proc.returncode = returncode
+            return mock_proc
+
+        return popen
+
     def test_compare_only_skips_selfplay_and_training(self, loop_env, monkeypatch):
         """--compare-only skips selfplay and training, goes straight to compare."""
         candidate = loop_env / "models" / "my_candidate.bin"
@@ -372,11 +468,12 @@ class TestCompareOnly:
 
         def fake_run(cmd, **kwargs):
             calls.append(cmd)
-            return subprocess.CompletedProcess(
-                cmd, 0, stdout="New wins: 60, Old wins: 40, Draws: 0"
-            )
+            return subprocess.CompletedProcess(cmd, 0, stdout="")
 
-        with patch("scripts.train_loop.subprocess.run", fake_run):
+        with (
+            patch("scripts.train_loop.subprocess.run", fake_run),
+            patch("scripts.train_loop.subprocess.Popen", self._fake_popen(calls)),
+        ):
             try:
                 train_loop.main()
             except (KeyboardInterrupt, Exception):
@@ -388,9 +485,13 @@ class TestCompareOnly:
     def test_compare_only_requires_candidate(self, loop_env, monkeypatch):
         """--compare-only without --candidate breaks the loop."""
         monkeypatch.setattr("sys.argv", ["train_loop.py", "--compare-only"])
-        with patch(
-            "scripts.train_loop.subprocess.run",
-            return_value=subprocess.CompletedProcess("cmd", 0, stdout=""),
+        calls = []
+        with (
+            patch(
+                "scripts.train_loop.subprocess.run",
+                return_value=subprocess.CompletedProcess("cmd", 0, stdout=""),
+            ),
+            patch("scripts.train_loop.subprocess.Popen", self._fake_popen(calls)),
         ):
             try:
                 train_loop.main()
@@ -407,9 +508,13 @@ class TestCompareOnly:
             "sys.argv",
             ["train_loop.py", "--compare-only", "--candidate", "nonexistent.bin"],
         )
-        with patch(
-            "scripts.train_loop.subprocess.run",
-            return_value=subprocess.CompletedProcess("cmd", 0, stdout=""),
+        calls = []
+        with (
+            patch(
+                "scripts.train_loop.subprocess.run",
+                return_value=subprocess.CompletedProcess("cmd", 0, stdout=""),
+            ),
+            patch("scripts.train_loop.subprocess.Popen", self._fake_popen(calls)),
         ):
             try:
                 train_loop.main()
@@ -432,7 +537,6 @@ class TestTrainOnly:
         compare_done = False
 
         def fake_run(cmd, **kwargs):
-            nonlocal compare_done
             calls.append(cmd)
             if "export_nnue" in cmd:
                 parts = cmd.split()
@@ -442,16 +546,25 @@ class TestTrainOnly:
                         out.parent.mkdir(parents=True, exist_ok=True)
                         out.write_bytes(b"candidate")
                         break
-            elif "--compare" in cmd:
-                if compare_done:
-                    raise KeyboardInterrupt
-                compare_done = True
-                return subprocess.CompletedProcess(
-                    cmd, 0, stdout="New wins: 60, Old wins: 40, Draws: 0"
-                )
             return subprocess.CompletedProcess(cmd, 0, stdout="")
 
-        with patch("scripts.train_loop.subprocess.run", fake_run):
+        def fake_popen(cmd, **kwargs):
+            nonlocal compare_done
+            calls.append(cmd)
+            if compare_done:
+                raise KeyboardInterrupt
+            compare_done = True
+            stdout = "New wins: 60, Old wins: 40, Draws: 0\n"
+            mock_proc = MagicMock()
+            mock_proc.stdout = iter(stdout.splitlines(keepends=True))
+            mock_proc.wait.return_value = None
+            mock_proc.returncode = 0
+            return mock_proc
+
+        with (
+            patch("scripts.train_loop.subprocess.run", fake_run),
+            patch("scripts.train_loop.subprocess.Popen", fake_popen),
+        ):
             try:
                 train_loop.main()
             except KeyboardInterrupt:
