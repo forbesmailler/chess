@@ -5,7 +5,6 @@
 
 #include "generated_config.h"
 
-// Mirror square vertically (for black PST lookups)
 static constexpr int mirror(int sq) { return sq ^ 56; }
 
 static constexpr int rank_of(int sq) { return sq / 8; }
@@ -18,11 +17,7 @@ float handcrafted_evaluate(const ChessBoard& board) {
     int white_bishops = 0;
     int black_bishops = 0;
 
-    // Pawn file tracking for structure analysis
-    // pawn_files[color][file] = count of pawns on that file
     int pawn_files[2][8] = {};
-    // pawn_rank_min/max[color][file] = min/max rank of pawns on that file
-    // (for passed pawn detection)
     int pawn_rank_min[2][8];
     int pawn_rank_max[2][8];
     for (int f = 0; f < 8; ++f) {
@@ -36,7 +31,6 @@ float handcrafted_evaluate(const ChessBoard& board) {
     int pawn_sqs[2][8];
     int pawn_count[2] = {};
 
-    // First pass: pawns (material + PST + phase + file tracking)
     const auto& b = board.board;
     for (int color = 0; color < 2; ++color) {
         auto c = color == 0 ? chess::Color::WHITE : chess::Color::BLACK;
@@ -64,7 +58,6 @@ float handcrafted_evaluate(const ChessBoard& board) {
         }
     }
 
-    // Pawn structure bonuses (uses complete pawn_files data)
     for (int color = 0; color < 2; ++color) {
         int sign = color == 0 ? 1 : -1;
         int enemy = 1 - color;
@@ -108,7 +101,6 @@ float handcrafted_evaluate(const ChessBoard& board) {
         }
     }
 
-    // Evaluate non-pawn pieces (pt 1..5: knight, bishop, rook, queen, king)
     static constexpr chess::PieceType PIECE_TYPES[] = {
         chess::PieceType::KNIGHT, chess::PieceType::BISHOP, chess::PieceType::ROOK,
         chess::PieceType::QUEEN, chess::PieceType::KING};
@@ -179,7 +171,6 @@ float handcrafted_evaluate(const ChessBoard& board) {
         }
     }
 
-    // Bishop pair bonus
     if (white_bishops >= 2) {
         mg_score += config::eval::bishop_pair::BONUS_MG;
         eg_score += config::eval::bishop_pair::BONUS_EG;
@@ -189,7 +180,6 @@ float handcrafted_evaluate(const ChessBoard& board) {
         eg_score -= config::eval::bishop_pair::BONUS_EG;
     }
 
-    // King pawn shield
     for (int color = 0; color < 2; ++color) {
         int sign = color == 0 ? 1 : -1;
         int ksq = king_sq[color];
@@ -197,7 +187,6 @@ float handcrafted_evaluate(const ChessBoard& board) {
         int kr = rank_of(ksq);
 
         int shield = 0;
-        // Check pawns on 2nd/3rd rank near king
         int shield_rank1 = color == 0 ? kr + 1 : kr - 1;
         int shield_rank2 = color == 0 ? kr + 2 : kr - 2;
 
@@ -214,7 +203,6 @@ float handcrafted_evaluate(const ChessBoard& board) {
         mg_score += sign * shield * config::eval::king_safety::SHIELD_BONUS_MG;
     }
 
-    // Tapered eval
     if (phase > config::eval::TOTAL_PHASE) phase = config::eval::TOTAL_PHASE;
     int mg_phase = phase;
     int eg_phase = config::eval::TOTAL_PHASE - phase;
@@ -222,7 +210,6 @@ float handcrafted_evaluate(const ChessBoard& board) {
     float eval = static_cast<float>(mg_score * mg_phase + eg_score * eg_phase) /
                  config::eval::TOTAL_PHASE;
 
-    // Scale to NNUE-compatible range: [-MATE_VALUE, +MATE_VALUE]
     float scaled =
         (2.0f / (1.0f + std::exp(-eval / config::eval::SIGMOID_SCALE)) - 1.0f) *
         config::MATE_VALUE;

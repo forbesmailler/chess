@@ -2,16 +2,10 @@
 
 from pathlib import Path
 
-import yaml
+from config.load_config import load
 
 ROOT = Path(__file__).resolve().parent.parent
-CONFIG_DIR = ROOT / "config"
 OUTPUT = ROOT / "engine" / "generated_config.h"
-
-
-def load(name: str) -> dict:
-    with open(CONFIG_DIR / f"{name}.yaml") as f:
-        return yaml.safe_load(f)
 
 
 def flatten_pst(rows: list[list[int]]) -> list[int]:

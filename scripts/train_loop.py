@@ -7,19 +7,10 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
-import yaml
+from config.load_config import load
 
-ROOT = Path(__file__).resolve().parent.parent
-CONFIG_DIR = ROOT / "config"
-
-
-def _load(name: str) -> dict:
-    with open(CONFIG_DIR / f"{name}.yaml") as f:
-        return yaml.safe_load(f)
-
-
-_trn = _load("training")
-_dep = _load("deploy")
+_trn = load("training")
+_dep = load("deploy")
 
 BOT_EXE = str(Path(_dep["paths"]["bot_exe"]))
 _sp = _trn["self_play"]
@@ -43,9 +34,8 @@ def run_compare(cmd: str) -> dict:
     stdout = result.stdout or ""
     print(stdout, end="")
 
-    m = _WLD_RE.search(stdout)
-    if m:
-        new_wins, old_wins, draws = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    if m := _WLD_RE.search(stdout):
+        new_wins, old_wins, draws = (int(g) for g in m.groups())
     else:
         new_wins, old_wins, draws = 0, 0, 0
 
@@ -58,11 +48,9 @@ def run_compare(cmd: str) -> dict:
 
 
 def read_current_best(pointer_file: Path) -> str | None:
-    if pointer_file.exists():
-        text = pointer_file.read_text().strip()
-        if text:
-            return text
-    return None
+    if not pointer_file.exists():
+        return None
+    return pointer_file.read_text().strip() or None
 
 
 def write_current_best(pointer_file: Path, path: str) -> None:

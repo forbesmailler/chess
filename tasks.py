@@ -115,8 +115,6 @@ _pointer_file = _dep["paths"]["current_best_file"]
 def deploy(c, weights=None):
     """Deploy the bot on a Linux VPS: pull, build, test, install, restart service."""
     if weights is None:
-        from pathlib import Path
-
         pf = Path(_pointer_file)
         if pf.exists():
             weights = pf.read_text().strip()

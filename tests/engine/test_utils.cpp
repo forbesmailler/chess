@@ -55,53 +55,6 @@ TEST(Utils, SplitStringSpaceDelimiter) {
     EXPECT_EQ(tokens[2], "e4d5");
 }
 
-// --- trim ---
-
-TEST(Utils, TrimEmpty) { EXPECT_EQ(Utils::trim(""), ""); }
-
-TEST(Utils, TrimNoWhitespace) { EXPECT_EQ(Utils::trim("hello"), "hello"); }
-
-TEST(Utils, TrimLeadingSpaces) { EXPECT_EQ(Utils::trim("   hello"), "hello"); }
-
-TEST(Utils, TrimTrailingSpaces) { EXPECT_EQ(Utils::trim("hello   "), "hello"); }
-
-TEST(Utils, TrimBothSides) { EXPECT_EQ(Utils::trim("  hello world  "), "hello world"); }
-
-TEST(Utils, TrimAllWhitespace) { EXPECT_EQ(Utils::trim("   "), ""); }
-
-TEST(Utils, TrimTabsAndNewlines) { EXPECT_EQ(Utils::trim("\t\n hello \n\t"), "hello"); }
-
-TEST(Utils, TrimSingleChar) { EXPECT_EQ(Utils::trim(" x "), "x"); }
-
-// --- string_ends_with ---
-
-TEST(Utils, EndsWithMatch) {
-    EXPECT_TRUE(Utils::string_ends_with("hello.txt", ".txt"));
-}
-
-TEST(Utils, EndsWithNoMatch) {
-    EXPECT_FALSE(Utils::string_ends_with("hello.txt", ".bin"));
-}
-
-TEST(Utils, EndsWithEmptySuffix) { EXPECT_TRUE(Utils::string_ends_with("hello", "")); }
-
-TEST(Utils, EndsWithEmptyString) { EXPECT_FALSE(Utils::string_ends_with("", ".txt")); }
-
-TEST(Utils, EndsWithBothEmpty) { EXPECT_TRUE(Utils::string_ends_with("", "")); }
-
-TEST(Utils, EndsWithSuffixLongerThanString) {
-    EXPECT_FALSE(Utils::string_ends_with("hi", "hello"));
-}
-
-TEST(Utils, EndsWithExactMatch) {
-    EXPECT_TRUE(Utils::string_ends_with("test", "test"));
-}
-
-TEST(Utils, EndsWithSingleChar) {
-    EXPECT_TRUE(Utils::string_ends_with("abc", "c"));
-    EXPECT_FALSE(Utils::string_ends_with("abc", "b"));
-}
-
 // --- log functions ---
 
 TEST(Utils, LogInfoWritesToStdout) {

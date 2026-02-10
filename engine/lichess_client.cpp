@@ -5,7 +5,6 @@
 #include <iostream>
 #include <nlohmann/json.hpp>
 #include <sstream>
-#include <thread>
 
 #include "generated_config.h"
 
@@ -219,19 +218,14 @@ LichessClient::HttpResponse LichessClient::make_request(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_data);
 
-    // Set timeouts
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, config::curl::REQUEST_TIMEOUT);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT,
                      config::curl::REQUEST_CONNECT_TIMEOUT);
-
-    // Enable keep-alive for regular requests too
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
 
-    // Set User-Agent
     std::string user_agent(config::bot::USER_AGENT);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, user_agent.c_str());
 
-    // Set headers
     struct curl_slist* headers = nullptr;
     std::string auth_header = "Authorization: Bearer " + token;
     headers = curl_slist_append(headers, auth_header.c_str());
@@ -243,7 +237,6 @@ LichessClient::HttpResponse LichessClient::make_request(const std::string& url,
             headers = curl_slist_append(headers, "Content-Type: application/json");
             curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data.c_str());
         } else {
-            // For empty POST requests, set content length to 0
             curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "");
             curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, 0L);
         }
@@ -251,11 +244,9 @@ LichessClient::HttpResponse LichessClient::make_request(const std::string& url,
 
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
-    // Follow redirects
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_MAXREDIRS, config::curl::MAX_REDIRECTS);
 
-    // Perform the request
     CURLcode res = curl_easy_perform(curl);
 
     if (res == CURLE_OK) {
@@ -284,7 +275,6 @@ void LichessClient::stream_lines(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, stream_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &stream_data);
 
-    // Set longer timeouts for streaming connections
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 0L);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT,
                      config::curl::STREAM_CONNECT_TIMEOUT);
@@ -292,13 +282,11 @@ void LichessClient::stream_lines(const std::string& url,
                      config::curl::STREAM_LOW_SPEED_LIMIT);
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, config::curl::STREAM_LOW_SPEED_TIME);
 
-    // Enable keep-alive
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPIDLE, config::curl::STREAM_KEEPALIVE_IDLE);
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPINTVL,
                      config::curl::STREAM_KEEPALIVE_INTERVAL);
 
-    // Set headers
     struct curl_slist* headers = nullptr;
     std::string auth_header = "Authorization: Bearer " + token;
     headers = curl_slist_append(headers, auth_header.c_str());
@@ -310,9 +298,7 @@ void LichessClient::stream_lines(const std::string& url,
 
     CURLcode res = curl_easy_perform(curl);
 
-    // Process any remaining data in buffer
     if (!stream_data.buffer.empty()) {
-        // Remove final carriage return if present
         if (stream_data.buffer.back() == '\r') {
             stream_data.buffer.pop_back();
         }

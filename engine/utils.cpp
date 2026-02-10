@@ -27,21 +27,6 @@ std::vector<std::string> Utils::split_string(const std::string& str, char delimi
     return tokens;
 }
 
-std::string Utils::trim(const std::string& str) {
-    auto start = str.begin();
-    auto end = str.end();
-
-    while (start != end && std::isspace(*start)) ++start;
-    while (end != start && std::isspace(*(end - 1))) --end;
-
-    return {start, end};
-}
-
-bool Utils::string_ends_with(const std::string& str, const std::string& suffix) {
-    return suffix.length() <= str.length() &&
-           str.compare(str.length() - suffix.length(), suffix.length(), suffix) == 0;
-}
-
 void Utils::log_info(const std::string& message) {
     std::cout << "[INFO " << get_timestamp() << "] " << message << std::endl;
 }

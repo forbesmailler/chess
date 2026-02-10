@@ -33,13 +33,11 @@ constexpr int HEARTBEAT_INTERVAL_MS = config::bot::HEARTBEAT_INTERVAL_MS;
 constexpr int CONNECTION_TIMEOUT_MS = config::bot::CONNECTION_TIMEOUT_MS;
 constexpr int MAX_CONSECUTIVE_ERRORS = config::bot::MAX_CONSECUTIVE_ERRORS;
 
-// Global state for graceful shutdown
 std::atomic<bool> shutdown_requested{false};
 std::atomic<int> consecutive_errors{0};
 std::atomic<std::chrono::steady_clock::time_point> last_activity{
     std::chrono::steady_clock::now()};
 
-// Signal handler for graceful shutdown
 void signal_handler(int signal) {
     Utils::log_info("Received shutdown signal " + std::to_string(signal) +
                     ", shutting down gracefully...");
@@ -68,11 +66,9 @@ class LichessBot {
           engine_type(engine_type),
           eval_mode(eval_mode),
           heartbeat_active(true) {
-        // Setup signal handlers
         signal(SIGINT, signal_handler);
         signal(SIGTERM, signal_handler);
 
-        // Load NNUE weights if requested
         if (eval_mode == EvalMode::NNUE && !nnue_weights_path.empty()) {
             nnue_model = std::make_shared<NNUEModel>();
             if (nnue_model->load_weights(nnue_weights_path)) {
@@ -86,7 +82,6 @@ class LichessBot {
             }
         }
 
-        // Create engine based on type
         if (engine_type == EngineType::MCTS) {
             engine =
                 std::make_unique<MCTSEngine>(max_time_ms, this->eval_mode, nnue_model);
@@ -128,10 +123,7 @@ class LichessBot {
     void start() {
         Utils::log_info("Starting bot with error handling and keep-alive features...");
 
-        // Start heartbeat monitor
         start_heartbeat_monitor();
-
-        // Main bot loop with retry logic
         start_with_retry();
     }
 
@@ -143,12 +135,10 @@ class LichessBot {
     EvalMode eval_mode;
     LichessClient::AccountInfo account_info;
 
-    // Game state management
     std::unordered_map<std::string, std::shared_ptr<GameState>> active_games;
     std::mutex games_mutex;
     std::atomic<int> active_game_count{0};
 
-    // Heartbeat and monitoring
     std::atomic<bool> heartbeat_active{true};
     std::thread heartbeat_thread;
 
@@ -189,7 +179,6 @@ class LichessBot {
 
                 if (shutdown_requested.load()) break;
 
-                // Check if we've been inactive too long
                 auto now = std::chrono::steady_clock::now();
                 auto time_since_activity = now - last_activity.load();
 
@@ -203,9 +192,7 @@ class LichessBot {
                                            .count()) +
                         " seconds");
 
-                    // Test basic connectivity first
                     if (client.test_connectivity()) {
-                        // If basic connectivity is OK, test Lichess account info
                         LichessClient::AccountInfo test_info;
                         if (client.get_account_info(test_info)) {
                             Utils::log_info(
@@ -224,14 +211,12 @@ class LichessBot {
                     }
                 }
 
-                // Log status
                 int error_count = consecutive_errors.load();
                 int active_count = active_game_count.load();
                 Utils::log_info("Heartbeat: " + std::to_string(active_count) +
                                 " active games, " + std::to_string(error_count) +
                                 " consecutive errors");
 
-                // Check if we should shut down due to too many errors
                 if (error_count > MAX_CONSECUTIVE_ERRORS) {
                     Utils::log_error("Too many consecutive errors (" +
                                      std::to_string(error_count) +
@@ -338,7 +323,6 @@ class LichessBot {
                 }
                 auto game_state = std::make_shared<GameState>();
 
-                // Create a separate engine instance for this game
                 try {
                     if (engine_type == EngineType::MCTS) {
                         game_state->engine = std::make_unique<MCTSEngine>(
@@ -357,7 +341,6 @@ class LichessBot {
                                     " (Active games: " +
                                     std::to_string(active_game_count.load()) + ")");
 
-                    // Start game handler in separate thread
                     std::thread game_thread(&LichessBot::handle_game_with_recovery,
                                             this, event.game_id);
                     game_thread.detach();
@@ -448,7 +431,6 @@ class LichessBot {
                                  std::string(e.what()));
             }
 
-            // Stream ended — if game is still active, reconnect
             if (!game_state->is_active.load() || shutdown_requested.load()) break;
 
             if (attempt < MAX_STREAM_RETRIES) {
@@ -513,7 +495,6 @@ class LichessBot {
                 game_state->board.make_move(move);
                 game_state->ply_count++;
 
-                // Log who made the move
                 bool bot_move = ((i % 2 == 0 && game_state->our_white) ||
                                  (i % 2 == 1 && !game_state->our_white));
                 std::string actor = bot_move ? "Bot" : "Opponent";
@@ -561,7 +542,6 @@ class LichessBot {
                 ", time: " + std::to_string(search_result.time_used.count()) + "ms" +
                 ", nodes: " + std::to_string(search_result.nodes_searched) + ")");
 
-            // Try to make the move with retry logic
             if (make_move_with_retry(game_id, search_result.best_move.uci())) {
                 Utils::log_info("Game " + game_id + ": Move sent successfully: " +
                                 search_result.best_move.uci());
@@ -618,7 +598,6 @@ class LichessBot {
                             " (our eval: " + std::to_string(our_eval) +
                             ", white eval: " + std::to_string(eval) + ")");
 
-            // Try the draw response with simple retry
             for (int attempt = 1; attempt <= 2; ++attempt) {
                 bool success = accept_draw ? client.accept_draw(game_id)
                                            : client.decline_draw(game_id);
@@ -642,10 +621,8 @@ class LichessBot {
         std::lock_guard<std::mutex> lock(games_mutex);
         auto it = active_games.find(game_id);
         if (it != active_games.end()) {
-            // Mark game as inactive
             it->second->is_active.store(false);
 
-            // Calculate game duration
             auto now = std::chrono::steady_clock::now();
             auto duration = now - it->second->last_move_time;
             auto duration_seconds =
@@ -711,7 +688,6 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    // Check for --selfplay mode
     std::string first_arg = argv[1];
     if (first_arg == "--selfplay") {
         SelfPlayGenerator::Config config;
@@ -738,7 +714,6 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    // Check for --compare mode
     if (first_arg == "--compare") {
         if (argc < 4) {
             std::cerr << "Usage: " << argv[0]
@@ -755,7 +730,6 @@ int main(int argc, char* argv[]) {
         if (argc > 5) config.output_file = argv[5];
         if (argc > 6) config.num_threads = std::stoi(argv[6]);
 
-        // "handcrafted" means use handcrafted eval (empty string signals this)
         if (old_weights == "handcrafted") old_weights = "";
 
         std::cout << "=== Model Comparison ===" << std::endl;
@@ -778,13 +752,11 @@ int main(int argc, char* argv[]) {
                   << (result.improved() ? "NEW MODEL IMPROVED" : "No improvement")
                   << std::endl;
 
-        // Write MD report next to new_weights file (.bin -> .md)
         std::string report_path = new_weights;
         auto dot_pos = report_path.rfind('.');
         if (dot_pos != std::string::npos) report_path = report_path.substr(0, dot_pos);
         report_path += ".md";
 
-        // Extract stem for header
         std::string stem = new_weights;
         auto slash = stem.find_last_of("/\\");
         if (slash != std::string::npos) stem = stem.substr(slash + 1);
@@ -826,7 +798,6 @@ int main(int argc, char* argv[]) {
     EvalMode eval_mode = EvalMode::HANDCRAFTED;
     std::string nnue_weights_path;
 
-    // Parse optional arguments
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
 

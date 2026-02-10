@@ -257,7 +257,7 @@ def train(args):
     if args.output:
         print(f"Model saved to {args.output}")
 
-    if getattr(args, "log", None):
+    if args.log:
         _write_log(args, num_positions, epoch_log, best_val_loss)
 
     return best_state

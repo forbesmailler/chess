@@ -212,7 +212,6 @@ float ChessEngine::negamax(ChessBoard& board, int depth, int ply, float alpha,
         }
     }
 
-    // Score moves for incremental selection (avoid full sort)
     int scores[256];
     score_moves(board, legal_moves, scores, tt_move, ply, prev_move);
     float best_score = -std::numeric_limits<float>::infinity();
@@ -256,7 +255,6 @@ float ChessEngine::negamax(ChessBoard& board, int depth, int ply, float alpha,
         float score;
 
         if (moves_searched == 1) {
-            // First move (PV): full window, full depth
             score = -negamax(board, depth - 1, ply + 1, -beta, -alpha, is_pv, move);
         } else {
             // LMR for late quiet moves
@@ -276,7 +274,6 @@ float ChessEngine::negamax(ChessBoard& board, int depth, int ply, float alpha,
             score =
                 -negamax(board, search_depth, ply + 1, -alpha - 1, -alpha, false, move);
 
-            // PVS re-search: if null window failed high, re-search with full window
             if (score > alpha && score < beta) {
                 score = -negamax(board, depth - 1, ply + 1, -beta, -alpha, true, move);
             }
@@ -297,7 +294,6 @@ float ChessEngine::negamax(ChessBoard& board, int depth, int ply, float alpha,
         if (score >= beta) {
             node_type = TranspositionEntry::LOWER_BOUND;
 
-            // Update killer moves, history, and countermoves for quiet cutoffs
             if (is_quiet && ply < MAX_PLY) {
                 if (move != killers[ply][0]) {
                     killers[ply][1] = killers[ply][0];

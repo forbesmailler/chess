@@ -17,9 +17,8 @@ SelfPlayGenerator::SelfPlayGenerator(const Config& config) : config(config) {}
 uint8_t SelfPlayGenerator::encode_piece(const chess::Piece& piece) {
     if (piece == chess::Piece::NONE) return 0;
 
-    // chess library: PieceType order is PAWN=0..KING=5, Color WHITE=0/BLACK=1
-    int pt = static_cast<int>(piece.type());      // 0-5
-    int color = static_cast<int>(piece.color());  // 0=white, 1=black
+    int pt = static_cast<int>(piece.type());
+    int color = static_cast<int>(piece.color());
     return static_cast<uint8_t>(1 + pt + color * 6);
 }
 
@@ -30,8 +29,6 @@ TrainingPosition SelfPlayGenerator::encode_position(const ChessBoard& board, flo
 
     const auto& b = board.board;
 
-    // Encode piece placement: 2 squares per byte (high nibble = even sq, low nibble =
-    // odd sq)
     for (int sq = 0; sq < 64; sq += 2) {
         uint8_t p0 = encode_piece(b.at(static_cast<chess::Square>(sq)));
         uint8_t p1 = encode_piece(b.at(static_cast<chess::Square>(sq + 1)));
@@ -47,7 +44,6 @@ TrainingPosition SelfPlayGenerator::encode_position(const ChessBoard& board, flo
                              (static_cast<int>(rights.black_kingside) << 1) |
                              static_cast<int>(rights.black_queenside));
 
-    // En passant
     auto ep = b.enpassantSq();
     if (ep != chess::Square::NO_SQ) {
         pos.en_passant_file = static_cast<uint8_t>(ep.index() % 8);
@@ -103,7 +99,6 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
                                    int thread_id) {
     std::mt19937 rng(std::random_device{}() + thread_id);
 
-    // Load NNUE model once per thread if weights provided
     std::shared_ptr<NNUEModel> model;
     EvalMode eval_mode = EvalMode::HANDCRAFTED;
     if (!config.nnue_weights.empty()) {
@@ -146,7 +141,6 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
             bool white_to_move = board.turn() == ChessBoard::WHITE;
 
             if (ply < config.softmax_plies) {
-                // Softmax move selection for opening diversity
                 auto legal_moves = board.get_legal_moves();
                 if (legal_moves.empty()) break;
 
@@ -158,7 +152,6 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
                     board.board.unmakeMove(legal_moves[i].internal_move);
                 }
 
-                // Softmax with temperature
                 float max_score = *std::max_element(scores.begin(), scores.end());
                 std::vector<float> probs(scores.size());
                 float sum = 0.0f;
@@ -174,7 +167,6 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
                 chosen_move = legal_moves[idx];
                 stm_eval = scores[idx];
             } else {
-                // Normal best-move search
                 TimeControl tc{config::self_play::DEFAULT_TIME_CONTROL_MS, 0, 0};
                 engine->set_max_time(config.search_time_ms);
                 auto result = engine->get_best_move(board, tc);
@@ -189,7 +181,6 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
             ply++;
         }
 
-        // Fill in game results
         for (auto& pos : positions) {
             bool white_stm = pos.side_to_move == 0;
             if (white_result == 2) {
@@ -227,8 +218,6 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
         }
     }
 }
-
-// --- ModelComparator ---
 
 ModelComparator::ModelComparator(const Config& config, const std::string& old_weights,
                                  const std::string& new_weights)
@@ -279,7 +268,6 @@ ModelComparator::Result ModelComparator::run() {
 }
 
 void ModelComparator::play_games(int num_games, int thread_id) {
-    // Use pre-loaded models or load from file paths
     std::shared_ptr<NNUEModel> new_model = preloaded_new_model;
     if (!new_model) {
         new_model = std::make_shared<NNUEModel>();
@@ -317,12 +305,11 @@ void ModelComparator::play_games(int num_games, int thread_id) {
         std::vector<TrainingPosition> positions;
         positions.reserve(config.max_game_ply);
 
-        // Alternate colors: new model plays white when (thread_id + g) is even
         bool new_is_white = (thread_id + g) % 2 == 0;
 
         ChessBoard board;
         uint16_t ply = 0;
-        int white_result = 1;  // 0=black wins, 1=draw, 2=white wins
+        int white_result = 1;
 
         while (ply < config.max_game_ply) {
             auto [go_reason, go_result] = board.board.isGameOver();
@@ -352,7 +339,6 @@ void ModelComparator::play_games(int num_games, int thread_id) {
             ply++;
         }
 
-        // Fill in game results
         for (auto& pos : positions) {
             bool white_stm = pos.side_to_move == 0;
             if (white_result == 2) {
@@ -364,7 +350,6 @@ void ModelComparator::play_games(int num_games, int thread_id) {
             }
         }
 
-        // Write positions to file
         if (!config.output_file.empty()) {
             std::lock_guard<std::mutex> lock(file_mutex);
             std::ofstream out(config.output_file, std::ios::binary | std::ios::app);
@@ -373,7 +358,6 @@ void ModelComparator::play_games(int num_games, int thread_id) {
             }
         }
 
-        // Update counters
         bool new_won =
             (new_is_white && white_result == 2) || (!new_is_white && white_result == 0);
         bool old_won =
