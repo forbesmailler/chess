@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <chess.hpp>
 #include <chrono>
 #include <cstring>
 #include <iostream>
@@ -350,4 +351,193 @@ TEST_F(NNUEModelTest, PerspectiveConsistency) {
             << "Black own feature " << f << " (flipped=" << flipped
             << ") not found in white opp features";
     }
+}
+
+// --- Accumulator correctness: incremental must match from-scratch ---
+
+TEST_F(NNUEModelTest, AccumulatorCorrectnessStartPos) {
+    ChessBoard board;
+    model.init_accumulator(board);
+
+    // predict_from_accumulator should match predict for start position
+    float from_scratch = model.predict(board);
+    float incremental = model.predict_from_accumulator(board);
+    EXPECT_NEAR(from_scratch, incremental, 0.01f)
+        << "Start position: from_scratch=" << from_scratch
+        << " incremental=" << incremental;
+}
+
+TEST_F(NNUEModelTest, AccumulatorCorrectnessAfterMoves) {
+    // Play a sequence of moves, checking incremental vs from-scratch at each step
+    std::vector<std::string> move_ucis = {"e2e4", "e7e5", "g1f3", "b8c6",
+                                          "f1b5", "a7a6", "b5a4", "g8f6"};
+    ChessBoard board;
+    model.init_accumulator(board);
+
+    for (const auto& uci : move_ucis) {
+        SCOPED_TRACE("After move: " + uci);
+        chess::Move move = chess::uci::uciToMove(board.board, uci);
+
+        chess::Piece moved = board.board.at(move.from());
+        chess::Piece captured = board.board.at(move.to());
+        model.push_accumulator();
+        board.board.makeMove(move);
+        model.update_accumulator(move, moved, captured, board);
+
+        float from_scratch = model.predict(board);
+        float incremental = model.predict_from_accumulator(board);
+        EXPECT_NEAR(from_scratch, incremental, 0.01f)
+            << "from_scratch=" << from_scratch << " incremental=" << incremental;
+    }
+
+    // Pop all and verify original position
+    for (size_t i = 0; i < move_ucis.size(); ++i) {
+        board.board.unmakeMove(
+            chess::uci::uciToMove(board.board, move_ucis[move_ucis.size() - 1 - i]));
+        model.pop_accumulator();
+    }
+
+    float restored = model.predict_from_accumulator(board);
+    float original = model.predict(board);
+    EXPECT_NEAR(original, restored, 0.01f);
+}
+
+TEST_F(NNUEModelTest, AccumulatorCorrectnessWithCastling) {
+    // Position where castling is possible
+    ChessBoard board("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1");
+    model.init_accumulator(board);
+
+    // White kingside castle: e1g1 (chess-library uses king-to-rook: e1h1)
+    chess::Move castle = chess::uci::uciToMove(board.board, "e1g1");
+    chess::Piece moved = board.board.at(castle.from());
+    chess::Piece captured = board.board.at(castle.to());
+    model.push_accumulator();
+    board.board.makeMove(castle);
+    model.update_accumulator(castle, moved, captured, board);
+
+    float from_scratch = model.predict(board);
+    float incremental = model.predict_from_accumulator(board);
+    EXPECT_NEAR(from_scratch, incremental, 0.01f)
+        << "After castling: from_scratch=" << from_scratch
+        << " incremental=" << incremental;
+}
+
+TEST_F(NNUEModelTest, AccumulatorCorrectnessWithEnPassant) {
+    // Position with en passant possible
+    ChessBoard board("rnbqkbnr/pppp1ppp/8/4pP2/8/8/PPPPP1PP/RNBQKBNR w KQkq e6 0 3");
+    model.init_accumulator(board);
+
+    chess::Move ep = chess::uci::uciToMove(board.board, "f5e6");
+    chess::Piece moved = board.board.at(ep.from());
+    chess::Piece captured = board.board.at(ep.to());
+    model.push_accumulator();
+    board.board.makeMove(ep);
+    model.update_accumulator(ep, moved, captured, board);
+
+    float from_scratch = model.predict(board);
+    float incremental = model.predict_from_accumulator(board);
+    EXPECT_NEAR(from_scratch, incremental, 0.01f)
+        << "After en passant: from_scratch=" << from_scratch
+        << " incremental=" << incremental;
+}
+
+TEST_F(NNUEModelTest, AccumulatorCorrectnessWithPromotion) {
+    // Pawn about to promote
+    ChessBoard board("8/P7/8/8/8/8/8/4K2k w - - 0 1");
+    model.init_accumulator(board);
+
+    chess::Move promo = chess::uci::uciToMove(board.board, "a7a8q");
+    chess::Piece moved = board.board.at(promo.from());
+    chess::Piece captured = board.board.at(promo.to());
+    model.push_accumulator();
+    board.board.makeMove(promo);
+    model.update_accumulator(promo, moved, captured, board);
+
+    float from_scratch = model.predict(board);
+    float incremental = model.predict_from_accumulator(board);
+    EXPECT_NEAR(from_scratch, incremental, 0.01f)
+        << "After promotion: from_scratch=" << from_scratch
+        << " incremental=" << incremental;
+}
+
+TEST_F(NNUEModelTest, AccumulatorCorrectnessNullMove) {
+    ChessBoard board("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
+    model.init_accumulator(board);
+
+    model.push_accumulator();
+    board.board.makeNullMove();
+    model.update_accumulator_null_move(board);
+
+    float from_scratch = model.predict(board);
+    float incremental = model.predict_from_accumulator(board);
+    EXPECT_NEAR(from_scratch, incremental, 0.01f)
+        << "After null move: from_scratch=" << from_scratch
+        << " incremental=" << incremental;
+
+    board.board.unmakeNullMove();
+    model.pop_accumulator();
+}
+
+// --- Updated benchmark: includes incremental timing ---
+
+TEST_F(NNUEModelTest, EvalSpeedBenchmarkIncremental) {
+    constexpr int NUM_EVALS = 10000;
+
+    // A realistic game sequence for incremental testing
+    std::vector<std::string> game_moves = {
+        "e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6", "b5a4", "g8f6",
+        "e1g1", "f8e7", "f1e1", "b7b5", "a4b3", "d7d6", "c2c3", "e8g8",
+    };
+
+    // Benchmark: incremental predict
+    ChessBoard board;
+    model.init_accumulator(board);
+
+    auto inc_start = std::chrono::high_resolution_clock::now();
+    for (int iter = 0; iter < NUM_EVALS; ++iter) {
+        int move_idx = iter % game_moves.size();
+        if (move_idx == 0 && iter > 0) {
+            // Reset board and accumulator
+            board = ChessBoard();
+            model.init_accumulator(board);
+        }
+        chess::Move move = chess::uci::uciToMove(board.board, game_moves[move_idx]);
+        chess::Piece moved = board.board.at(move.from());
+        chess::Piece captured = board.board.at(move.to());
+        model.push_accumulator();
+        board.board.makeMove(move);
+        model.update_accumulator(move, moved, captured, board);
+        float e = model.predict_from_accumulator(board);
+        (void)e;
+    }
+    auto inc_end = std::chrono::high_resolution_clock::now();
+    double inc_us =
+        std::chrono::duration<double, std::micro>(inc_end - inc_start).count();
+
+    // Benchmark: handcrafted
+    std::vector<ChessBoard> boards = {
+        ChessBoard(),
+        ChessBoard("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"),
+        ChessBoard("r1bqkb1r/pppppppp/2n2n2/8/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3"),
+        ChessBoard("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1"),
+    };
+
+    auto hc_start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < NUM_EVALS; ++i) {
+        float e = handcrafted_evaluate(boards[i % boards.size()]);
+        (void)e;
+    }
+    auto hc_end = std::chrono::high_resolution_clock::now();
+    double hc_us = std::chrono::duration<double, std::micro>(hc_end - hc_start).count();
+
+    double ratio = inc_us / hc_us;
+    std::cout << "\n=== Incremental NNUE Speed Benchmark (" << NUM_EVALS
+              << " evals) ===\n"
+              << "  NNUE incremental: " << inc_us / 1000.0 << " ms ("
+              << inc_us / NUM_EVALS << " us/eval)\n"
+              << "  Handcrafted:      " << hc_us / 1000.0 << " ms ("
+              << hc_us / NUM_EVALS << " us/eval)\n"
+              << "  Ratio:            " << ratio
+              << "x (NNUE incremental / Handcrafted)\n"
+              << "==============================================\n";
 }

@@ -25,7 +25,11 @@ float BaseEngine::raw_evaluate(const ChessBoard& board) {
 
     switch (eval_mode) {
         case EvalMode::NNUE:
-            if (nnue_model) return nnue_model->predict(board);
+            if (nnue_model) {
+                if (nnue_model->has_accumulator())
+                    return nnue_model->predict_from_accumulator(board);
+                return nnue_model->predict(board);
+            }
             return handcrafted_evaluate(board);
         case EvalMode::HANDCRAFTED:
         default:

@@ -11,6 +11,13 @@
 
 class NNUEModel {
    public:
+    static constexpr int INPUT_SIZE = config::nnue::INPUT_SIZE;
+    static constexpr int HIDDEN1_SIZE = config::nnue::HIDDEN1_SIZE;
+    static constexpr int HIDDEN2_SIZE = config::nnue::HIDDEN2_SIZE;
+    static constexpr int OUTPUT_SIZE = config::nnue::OUTPUT_SIZE;
+    // Padded HIDDEN1_SIZE rounded up to multiple of 16 for AVX2 int16 ops
+    static constexpr int H1_PADDED = (HIDDEN1_SIZE + 15) & ~15;
+
     NNUEModel() = default;
 
     // Load binary weight file exported by export_nnue.py
@@ -27,19 +34,49 @@ class NNUEModel {
     // Public accessor for testing: returns active feature indices for a position
     std::vector<int> get_active_features(const ChessBoard& board) const;
 
+    // --- Incremental accumulator API ---
+
+    // Dual-perspective accumulator: one per color's viewpoint
+    struct Accumulator {
+        alignas(32) int16_t white[H1_PADDED];  // White's perspective
+        alignas(32) int16_t black[H1_PADDED];  // Black's perspective
+        int castling_hash = 0;                 // castlingRights().hashIndex()
+        bool has_ep = false;                   // en passant was available
+        bool computed = false;
+    };
+
+    // Initialize accumulator from scratch for a position (sets ply 0)
+    void init_accumulator(const ChessBoard& board) const;
+
+    // Push current accumulator (copy to next stack level)
+    void push_accumulator() const;
+
+    // Pop accumulator (restore previous stack level)
+    void pop_accumulator() const;
+
+    // Update accumulator incrementally after a move.
+    // moved_piece/captured_piece are from board state BEFORE makeMove.
+    // board is the state AFTER makeMove.
+    void update_accumulator(chess::Move move, chess::Piece moved_piece,
+                            chess::Piece captured_piece,
+                            const ChessBoard& board_after) const;
+
+    // Update accumulator after a null move (just handle castling/EP changes)
+    void update_accumulator_null_move(const ChessBoard& board_after) const;
+
+    // Evaluate using stored accumulator (Layer 2+3 only)
+    float predict_from_accumulator(const ChessBoard& board) const;
+
+    // Check if accumulator is available
+    bool has_accumulator() const { return acc_ply >= 0; }
+
    private:
-    static constexpr int INPUT_SIZE = config::nnue::INPUT_SIZE;
-    static constexpr int HIDDEN1_SIZE = config::nnue::HIDDEN1_SIZE;
-    static constexpr int HIDDEN2_SIZE = config::nnue::HIDDEN2_SIZE;
-    static constexpr int OUTPUT_SIZE = config::nnue::OUTPUT_SIZE;
     static constexpr float MATE_VALUE = config::MATE_VALUE;
     static constexpr int MAX_ACTIVE_FEATURES = 37;  // 32 pieces + 4 castling + 1 ep
 
     // Quantization scales
     static constexpr int Q1_SCALE = 512;  // Layer 1 weights/accumulators
     static constexpr int Q2_SCALE = 512;  // Layer 2 weights
-    // Padded HIDDEN1_SIZE rounded up to multiple of 16 for AVX2 int16 ops
-    static constexpr int H1_PADDED = (HIDDEN1_SIZE + 15) & ~15;
 
     // Aligned memory deleter for SIMD-aligned allocations
     struct AlignedDeleter {
@@ -68,6 +105,22 @@ class NNUEModel {
 
     bool loaded = false;
 
+    // Accumulator stack for incremental updates
+    static constexpr int ACC_STACK_SIZE = 128;
+    mutable Accumulator acc_stack[ACC_STACK_SIZE];
+    mutable int acc_ply = -1;
+
     // Extract features into a stack array, returns count
     static int extract_features(const ChessBoard& board, int* active);
+
+    // Compute one perspective's accumulator from scratch
+    void compute_accumulator(const ChessBoard& board, int16_t* acc,
+                             bool as_white) const;
+
+    // Add/subtract a single feature row from an accumulator
+    void accumulate_add(int16_t* acc, int feature) const;
+    void accumulate_sub(int16_t* acc, int feature) const;
+
+    // Run Layer 2+3 from a pre-computed accumulator
+    float forward_from_accumulator(const int16_t* h1_q) const;
 };

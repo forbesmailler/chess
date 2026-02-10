@@ -195,10 +195,14 @@ float ChessEngine::negamax(ChessBoard& board, int depth, int ply, float alpha,
         int null_depth = depth - 1 - reduction;
 
         if (null_depth >= 0) {
+            bool use_acc = nnue_model && eval_mode == EvalMode::NNUE;
+            if (use_acc) nnue_model->push_accumulator();
             board.board.makeNullMove();
+            if (use_acc) nnue_model->update_accumulator_null_move(board);
             float null_score =
                 -negamax(board, null_depth, ply + 1, -beta, -beta + 1, false);
             board.board.unmakeNullMove();
+            if (use_acc) nnue_model->pop_accumulator();
             if (null_score == -SEARCH_INTERRUPTED || should_stop.load()) {
                 return SEARCH_INTERRUPTED;
             }
@@ -239,7 +243,15 @@ float ChessEngine::negamax(ChessBoard& board, int depth, int ply, float alpha,
                 continue;
         }
 
+        bool use_acc = nnue_model && eval_mode == EvalMode::NNUE;
+        chess::Piece moved_pc, captured_pc;
+        if (use_acc) {
+            moved_pc = board.board.at(move.from());
+            captured_pc = board.board.at(move.to());
+            nnue_model->push_accumulator();
+        }
         board.board.makeMove(move);
+        if (use_acc) nnue_model->update_accumulator(move, moved_pc, captured_pc, board);
         moves_searched++;
         float score;
 
@@ -271,6 +283,7 @@ float ChessEngine::negamax(ChessBoard& board, int depth, int ply, float alpha,
         }
 
         board.board.unmakeMove(move);
+        if (use_acc) nnue_model->pop_accumulator();
 
         if (score == -SEARCH_INTERRUPTED || should_stop.load()) {
             return SEARCH_INTERRUPTED;
@@ -372,11 +385,20 @@ float ChessEngine::quiescence_search(ChessBoard& board, float alpha, float beta,
             if (stand_pat + victim + QS_DELTA_MARGIN < alpha) continue;
         }
 
+        bool use_acc = nnue_model && eval_mode == EvalMode::NNUE;
+        chess::Piece moved_pc, captured_pc;
+        if (use_acc) {
+            moved_pc = board.board.at(move.from());
+            captured_pc = board.board.at(move.to());
+            nnue_model->push_accumulator();
+        }
         board.board.makeMove(move);
+        if (use_acc) nnue_model->update_accumulator(move, moved_pc, captured_pc, board);
         bool child_in_check = board.board.inCheck();
         float score =
             -quiescence_search(board, -beta, -alpha, qs_depth + 1, child_in_check);
         board.board.unmakeMove(move);
+        if (use_acc) nnue_model->pop_accumulator();
 
         if (score == -SEARCH_INTERRUPTED || should_stop.load())
             return SEARCH_INTERRUPTED;
@@ -400,6 +422,8 @@ SearchResult ChessEngine::iterative_deepening_search(ChessBoard board,
     should_stop.store(false);
     nodes_searched.store(0);
 
+    bool use_acc = nnue_model && eval_mode == EvalMode::NNUE;
+
     chess::Movelist legal_moves;
     chess::movegen::legalmoves(legal_moves, board.board);
     auto stm = board.turn();
@@ -407,6 +431,8 @@ SearchResult ChessEngine::iterative_deepening_search(ChessBoard board,
         float score = board.board.inCheck() ? -MATE_VALUE : 0.0f;
         return {ChessBoard::Move{}, score, 0, std::chrono::milliseconds(0), 0};
     }
+
+    if (use_acc) nnue_model->init_accumulator(board);
 
     float static_eval = evaluate(board);
     static_eval = stm == ChessBoard::WHITE ? static_eval : -static_eval;
@@ -453,7 +479,15 @@ SearchResult ChessEngine::iterative_deepening_search(ChessBoard board,
                 }
 
                 chess::Move move = legal_moves[mi];
+                chess::Piece moved_pc, captured_pc;
+                if (use_acc) {
+                    moved_pc = board.board.at(move.from());
+                    captured_pc = board.board.at(move.to());
+                    nnue_model->push_accumulator();
+                }
                 board.board.makeMove(move);
+                if (use_acc)
+                    nnue_model->update_accumulator(move, moved_pc, captured_pc, board);
                 move_count++;
 
                 float score;
@@ -468,6 +502,7 @@ SearchResult ChessEngine::iterative_deepening_search(ChessBoard board,
                     }
                 }
                 board.board.unmakeMove(move);
+                if (use_acc) nnue_model->pop_accumulator();
 
                 if (score == -SEARCH_INTERRUPTED || should_stop.load()) {
                     completed_depth = false;

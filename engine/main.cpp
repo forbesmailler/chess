@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <exception>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -770,15 +771,46 @@ int main(int argc, char* argv[]) {
         ModelComparator comparator(config, old_weights, new_weights);
         auto result = comparator.run();
 
+        std::string status = result.improved() ? "ACCEPTED" : "REJECTED";
         std::cout << "Total positions generated: " << result.total_positions
                   << std::endl;
-        if (result.improved()) {
-            std::cout << "Result: NEW MODEL IMPROVED" << std::endl;
-            return 0;
-        } else {
-            std::cout << "Result: No improvement" << std::endl;
-            return 1;
+        std::cout << "Result: "
+                  << (result.improved() ? "NEW MODEL IMPROVED" : "No improvement")
+                  << std::endl;
+
+        // Write MD report next to new_weights file (.bin -> .md)
+        std::string report_path = new_weights;
+        auto dot_pos = report_path.rfind('.');
+        if (dot_pos != std::string::npos) report_path = report_path.substr(0, dot_pos);
+        report_path += ".md";
+
+        // Extract stem for header
+        std::string stem = new_weights;
+        auto slash = stem.find_last_of("/\\");
+        if (slash != std::string::npos) stem = stem.substr(slash + 1);
+        auto dot = stem.rfind('.');
+        if (dot != std::string::npos) stem = stem.substr(0, dot);
+
+        std::string old_label = old_weights.empty() ? "handcrafted" : old_weights;
+        auto old_slash = old_label.find_last_of("/\\");
+        if (old_slash != std::string::npos) old_label = old_label.substr(old_slash + 1);
+        auto old_dot = old_label.rfind('.');
+        if (old_dot != std::string::npos) old_label = old_label.substr(0, old_dot);
+
+        std::ofstream report(report_path);
+        if (report.is_open()) {
+            report << "# " << stem << "\n\n"
+                   << "## " << status << "\n\n"
+                   << "| Model | W | L | D |\n"
+                   << "|-------|---|---|---|\n"
+                   << "| " << stem << " (new) | " << result.new_wins << " | "
+                   << result.old_wins << " | " << result.draws << " |\n"
+                   << "| " << old_label << " (old) | " << result.old_wins << " | "
+                   << result.new_wins << " | " << result.draws << " |\n";
+            std::cout << "Report written to: " << report_path << std::endl;
         }
+
+        return result.improved() ? 0 : 1;
     }
 
     const char* token_env = std::getenv("LICHESS_TOKEN");
