@@ -109,7 +109,6 @@ class TestGenerate:
 
     def test_search_constants(self):
         result = generate()
-        assert "CACHE_SIZE = 1000000" in result
         assert "MAX_DEPTH = 50" in result
         assert "QUIESCENCE_MAX_DEPTH = 8" in result
 

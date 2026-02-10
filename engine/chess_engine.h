@@ -1,5 +1,4 @@
 #pragma once
-#include <cstring>
 #include <vector>
 
 #include "base_engine.h"
@@ -30,7 +29,6 @@ class ChessEngine : public BaseEngine {
 
    private:
     static constexpr float SEARCH_INTERRUPTED = -99999.0f;
-    static constexpr size_t CACHE_SIZE = config::search::CACHE_SIZE;
     static constexpr int TIME_CHECK_INTERVAL = config::search::TIME_CHECK_INTERVAL;
     static_assert((TIME_CHECK_INTERVAL & (TIME_CHECK_INTERVAL - 1)) == 0,
                   "TIME_CHECK_INTERVAL must be a power of 2");
@@ -43,7 +41,6 @@ class ChessEngine : public BaseEngine {
     static constexpr size_t TT_MASK = config::search::TT_MASK;
     std::vector<TranspositionEntry> transposition_table;
 
-    // Eval cache: power-of-2 flat array
     static constexpr size_t EVAL_CACHE_SIZE = config::search::EVAL_CACHE_SIZE;
     static constexpr size_t EVAL_CACHE_MASK = config::search::EVAL_CACHE_MASK;
     std::vector<EvalCacheEntry> eval_cache;
@@ -58,7 +55,6 @@ class ChessEngine : public BaseEngine {
     // Countermove heuristic: indexed by [prev_from][prev_to]
     chess::Move countermoves[64][64];
 
-    // Aspiration window
     static constexpr float ASPIRATION_DELTA = config::search::ASPIRATION_DELTA;
 
     SearchResult iterative_deepening_search(ChessBoard board, int max_time_ms);

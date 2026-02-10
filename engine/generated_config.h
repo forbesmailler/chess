@@ -16,7 +16,6 @@ static constexpr int OUTPUT_SIZE = 1;
 }  // namespace nnue
 
 namespace search {
-static constexpr size_t CACHE_SIZE = 1000000;
 static constexpr size_t TT_SIZE = 1 << 20;
 static constexpr size_t TT_MASK = TT_SIZE - 1;
 static constexpr size_t EVAL_CACHE_SIZE = 1 << 18;
@@ -24,7 +23,6 @@ static constexpr size_t EVAL_CACHE_MASK = EVAL_CACHE_SIZE - 1;
 static constexpr int TIME_CHECK_INTERVAL = 2048;
 static constexpr int MAX_DEPTH = 50;
 static constexpr int QUIESCENCE_MAX_DEPTH = 8;
-static constexpr int DEFAULT_MAX_TIME_MS = 2000;
 static constexpr int TIME_ALLOCATION_DIVISOR = 40;
 static constexpr int MIN_TIME_MS = 50;
 static constexpr int MAX_TIME_MS = 30000;
@@ -83,8 +81,6 @@ static constexpr float EN_PASSANT_VALUE = 1000.0f;
 namespace mcts {
 static constexpr float EXPLORATION_CONSTANT = 1.4f;
 static constexpr int MAX_SIMULATION_DEPTH = 100;
-static constexpr int CACHE_SIZE = 100000;
-static constexpr int DEFAULT_MAX_TIME_MS = 2000;
 static constexpr int EVAL_FREQUENCY = 10;
 static constexpr float EARLY_TERMINATION_FACTOR = 0.8f;
 static constexpr float PRIOR_SIGMOID_SCALE = 5000.0f;

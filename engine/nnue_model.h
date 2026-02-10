@@ -20,10 +20,7 @@ class NNUEModel {
 
     NNUEModel() = default;
 
-    // Load binary weight file exported by export_nnue.py
     bool load_weights(const std::string& path);
-
-    // Load weights from an already-open stream (for in-memory loading)
     bool load_weights(std::istream& stream);
 
     // Evaluate position, returns score from white's perspective in centipawns
@@ -34,9 +31,6 @@ class NNUEModel {
     // Public accessor for testing: returns active feature indices for a position
     std::vector<int> get_active_features(const ChessBoard& board) const;
 
-    // --- Incremental accumulator API ---
-
-    // Dual-perspective accumulator: one per color's viewpoint
     struct Accumulator {
         alignas(32) int16_t white[H1_PADDED];  // White's perspective
         alignas(32) int16_t black[H1_PADDED];  // Black's perspective
@@ -45,13 +39,8 @@ class NNUEModel {
         bool computed = false;
     };
 
-    // Initialize accumulator from scratch for a position (sets ply 0)
     void init_accumulator(const ChessBoard& board) const;
-
-    // Push current accumulator (copy to next stack level)
     void push_accumulator() const;
-
-    // Pop accumulator (restore previous stack level)
     void pop_accumulator() const;
 
     // Update accumulator incrementally after a move.
@@ -61,13 +50,8 @@ class NNUEModel {
                             chess::Piece captured_piece,
                             const ChessBoard& board_after) const;
 
-    // Update accumulator after a null move (just handle castling/EP changes)
-    void update_accumulator_null_move(const ChessBoard& board_after) const;
-
-    // Evaluate using stored accumulator (Layer 2+3 only)
+    void update_accumulator_null_move() const;
     float predict_from_accumulator(const ChessBoard& board) const;
-
-    // Check if accumulator is available
     bool has_accumulator() const { return acc_ply >= 0; }
 
    private:
@@ -78,7 +62,6 @@ class NNUEModel {
     static constexpr int Q1_SCALE = 512;  // Layer 1 weights/accumulators
     static constexpr int Q2_SCALE = 512;  // Layer 2 weights
 
-    // Aligned memory deleter for SIMD-aligned allocations
     struct AlignedDeleter {
         void operator()(void* p) const;
     };
@@ -105,22 +88,14 @@ class NNUEModel {
 
     bool loaded = false;
 
-    // Accumulator stack for incremental updates
     static constexpr int ACC_STACK_SIZE = 128;
     mutable Accumulator acc_stack[ACC_STACK_SIZE];
     mutable int acc_ply = -1;
 
-    // Extract features into a stack array, returns count
     static int extract_features(const ChessBoard& board, int* active);
-
-    // Compute one perspective's accumulator from scratch
     void compute_accumulator(const ChessBoard& board, int16_t* acc,
                              bool as_white) const;
-
-    // Add/subtract a single feature row from an accumulator
     void accumulate_add(int16_t* acc, int feature) const;
     void accumulate_sub(int16_t* acc, int feature) const;
-
-    // Run Layer 2+3 from a pre-computed accumulator
     float forward_from_accumulator(const int16_t* h1_q) const;
 };

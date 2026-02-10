@@ -1,16 +1,12 @@
 #include "self_play.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
-#include <cstring>
 #include <iostream>
-#include <memory>
 #include <random>
 #include <thread>
 
 #include "chess_engine.h"
-#include "nnue_model.h"
 
 SelfPlayGenerator::SelfPlayGenerator(const Config& config) : config(config) {}
 
@@ -242,7 +238,6 @@ ModelComparator::Result ModelComparator::run() {
     int games_per_thread = config.num_games / threads;
     int remainder = config.num_games % threads;
 
-    int actual_threads = 0;
     std::cout << "Loading models on " << threads << " thread(s)..." << std::endl;
     std::vector<std::vector<TaggedPosition>> thread_positions(threads);
     std::vector<std::thread> thread_pool;
@@ -251,7 +246,6 @@ ModelComparator::Result ModelComparator::run() {
         if (n == 0) continue;
         thread_pool.emplace_back(&ModelComparator::play_games, this, n, t,
                                  std::ref(thread_positions[t]));
-        actual_threads++;
     }
 
     for (auto& t : thread_pool) t.join();

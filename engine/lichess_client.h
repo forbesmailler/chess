@@ -1,6 +1,5 @@
 #pragma once
 #include <functional>
-#include <memory>
 #include <string>
 
 class LichessClient {
@@ -21,7 +20,6 @@ class LichessClient {
         std::string challenge_id;
         std::string moves;
         std::string status;
-        bool is_white = false;
         bool draw_offer = false;
         int wtime = 0;
         int btime = 0;
@@ -37,7 +35,6 @@ class LichessClient {
     bool accept_draw(const std::string& game_id);
     bool decline_draw(const std::string& game_id);
 
-    // Connectivity test
     bool test_connectivity();
 
     void stream_events(std::function<void(const GameEvent&)> callback);
@@ -66,7 +63,7 @@ class LichessClient {
     };
 
     HttpResponse make_request(const std::string& url, const std::string& method = "GET",
-                              const std::string& data = "", bool stream = false);
+                              const std::string& data = "");
 
     void stream_lines(const std::string& url,
                       std::function<void(const std::string&)> callback);

@@ -12,12 +12,9 @@
 #include <thread>
 #include <unordered_map>
 
-#include "base_engine.h"
-#include "chess_board.h"
 #include "chess_engine.h"
 #include "lichess_client.h"
 #include "mcts_engine.h"
-#include "nnue_model.h"
 #include "self_play.h"
 #include "utils.h"
 #ifdef _WIN32
@@ -62,10 +59,7 @@ class LichessBot {
                EngineType engine_type = EngineType::NEGAMAX,
                EvalMode eval_mode = EvalMode::HANDCRAFTED,
                const std::string& nnue_weights_path = "")
-        : client(token),
-          engine_type(engine_type),
-          eval_mode(eval_mode),
-          heartbeat_active(true) {
+        : client(token), engine_type(engine_type), eval_mode(eval_mode) {
         signal(SIGINT, signal_handler);
         signal(SIGTERM, signal_handler);
 
@@ -284,7 +278,7 @@ class LichessBot {
 
             try {
                 handle_event(event);
-                consecutive_errors.store(0);  // Reset on successful event handling
+                consecutive_errors.store(0);
             } catch (const std::exception& e) {
                 Utils::log_error("Error handling event: " + std::string(e.what()));
                 consecutive_errors.fetch_add(1);
@@ -357,7 +351,7 @@ class LichessBot {
             }
         } catch (const std::exception& e) {
             Utils::log_error("Exception in handle_event: " + std::string(e.what()));
-            throw;  // Re-throw to be caught by caller
+            throw;
         }
     }
 
@@ -575,7 +569,7 @@ class LichessBot {
             return game_state->engine->evaluate(game_state->board);
         } catch (const std::exception& e) {
             Utils::log_warning("Error evaluating position: " + std::string(e.what()));
-            return 0.0f;  // Return neutral evaluation on error
+            return 0.0f;
         }
     }
 
@@ -640,7 +634,6 @@ class LichessBot {
 };
 
 int main(int argc, char* argv[]) {
-    // If no arguments provided, run tests
     if (argc == 1) {
         std::cout << "=== C++ Chess Bot Test Mode ===" << std::endl;
         std::cout << "Running chess board and engine tests..." << std::endl;

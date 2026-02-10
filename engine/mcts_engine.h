@@ -46,8 +46,6 @@ class MCTSEngine : public BaseEngine {
     float simulate(const ChessBoard& board);
     void backpropagate(MCTSNode* node, float score);
 
-    float evaluate_position(const ChessBoard& board);
-
     float exploration_constant = config::mcts::EXPLORATION_CONSTANT;
     int max_simulation_depth = config::mcts::MAX_SIMULATION_DEPTH;
 

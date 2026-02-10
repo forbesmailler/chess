@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <limits>
 
 ChessEngine::ChessEngine(int max_time_ms, EvalMode eval_mode,
@@ -198,7 +199,7 @@ float ChessEngine::negamax(ChessBoard& board, int depth, int ply, float alpha,
             bool use_acc = nnue_model && eval_mode == EvalMode::NNUE;
             if (use_acc) nnue_model->push_accumulator();
             board.board.makeNullMove();
-            if (use_acc) nnue_model->update_accumulator_null_move(board);
+            if (use_acc) nnue_model->update_accumulator_null_move();
             float null_score =
                 -negamax(board, null_depth, ply + 1, -beta, -beta + 1, false);
             board.board.unmakeNullMove();

@@ -58,8 +58,8 @@ bool NNUEModel::load_weights(std::istream& file) {
         return false;
     }
 
-    uint32_t version, input_size, hidden1_size, hidden2_size, output_size;
-    file.read(reinterpret_cast<char*>(&version), 4);
+    uint32_t input_size, hidden1_size, hidden2_size, output_size;
+    file.seekg(4, std::ios::cur);  // skip version
     file.read(reinterpret_cast<char*>(&input_size), 4);
     file.read(reinterpret_cast<char*>(&hidden1_size), 4);
     file.read(reinterpret_cast<char*>(&hidden2_size), 4);
@@ -101,7 +101,6 @@ bool NNUEModel::load_weights(std::istream& file) {
         for (int j = HIDDEN1_SIZE; j < H1_PADDED; ++j) w1_q[i * H1_PADDED + j] = 0;
     }
 
-    // Quantize b1
     b1_q = alloc_aligned<int16_t>(H1_PADDED);
     for (int j = 0; j < HIDDEN1_SIZE; ++j) b1_q[j] = quantize_clamp(b1_f[j], Q1_SCALE);
     for (int j = HIDDEN1_SIZE; j < H1_PADDED; ++j) b1_q[j] = 0;
@@ -116,7 +115,6 @@ bool NNUEModel::load_weights(std::istream& file) {
         for (int i = HIDDEN1_SIZE; i < H1_PADDED; ++i) w2_q[j * H1_PADDED + i] = 0;
     }
 
-    // Copy b2, w3, b3 to aligned buffers
     size_t b2_pad = (HIDDEN2_SIZE + 7) & ~size_t(7);
     b2 = alloc_aligned<float>(b2_pad);
     std::memcpy(b2.get(), b2_f.data(), HIDDEN2_SIZE * sizeof(float));
@@ -260,8 +258,6 @@ float NNUEModel::predict(const ChessBoard& board) const {
 
     return white_to_move ? stm_eval : -stm_eval;
 }
-
-// --- Incremental accumulator implementation ---
 
 void NNUEModel::compute_accumulator(const ChessBoard& board, int16_t* acc,
                                     bool as_white) const {
@@ -464,7 +460,6 @@ void NNUEModel::update_accumulator(chess::Move move, chess::Piece moved_piece,
             }
         }
     } else {
-        // Normal move
         if (mover_is_white) {
             accumulate_sub(acc.white, pt * 64 + from_sq);
             accumulate_add(acc.white, pt * 64 + to_sq);
@@ -530,7 +525,7 @@ void NNUEModel::update_accumulator(chess::Move move, chess::Piece moved_piece,
     acc.computed = true;
 }
 
-void NNUEModel::update_accumulator_null_move(const ChessBoard& board_after) const {
+void NNUEModel::update_accumulator_null_move() const {
     if (acc_ply < 0) return;
     auto& acc = acc_stack[acc_ply];
     // Null move: no pieces change, just EP resets. Castling unchanged.

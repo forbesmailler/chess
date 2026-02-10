@@ -6,7 +6,6 @@
 #include <fstream>
 #include <memory>
 #include <mutex>
-#include <random>
 #include <string>
 #include <vector>
 
@@ -15,7 +14,6 @@
 
 class NNUEModel;
 
-// Binary format for training data: 42 bytes per position
 #pragma pack(push, 1)
 struct TrainingPosition {
     uint8_t piece_placement[32];  // 64 nibbles (4 bits per square)
@@ -50,7 +48,6 @@ class SelfPlayGenerator {
     void generate();
     int get_total_positions() const { return total_positions; }
 
-    // Encode/decode for binary format
     static TrainingPosition encode_position(const ChessBoard& board, float eval,
                                             uint8_t result, uint16_t ply);
     static void write_position(std::ofstream& out, const TrainingPosition& pos);
@@ -99,7 +96,6 @@ class ModelComparator {
     std::string new_weights_path;
     std::shared_ptr<NNUEModel> preloaded_old_model;
     std::shared_ptr<NNUEModel> preloaded_new_model;
-    std::mutex file_mutex;
     std::atomic<int> games_completed{0};
     std::atomic<int> new_wins{0};
     std::atomic<int> old_wins{0};

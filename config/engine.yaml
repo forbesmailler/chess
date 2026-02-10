@@ -7,13 +7,11 @@ nnue:
   output_size: 1
 
 search:
-  cache_size: 1000000
   tt_size_log2: 20
   eval_cache_size_log2: 18
   time_check_interval: 2048
   max_depth: 50
   quiescence_max_depth: 8
-  default_max_time_ms: 2000
   time_allocation_divisor: 40
   min_time_ms: 50
   max_time_ms: 30000
@@ -58,8 +56,6 @@ search:
 mcts:
   exploration_constant: 1.4
   max_simulation_depth: 100
-  cache_size: 100000
-  default_max_time_ms: 2000
   eval_frequency: 10
   early_termination_factor: 0.8
   prior_sigmoid_scale: 5000.0

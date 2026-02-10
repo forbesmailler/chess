@@ -14,25 +14,17 @@ int BaseEngine::calculate_search_time(const TimeControl& time_control) {
 }
 
 float BaseEngine::raw_evaluate(const ChessBoard& board) {
-    {
-        auto [reason, result] = board.board.isGameOver();
-        if (result != chess::GameResult::NONE) {
-            if (reason == chess::GameResultReason::CHECKMATE)
-                return board.turn() == ChessBoard::WHITE ? -MATE_VALUE : MATE_VALUE;
-            return 0.0f;
-        }
+    auto [reason, result] = board.board.isGameOver();
+    if (result != chess::GameResult::NONE) {
+        if (reason == chess::GameResultReason::CHECKMATE)
+            return board.turn() == ChessBoard::WHITE ? -MATE_VALUE : MATE_VALUE;
+        return 0.0f;
     }
 
-    switch (eval_mode) {
-        case EvalMode::NNUE:
-            if (nnue_model) {
-                if (nnue_model->has_accumulator())
-                    return nnue_model->predict_from_accumulator(board);
-                return nnue_model->predict(board);
-            }
-            return handcrafted_evaluate(board);
-        case EvalMode::HANDCRAFTED:
-        default:
-            return handcrafted_evaluate(board);
+    if (eval_mode == EvalMode::NNUE && nnue_model) {
+        if (nnue_model->has_accumulator())
+            return nnue_model->predict_from_accumulator(board);
+        return nnue_model->predict(board);
     }
+    return handcrafted_evaluate(board);
 }

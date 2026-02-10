@@ -4,7 +4,6 @@
 
 #include <iostream>
 #include <nlohmann/json.hpp>
-#include <sstream>
 
 #include "generated_config.h"
 
@@ -92,8 +91,6 @@ bool LichessClient::test_connectivity() {
     curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);  // HEAD request only
 
     CURLcode res = curl_easy_perform(curl);
-    long response_code;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK) return false;
@@ -203,8 +200,7 @@ size_t LichessClient::stream_callback(void* contents, size_t size, size_t nmemb,
 
 LichessClient::HttpResponse LichessClient::make_request(const std::string& url,
                                                         const std::string& method,
-                                                        const std::string& data,
-                                                        bool stream) {
+                                                        const std::string& data) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         std::cout << "CURL init failed" << std::endl;
@@ -296,7 +292,7 @@ void LichessClient::stream_lines(const std::string& url,
 
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
 
-    CURLcode res = curl_easy_perform(curl);
+    curl_easy_perform(curl);
 
     if (!stream_data.buffer.empty()) {
         if (stream_data.buffer.back() == '\r') {

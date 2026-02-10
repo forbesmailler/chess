@@ -466,7 +466,7 @@ TEST_F(NNUEModelTest, AccumulatorCorrectnessNullMove) {
 
     model.push_accumulator();
     board.board.makeNullMove();
-    model.update_accumulator_null_move(board);
+    model.update_accumulator_null_move();
 
     float from_scratch = model.predict(board);
     float incremental = model.predict_from_accumulator(board);

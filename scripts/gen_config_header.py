@@ -11,12 +11,10 @@ OUTPUT = ROOT / "engine" / "generated_config.h"
 
 
 def flatten_pst(rows: list[list[int]]) -> list[int]:
-    """Flatten 8x8 PST from YAML into 64-element list."""
     return [v for row in rows for v in row]
 
 
 def fmt_int_array(values: list[int], name: str, indent: str) -> str:
-    """Format a constexpr int array."""
     vals = ", ".join(str(v) for v in values)
     return f"{indent}static constexpr int {name}[] = {{{vals}}};\n"
 
@@ -62,7 +60,6 @@ def generate() -> str:
     # search
     s = eng["search"]
     lines.append("namespace search {")
-    lines.append(f"    static constexpr size_t CACHE_SIZE = {s['cache_size']};")
     tt_log2 = s["tt_size_log2"]
     lines.append(f"    static constexpr size_t TT_SIZE = 1 << {tt_log2};")
     lines.append("    static constexpr size_t TT_MASK = TT_SIZE - 1;")
@@ -75,9 +72,6 @@ def generate() -> str:
     lines.append(f"    static constexpr int MAX_DEPTH = {s['max_depth']};")
     lines.append(
         f"    static constexpr int QUIESCENCE_MAX_DEPTH = {s['quiescence_max_depth']};"
-    )
-    lines.append(
-        f"    static constexpr int DEFAULT_MAX_TIME_MS = {s['default_max_time_ms']};"
     )
     lines.append(
         f"    static constexpr int TIME_ALLOCATION_DIVISOR = {s['time_allocation_divisor']};"
@@ -196,10 +190,6 @@ def generate() -> str:
     )
     lines.append(
         f"    static constexpr int MAX_SIMULATION_DEPTH = {m['max_simulation_depth']};"
-    )
-    lines.append(f"    static constexpr int CACHE_SIZE = {m['cache_size']};")
-    lines.append(
-        f"    static constexpr int DEFAULT_MAX_TIME_MS = {m['default_max_time_ms']};"
     )
     lines.append(f"    static constexpr int EVAL_FREQUENCY = {m['eval_frequency']};")
     lines.append(
