@@ -193,7 +193,9 @@ def _extract_sparse(data: bytes, num_positions: int, eval_weight: float):
         indices[ep_idx, c] = np.int16(772)
         counts[ep_idx] = c + 1
 
-    return indices, counts, targets
+    plies = raw[:, 40:42].copy().view(np.uint16).reshape(num_positions)
+
+    return indices, counts, targets, plies
 
 
 class SelfPlayDataset(Dataset):
@@ -210,10 +212,13 @@ class SelfPlayDataset(Dataset):
             data = f.read()
 
         print(f"Pre-extracting {num_positions} positions (sparse)...")
-        indices, counts, targets = _extract_sparse(data, num_positions, eval_weight)
+        indices, counts, targets, plies = _extract_sparse(
+            data, num_positions, eval_weight
+        )
         self.indices = torch.from_numpy(indices)  # (N, 37) int16
         self.counts = torch.from_numpy(counts)  # (N,) uint8
         self.targets = torch.from_numpy(targets)  # (N,) float32
+        self.plies = plies  # (N,) uint16 numpy array
         print("Pre-extraction complete.")
 
     def __len__(self):
@@ -230,6 +235,20 @@ class SelfPlayDataset(Dataset):
         return features, self.targets[idx]
 
 
+def _game_boundaries(plies):
+    """Find game boundaries from ply resets.
+
+    Returns (starts, ends) where game i spans positions [starts[i], ends[i]).
+    """
+    n = len(plies)
+    if n == 0:
+        return np.array([], dtype=np.intp), np.array([], dtype=np.intp)
+    boundaries = np.where(np.diff(plies.astype(np.int32)) <= 0)[0] + 1
+    starts = np.concatenate([[0], boundaries])
+    ends = np.concatenate([boundaries, [n]])
+    return starts, ends
+
+
 def train(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     num_cores = os.cpu_count()
@@ -239,13 +258,41 @@ def train(args):
     num_positions = len(dataset)
     print(f"Loaded {num_positions} positions from {args.data}")
 
-    # Split into train/val via index permutation
+    # Game-level split to prevent data leakage from correlated positions
+    game_starts, game_ends = _game_boundaries(dataset.plies)
+    num_games = len(game_starts)
+
     rng = torch.Generator().manual_seed(_trn["training"]["random_seed"])
-    perm = torch.randperm(num_positions, generator=rng)
-    val_size = max(1, int(num_positions * _trn["training"]["val_split"]))
-    train_size = num_positions - val_size
-    train_idx = perm[:train_size]
-    val_idx = perm[train_size:]
+
+    if num_games >= 2:
+        game_perm = torch.randperm(num_games, generator=rng)
+        val_game_count = max(1, int(num_games * _trn["training"]["val_split"]))
+        val_game_count = min(val_game_count, num_games - 1)
+
+        val_idx = torch.cat(
+            [
+                torch.arange(int(game_starts[g]), int(game_ends[g]))
+                for g in game_perm[:val_game_count].tolist()
+            ]
+        )
+        train_idx = torch.cat(
+            [
+                torch.arange(int(game_starts[g]), int(game_ends[g]))
+                for g in game_perm[val_game_count:].tolist()
+            ]
+        )
+        print(
+            f"Game-level split: {num_games} games, "
+            f"{num_games - val_game_count} train / {val_game_count} val"
+        )
+    else:
+        perm = torch.randperm(num_positions, generator=rng)
+        val_count = max(1, int(num_positions * _trn["training"]["val_split"]))
+        val_idx = perm[:val_count]
+        train_idx = perm[val_count:]
+
+    train_size = len(train_idx)
+    val_size = len(val_idx)
 
     # Pre-slice val set (never shuffled)
     val_indices = dataset.indices[val_idx]

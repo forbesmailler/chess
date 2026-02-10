@@ -2,10 +2,11 @@ import traceback
 from pathlib import Path
 
 try:
+    import time
+
     import torch
     import torch.nn as nn
     import torch.nn.functional as F
-    import time
 
     B, INPUT, HIDDEN = 20000, 773, 256
     MAX_ACTIVE, ACTUAL = 37, 33
@@ -62,9 +63,22 @@ try:
     grad_ok = emb.weight.grad is not None and emb.weight.grad.abs().sum() > 0
 
     # Benchmark full forward+backward+step
-    params_emb = list(emb.parameters()) + [bias1] + list(fc2.parameters()) + list(fc3.parameters())
+    params_emb = (
+        list(emb.parameters())
+        + [bias1]
+        + list(fc2.parameters())
+        + list(fc3.parameters())
+    )
     opt_emb = torch.optim.Adam(params_emb, lr=0.001)
-    opt_dense = torch.optim.Adam([p for p in [fc1.weight, fc1.bias] + list(fc2.parameters()) + list(fc3.parameters())], lr=0.001)
+    opt_dense = torch.optim.Adam(
+        [
+            p
+            for p in [fc1.weight, fc1.bias]
+            + list(fc2.parameters())
+            + list(fc3.parameters())
+        ],
+        lr=0.001,
+    )
     target = torch.zeros(B)
 
     # warmup

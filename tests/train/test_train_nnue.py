@@ -11,6 +11,7 @@ import torch
 from engine.train.train_nnue import (
     NNUE,
     SelfPlayDataset,
+    _game_boundaries,
     extract_features,
     main,
     train,
@@ -205,7 +206,7 @@ def test_dataset_from_binary():
 # --- train loop ---
 
 
-def _make_training_data(path, num_positions=20):
+def _make_training_data(path, num_positions=20, game_length=5):
     """Write synthetic binary training data to path."""
     with open(path, "wb") as f:
         for i in range(num_positions):
@@ -215,7 +216,7 @@ def _make_training_data(path, num_positions=20):
                 _make_synthetic_position(
                     game_result=result,
                     search_eval=eval_val,
-                    ply=i,
+                    ply=i % game_length,
                 )
             )
 
@@ -707,3 +708,41 @@ def test_training_data_black_to_move():
         assert features[:768].sum() == 2
     finally:
         Path(tmp_path).unlink()
+
+
+# --- Game-level splitting ---
+
+
+def test_game_boundaries():
+    """Ply resets correctly identify game boundaries."""
+    plies = np.array([0, 1, 2, 0, 1, 2, 3, 0, 1], dtype=np.int32)
+    starts, ends = _game_boundaries(plies)
+    assert list(starts) == [0, 3, 7]
+    assert list(ends) == [3, 7, 9]
+
+
+def test_game_boundaries_single_game():
+    """Monotonically increasing plies = single game."""
+    plies = np.array([0, 1, 2, 3, 4], dtype=np.int32)
+    starts, ends = _game_boundaries(plies)
+    assert list(starts) == [0]
+    assert list(ends) == [5]
+
+
+def test_game_boundaries_empty():
+    plies = np.array([], dtype=np.int32)
+    starts, ends = _game_boundaries(plies)
+    assert len(starts) == 0
+    assert len(ends) == 0
+
+
+def test_train_game_level_split(tmp_path, capsys):
+    """Train/val split is by game, not by position."""
+    data_file = tmp_path / "train.bin"
+    _make_training_data(data_file, num_positions=50, game_length=5)  # 10 games
+
+    train(_train_args(data_file, epochs=2))
+
+    output = capsys.readouterr().out
+    assert "Game-level split" in output
+    assert "10 games" in output
