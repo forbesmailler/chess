@@ -245,7 +245,7 @@ TEST_F(NNUEModelTest, FeatureEncodingRoundTrip) {
 // --- Diagnostic test 3: Eval speed benchmark ---
 
 TEST_F(NNUEModelTest, EvalSpeedBenchmark) {
-    constexpr int NUM_EVALS = 10000;
+    constexpr int NUM_EVALS = 1000000;
 
     // Positions to cycle through for realistic cache behavior
     std::vector<ChessBoard> boards = {
@@ -481,7 +481,7 @@ TEST_F(NNUEModelTest, AccumulatorCorrectnessNullMove) {
 // --- Updated benchmark: includes incremental timing ---
 
 TEST_F(NNUEModelTest, EvalSpeedBenchmarkIncremental) {
-    constexpr int NUM_EVALS = 10000;
+    constexpr int NUM_EVALS = 1000000;
 
     // A realistic game sequence for incremental testing
     std::vector<std::string> game_moves = {

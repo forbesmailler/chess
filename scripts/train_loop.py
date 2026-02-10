@@ -4,9 +4,11 @@ import argparse
 import re
 import shutil
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config.load_config import load
 
 _trn = load("training")

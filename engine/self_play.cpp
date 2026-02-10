@@ -291,7 +291,7 @@ ModelComparator::Result ModelComparator::run() {
 }
 
 void ModelComparator::play_games(int num_games, int thread_id,
-                                std::vector<TaggedPosition>& out_positions) {
+                                 std::vector<TaggedPosition>& out_positions) {
     std::shared_ptr<NNUEModel> new_model = preloaded_new_model;
     if (!new_model) {
         new_model = std::make_shared<NNUEModel>();
