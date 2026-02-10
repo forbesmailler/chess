@@ -63,7 +63,7 @@ def read_current_best(pointer_file: Path) -> str | None:
 
 def write_current_best(pointer_file: Path, path: str) -> None:
     pointer_file.parent.mkdir(parents=True, exist_ok=True)
-    pointer_file.write_text(path + "\n")
+    pointer_file.write_text(Path(path).as_posix() + "\n")
 
 
 def write_report(
