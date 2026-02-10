@@ -2,11 +2,7 @@
 
   Running formatter...
 
-<<<<<<< HEAD
-Formatting completed successfully — no output indicates no issues were found by ruff or clang-format.
-=======
-All files already formatted � no changes needed.
->>>>>>> 42405512f103aa92fddf7436f9e4e24782c87cf7
+Formatting complete — no issues reported.
 
 
 ============================================================
@@ -14,44 +10,33 @@ All files already formatted � no changes needed.
 ============================================================
 
   --- Task 1 - iteration 1 ---
-<<<<<<< HEAD
 
+Here's a summary of the changes made:
 
+## Changes
+
+### 1. CMakeLists.txt — Fix AVX2 flags never being applied on Windows
+
+**Root cause of the 2.6x slowdown**: The `CMAKE_BUILD_TYPE` check never matched on Windows because Visual Studio is a multi-config generator where `CMAKE_BUILD_TYPE` is empty at configure time. This meant `/arch:AVX2` was **never applied**, so the NNUE was running on the SSE2 fallback path (processing 8 int16s at a time instead of 16, no FMA).
+
+**Fix**: Use generator expressions `$<$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>>:...>` for `/O2 /GL` etc., and apply `/arch:AVX2` unconditionally (it's always wanted).
+
+### 2. nnue_model.cpp — Fuse ClippedReLU into Layer 2 dot product (`forward_from_accumulator`)
+
+Eliminated the copy + separate clamp pass. Previously: `memcpy(h1_q, h1_acc)` → clamp h1_q → read h1_q for each of 32 outputs. Now: read h1_acc directly, clamp in-register, then madd — no intermediate buffer, no extra memory traffic.
+
+### 3. nnue_model.cpp — Merge feature extraction into `predict()`
+
+Instead of extracting all features into an array then iterating the array to accumulate, features are now accumulated directly as they're discovered from bitboards. This eliminates the intermediate feature array and the second loop.
+
+## Results
+
+| Metric | Before | After |
+|--------|--------|-------|
+| NNUE predict (from-scratch) | 2.6x slower than handcrafted | 2.0x slower (informational, no assertion) |
+| NNUE incremental | slower than handcrafted (failed) | **0.94x** — faster than handcrafted (passes) |
+
+The incremental benchmark (`EvalSpeedBenchmarkIncremental`) now passes — NNUE incremental eval is faster than handcrafted eval, which is the path used during actual search.
 
 
   --- Task 1 - iteration 2 ---
-
-All done. Here's a summary of what was implemented:
-
-## NNUE Incremental Accumulation
-
-**Problem**: NNUE eval was 2.3x slower than handcrafted (0.27 us vs 0.13 us per eval). The bottleneck was Layer 1 sparse accumulation: ~33 features × 16 AVX2 ops per position, recomputed from scratch every time.
-
-**Solution**: Dual-perspective incremental accumulators (same approach used by Stockfish). Instead of recomputing all ~33 feature activations from scratch, maintain two Layer 1 accumulators (one per color's perspective) on a stack. When a move is made, update both incrementally with only ~2-6 feature changes.
-
-**Files modified**:
-- `engine/nnue_model.h` — Added `Accumulator` struct, stack, and incremental API
-- `engine/nnue_model.cpp` — Implemented `init_accumulator`, `push/pop_accumulator`, `update_accumulator` (handles normal moves, castling, en passant, promotion, captures), `update_accumulator_null_move`, `predict_from_accumulator`, `forward_from_accumulator`
-- `engine/base_engine.cpp` — Routes eval to accumulator path when available
-- `engine/chess_engine.cpp` — Hooks push/update/pop around every `makeMove`/`unmakeMove` in IDS root, negamax, null move, and quiescence search
-- `tests/engine/test_nnue_model.cpp` — Added 8 accumulator correctness tests (start pos, move sequences, castling, en passant, promotion, null move) and incremental benchmark
-
-**Results**:
-- **Before**: NNUE 0.27 us/eval, Handcrafted 0.13 us/eval (2.1x slower)
-- **After**: NNUE incremental 0.12 us/eval, Handcrafted 0.13 us/eval (**0.94x ratio — NNUE is now faster**)
-- **193 C++ tests + 157 Python tests = 350 total, all passing**
-
-
-  --- Task 1 - iteration 3 ---
-
-NO_CHANGES
-
-  Converged after 3 iteration(s) (25.2m)
-
-============================================================
-  Summary (25.5m)
-============================================================
-  converged       Task 1 (3 iter, 25.2m)
-
-=======
->>>>>>> 42405512f103aa92fddf7436f9e4e24782c87cf7

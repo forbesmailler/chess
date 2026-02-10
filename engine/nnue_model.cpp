@@ -209,8 +209,7 @@ float NNUEModel::predict(const ChessBoard& board) const {
         for (int j = 0; j < H1_PADDED; j += 8) {
             __m128i h = _mm_load_si128(reinterpret_cast<const __m128i*>(&h1_q[j]));
             __m128i r = _mm_load_si128(reinterpret_cast<const __m128i*>(&row[j]));
-            _mm_store_si128(reinterpret_cast<__m128i*>(&h1_q[j]),
-                            _mm_adds_epi16(h, r));
+            _mm_store_si128(reinterpret_cast<__m128i*>(&h1_q[j]), _mm_adds_epi16(h, r));
         }
 #endif
     };
@@ -563,8 +562,8 @@ float NNUEModel::forward_from_accumulator(const int16_t* h1_acc) const {
             const int16_t* r2 = w2_q.get() + (j + 2) * H1_PADDED;
             const int16_t* r3 = w2_q.get() + (j + 3) * H1_PADDED;
             for (int i = 0; i < H1_PADDED; i += 16) {
-                __m256i h = _mm256_load_si256(
-                    reinterpret_cast<const __m256i*>(&h1_acc[i]));
+                __m256i h =
+                    _mm256_load_si256(reinterpret_cast<const __m256i*>(&h1_acc[i]));
                 h = _mm256_max_epi16(zero, _mm256_min_epi16(qmax, h));
                 s0 = _mm256_add_epi32(
                     s0, _mm256_madd_epi16(
@@ -604,11 +603,10 @@ float NNUEModel::forward_from_accumulator(const int16_t* h1_acc) const {
             __m128i sum_vec = _mm_setzero_si128();
             const int16_t* row = w2_q.get() + j * H1_PADDED;
             for (int i = 0; i < H1_PADDED; i += 8) {
-                __m128i h = _mm_load_si128(
-                    reinterpret_cast<const __m128i*>(&h1_acc[i]));
+                __m128i h =
+                    _mm_load_si128(reinterpret_cast<const __m128i*>(&h1_acc[i]));
                 h = _mm_max_epi16(zero, _mm_min_epi16(qmax, h));
-                __m128i w = _mm_load_si128(
-                    reinterpret_cast<const __m128i*>(&row[i]));
+                __m128i w = _mm_load_si128(reinterpret_cast<const __m128i*>(&row[i]));
                 sum_vec = _mm_add_epi32(sum_vec, _mm_madd_epi16(h, w));
             }
             __m128i hi_s = _mm_shuffle_epi32(sum_vec, _MM_SHUFFLE(1, 0, 3, 2));
@@ -616,8 +614,7 @@ float NNUEModel::forward_from_accumulator(const int16_t* h1_acc) const {
             hi_s = _mm_shuffle_epi32(sum_vec, _MM_SHUFFLE(0, 1, 0, 1));
             sum_vec = _mm_add_epi32(sum_vec, hi_s);
             float sum =
-                static_cast<float>(_mm_cvtsi128_si32(sum_vec)) * DEQUANT_SCALE +
-                b2[j];
+                static_cast<float>(_mm_cvtsi128_si32(sum_vec)) * DEQUANT_SCALE + b2[j];
             h2[j] = std::max(0.0f, std::min(1.0f, sum));
         }
     }
