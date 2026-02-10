@@ -29,7 +29,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
     if(MSVC)
         # MSVC optimizations
-        add_compile_options(/O2 /Ob2 /Oi /Ot /GL)
+        add_compile_options(/O2 /Ob2 /Oi /Ot /GL /arch:AVX2)
         add_link_options(/LTCG)
         message(STATUS "Added MSVC optimization flags")
     else()
