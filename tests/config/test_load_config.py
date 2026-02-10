@@ -84,7 +84,6 @@ def test_training_self_play_defaults():
     cfg = training()
     sp = cfg["self_play"]
     assert sp["num_games"] > 0
-    assert sp["max_game_ply"] > 0
     assert sp["search_time_ms"] > 0
     assert sp["num_threads"] >= 1
 

@@ -36,7 +36,7 @@ class SelfPlayGenerator {
         int search_depth = config::self_play::SEARCH_DEPTH;
         int num_threads = config::self_play::NUM_THREADS;
         std::string output_file = "training_data.bin";
-        int max_game_ply = config::self_play::MAX_GAME_PLY;
+        int max_game_ply = 400;
         int search_time_ms = config::self_play::SEARCH_TIME_MS;
         int softmax_plies = config::self_play::SOFTMAX_PLIES;
         float softmax_temperature = config::self_play::SOFTMAX_TEMPERATURE;
@@ -71,10 +71,10 @@ class ModelComparator {
    public:
     struct Config {
         int num_games = config::compare::NUM_GAMES;
-        int num_threads = config::compare::NUM_THREADS;
+        int num_threads = config::self_play::NUM_THREADS;
         std::string output_file;
-        int max_game_ply = config::compare::MAX_GAME_PLY;
-        int search_time_ms = config::compare::SEARCH_TIME_MS;
+        int max_game_ply = 400;
+        int search_time_ms = config::self_play::SEARCH_TIME_MS;
     };
 
     struct Result {

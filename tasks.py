@@ -73,7 +73,7 @@ def prepare(c):
     help={
         "games": f"Number of self-play games per iteration (default: {_inv['train_games']})",
         "depth": f"Search depth (default: {_sp['search_depth']})",
-        "threads": f"Number of threads (default: {_inv['train_threads']})",
+        "threads": f"Number of threads (default: {_sp['num_threads']})",
         "data": f"Training data path (default: {_sp['output_file']})",
         "epochs": f"Training epochs (default: {_train_cfg['epochs']})",
         "batch_size": f"Training batch size (default: {_train_cfg['batch_size']})",
@@ -85,7 +85,7 @@ def train(
     c,
     games=_inv["train_games"],
     depth=_sp["search_depth"],
-    threads=_inv["train_threads"],
+    threads=_sp["num_threads"],
     data=_sp["output_file"],
     epochs=_train_cfg["epochs"],
     batch_size=_train_cfg["batch_size"],

@@ -15,6 +15,7 @@ meaning input_size rows of hidden1_size floats each.
 
 import argparse
 import struct
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -47,8 +48,13 @@ def export_state_dict(state_dict, output):
 def export_model(pytorch_path, output_path):
     state_dict = torch.load(pytorch_path, map_location="cpu", weights_only=True)
 
-    with open(output_path, "wb") as f:
-        total_params = export_state_dict(state_dict, f)
+    output = Path(output_path)
+    try:
+        with open(output, "wb") as f:
+            total_params = export_state_dict(state_dict, f)
+    except Exception:
+        output.unlink(missing_ok=True)
+        raise
 
     file_size = 24 + total_params * 4
     print(f"Exported NNUE model to {output_path}")

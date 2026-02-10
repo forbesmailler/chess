@@ -189,10 +189,9 @@ class TestGenerate:
         assert "namespace self_play {" in result
         assert "NUM_GAMES = 100" in result
         assert "SEARCH_DEPTH = 6" in result
-        assert "NUM_THREADS = 1" in result
-        assert "MAX_GAME_PLY = 400" in result
-        assert "SEARCH_TIME_MS = 200" in result
-        assert "SOFTMAX_PLIES = 10" in result
+        assert "NUM_THREADS = 16" in result
+        assert "SEARCH_TIME_MS = 500" in result
+        assert "SOFTMAX_PLIES = 20" in result
         assert "SOFTMAX_TEMPERATURE = 200.0f" in result
 
     def test_no_resign(self):

@@ -87,7 +87,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--games", type=int, default=_inv["train_games"])
     p.add_argument("--depth", type=int, default=_sp["search_depth"])
-    p.add_argument("--threads", type=int, default=_inv["train_threads"])
+    p.add_argument("--threads", type=int, default=_sp["num_threads"])
     p.add_argument("--data", default=_sp["output_file"])
     p.add_argument("--epochs", type=int, default=_train_cfg["epochs"])
     p.add_argument("--batch-size", type=int, default=_train_cfg["batch_size"])
@@ -183,8 +183,9 @@ def main():
                 break
             candidate_name = candidate_path.name
 
-        if not candidate_path.exists():
-            print(f"Error: candidate not found at {candidate_path}")
+        if not candidate_path.exists() or candidate_path.stat().st_size == 0:
+            print(f"Error: candidate missing or empty at {candidate_path}")
+            candidate_path.unlink(missing_ok=True)
             break
 
         # 4. Compare candidate vs current best

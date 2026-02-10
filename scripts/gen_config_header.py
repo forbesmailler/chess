@@ -378,7 +378,6 @@ def generate() -> str:
     lines.append(f"    static constexpr int NUM_GAMES = {sp['num_games']};")
     lines.append(f"    static constexpr int SEARCH_DEPTH = {sp['search_depth']};")
     lines.append(f"    static constexpr int NUM_THREADS = {sp['num_threads']};")
-    lines.append(f"    static constexpr int MAX_GAME_PLY = {sp['max_game_ply']};")
     lines.append(f"    static constexpr int SEARCH_TIME_MS = {sp['search_time_ms']};")
     lines.append(f"    static constexpr int SOFTMAX_PLIES = {sp['softmax_plies']};")
     lines.append(
@@ -397,15 +396,6 @@ def generate() -> str:
     cmp = trn.get("compare", {})
     lines.append("namespace compare {")
     lines.append(f"    static constexpr int NUM_GAMES = {cmp.get('num_games', 100)};")
-    lines.append(
-        f"    static constexpr int NUM_THREADS = {cmp.get('num_threads', 16)};"
-    )
-    lines.append(
-        f"    static constexpr int MAX_GAME_PLY = {cmp.get('max_game_ply', 400)};"
-    )
-    lines.append(
-        f"    static constexpr int SEARCH_TIME_MS = {cmp.get('search_time_ms', 200)};"
-    )
     lines.append(
         f"    static constexpr int PROGRESS_LOG_INTERVAL = {cmp.get('progress_log_interval', 10)};"
     )
