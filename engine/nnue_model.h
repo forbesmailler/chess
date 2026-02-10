@@ -22,6 +22,13 @@ class NNUEModel {
 
     bool is_loaded() const { return loaded; }
 
+    // Public accessor for testing: returns active feature indices for a position
+    std::vector<int> get_active_features(const ChessBoard& board) const {
+        std::vector<int> active;
+        extract_features(board, active);
+        return active;
+    }
+
    private:
     static constexpr int INPUT_SIZE = config::nnue::INPUT_SIZE;
     static constexpr int HIDDEN1_SIZE = config::nnue::HIDDEN1_SIZE;

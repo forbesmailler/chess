@@ -597,3 +597,113 @@ def test_main_runs_training(tmp_path, monkeypatch):
     )
     main()
     assert output_file.exists()
+
+
+# --- Diagnostic test 4: Training data distribution check ---
+
+
+def test_training_data_known_position():
+    """Verify features from a known position encoded in binary match expected values.
+
+    Encodes the starting position into binary format, loads it via SelfPlayDataset,
+    and checks that the 773 features match what extract_features produces directly.
+    """
+    placement = _starting_placement()
+    castling = 0b1111  # all castling rights
+    en_passant_file = 255  # no en passant
+    search_eval = 50.0
+    game_result = 1  # draw
+    ply = 0
+
+    # Build the 42-byte binary position manually
+    buf = bytearray(42)
+    buf[0:32] = placement
+    buf[32] = 0  # white to move
+    buf[33] = castling
+    buf[34] = en_passant_file
+    struct.pack_into("<f", buf, 35, search_eval)
+    buf[39] = game_result
+    struct.pack_into("<H", buf, 40, ply)
+
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+        f.write(bytes(buf))
+        tmp_path = f.name
+
+    try:
+        ds = SelfPlayDataset(tmp_path, eval_weight=0.75)
+        features, target = ds[0]
+        features = features.numpy()
+
+        # Compare against directly computed features
+        expected = extract_features(
+            bytes(placement),
+            side_to_move=0,
+            castling=castling,
+            en_passant_file=en_passant_file,
+        )
+
+        np.testing.assert_array_equal(
+            features,
+            expected,
+            err_msg="Features from dataset don't match direct extract_features",
+        )
+
+        # Verify piece count: starting position has 32 pieces
+        assert features[:768].sum() == 32
+
+        # All 4 castling bits should be set
+        assert features[768] == 1.0
+        assert features[769] == 1.0
+        assert features[770] == 1.0
+        assert features[771] == 1.0
+
+        # No en passant
+        assert features[772] == 0.0
+
+        # Verify target blending
+        mate_value = 10000.0
+        eval_scalar = np.clip(search_eval / mate_value, -1.0, 1.0)
+        result_scalar = 0.0  # draw -> 1-1=0
+        expected_target = 0.75 * eval_scalar + 0.25 * result_scalar
+        assert abs(target.item() - expected_target) < 1e-6
+    finally:
+        Path(tmp_path).unlink()
+
+
+def test_training_data_black_to_move():
+    """Verify features are correctly flipped when black is side to move."""
+    # Place white king on e1 (sq 4) and black king on e8 (sq 60)
+    placement = bytearray(32)
+    # sq 4 = byte 2, high nibble (even sq) → white king = nibble 6
+    placement[2] |= 6 << 4
+    # sq 60 = byte 30, high nibble (even sq) → black king = nibble 12
+    placement[30] |= 12 << 4
+
+    buf = bytearray(42)
+    buf[0:32] = placement
+    buf[32] = 1  # black to move
+    buf[33] = 0  # no castling
+    buf[34] = 255  # no en passant
+    struct.pack_into("<f", buf, 35, -100.0)
+    buf[39] = 0  # loss for STM (black)
+    struct.pack_into("<H", buf, 40, 5)
+
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+        f.write(bytes(buf))
+        tmp_path = f.name
+
+    try:
+        ds = SelfPlayDataset(tmp_path, eval_weight=1.0)
+        features, target = ds[0]
+        features = features.numpy()
+
+        # Black to move: board is flipped
+        # Own king (black king at sq 60, flipped: 60^56=4) → 5*64 + 4 = 324
+        assert features[324] == 1.0
+        # Opp king (white king at sq 4, flipped: 4^56=60) → 384 + 5*64 + 60 = 764
+        assert features[764] == 1.0
+
+        # Only 2 pieces on board
+        assert features[:768].sum() == 2
+    finally:
+        Path(tmp_path).unlink()

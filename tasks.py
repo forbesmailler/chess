@@ -75,7 +75,6 @@ def prepare(c):
         "depth": f"Search depth (default: {_sp['search_depth']})",
         "threads": f"Number of threads (default: {_inv['train_threads']})",
         "data": f"Training data path (default: {_sp['output_file']})",
-        "weights": f"Current best NNUE weights path (default: {_inv['weights']})",
         "epochs": f"Training epochs (default: {_train_cfg['epochs']})",
         "batch_size": f"Training batch size (default: {_train_cfg['batch_size']})",
         "eval_weight": f"Search eval vs game result blend (default: {_train_cfg['eval_weight']})",
@@ -88,7 +87,6 @@ def train(
     depth=_sp["search_depth"],
     threads=_inv["train_threads"],
     data=_sp["output_file"],
-    weights=_inv["weights"],
     epochs=_train_cfg["epochs"],
     batch_size=_train_cfg["batch_size"],
     eval_weight=_train_cfg["eval_weight"],
@@ -99,22 +97,30 @@ def train(
     c.run(
         f"python scripts/train_loop.py"
         f" --games {games} --depth {depth} --threads {threads}"
-        f" --data {data} --weights {weights}"
+        f" --data {data}"
         f" --epochs {epochs} --batch-size {batch_size}"
         f" --eval-weight {eval_weight} --compare-games {compare_games}"
     )
 
 
 _vps = _dep["vps"]
+_pointer_file = _dep["paths"]["current_best_file"]
 
 
 @task(
     help={
-        "weights": f"NNUE weights file name (default: {_inv['weights']})",
+        "weights": "NNUE weights file path (default: read from pointer file)",
     }
 )
-def deploy(c, weights=_inv["weights"]):
+def deploy(c, weights=None):
     """Deploy the bot on a Linux VPS: pull, build, test, install, restart service."""
+    if weights is None:
+        from pathlib import Path
+
+        pf = Path(_pointer_file)
+        if pf.exists():
+            weights = pf.read_text().strip()
+
     repo_dir = _vps["repo_dir"]
     install_dir = _vps["install_dir"]
     service = _vps["service_name"]

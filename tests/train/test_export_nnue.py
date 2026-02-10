@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import torch
 
 # export_nnue.py uses `from train_nnue import ...` (sibling import),
 # so we must add its directory to sys.path.
@@ -156,3 +157,86 @@ def test_export_state_dict_returns_param_count():
     count = export_state_dict(model.state_dict(), buf)
     expected = sum(p.numel() for p in model.parameters())
     assert count == expected
+
+
+def test_forward_pass_roundtrip():
+    """Verify C++ forward pass (simulated) matches PyTorch output.
+
+    Exports model to binary, reads weights back (with w2 transpose like C++),
+    computes forward pass manually, and compares to PyTorch.
+    """
+    torch.manual_seed(42)
+    model = NNUE()
+    model.eval()
+
+    data = _export_to_buffer(model)
+
+    # Read weights from binary the way C++ does
+    offset = 24
+    # w1: stored as (INPUT_SIZE x HIDDEN1_SIZE) row-major
+    w1_size = INPUT_SIZE * HIDDEN1_SIZE
+    w1 = np.frombuffer(data[offset : offset + w1_size * 4], dtype=np.float32).reshape(
+        INPUT_SIZE, HIDDEN1_SIZE
+    )
+    offset += w1_size * 4
+
+    b1 = np.frombuffer(
+        data[offset : offset + HIDDEN1_SIZE * 4], dtype=np.float32
+    ).copy()
+    offset += HIDDEN1_SIZE * 4
+
+    # w2: stored as (HIDDEN1_SIZE x HIDDEN2_SIZE) row-major,
+    # C++ transposes to (HIDDEN2_SIZE x HIDDEN1_SIZE) at load
+    w2_size = HIDDEN1_SIZE * HIDDEN2_SIZE
+    w2_raw = np.frombuffer(
+        data[offset : offset + w2_size * 4], dtype=np.float32
+    ).reshape(HIDDEN1_SIZE, HIDDEN2_SIZE)
+    w2_t = w2_raw.T.copy()  # (HIDDEN2_SIZE x HIDDEN1_SIZE) like C++
+    offset += w2_size * 4
+
+    b2 = np.frombuffer(
+        data[offset : offset + HIDDEN2_SIZE * 4], dtype=np.float32
+    ).copy()
+    offset += HIDDEN2_SIZE * 4
+
+    w3 = np.frombuffer(
+        data[offset : offset + HIDDEN2_SIZE * 4], dtype=np.float32
+    ).copy()
+    offset += HIDDEN2_SIZE * 4
+
+    b3 = np.frombuffer(data[offset : offset + 4], dtype=np.float32).copy()
+    offset += 4
+
+    # Create sparse feature vector (simulating a real position)
+    active_indices = [0, 65, 192, 324, 259, 384 + 0, 384 + 65, 768, 769, 770, 771]
+    features = np.zeros(INPUT_SIZE, dtype=np.float32)
+    for idx in active_indices:
+        features[idx] = 1.0
+
+    # PyTorch forward pass
+    x_torch = torch.from_numpy(features).unsqueeze(0)
+    with torch.no_grad():
+        pytorch_out = model(x_torch).item()
+
+    # C++-style forward pass: sparse accumulation for layer 1
+    h1 = b1.copy()
+    for idx in active_indices:
+        h1 += w1[idx]
+    h1 = np.clip(h1, 0.0, 1.0)  # ClippedReLU
+
+    # Layer 2: dense with transposed w2
+    h2 = np.zeros(HIDDEN2_SIZE, dtype=np.float32)
+    for j in range(HIDDEN2_SIZE):
+        h2[j] = np.dot(w2_t[j], h1) + b2[j]
+    h2 = np.clip(h2, 0.0, 1.0)  # ClippedReLU
+
+    # Layer 3: single output with tanh
+    logit = np.dot(w3, h2) + b3[0]
+    cpp_out = float(np.tanh(logit))
+
+    np.testing.assert_allclose(
+        cpp_out,
+        pytorch_out,
+        atol=1e-5,
+        err_msg=f"C++ forward pass ({cpp_out}) != PyTorch ({pytorch_out})",
+    )

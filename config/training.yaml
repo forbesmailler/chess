@@ -23,7 +23,6 @@ training:
 invoke:
   train_games: 50000
   train_threads: 16
-  weights: "nnue.bin"
 
 compare:
   num_games: 100
