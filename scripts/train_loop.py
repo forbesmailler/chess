@@ -159,16 +159,18 @@ def main():
                 f"\n--- Train NNUE"
                 f" ({args.epochs} epochs, {total_positions} positions) ---"
             )
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            candidate_name = f"nnue_{timestamp}_{total_positions}pos.bin"
+            log_path = models_dir / candidate_name.replace(".bin", "_train.md")
             run(
                 f"python engine/train/train_nnue.py --data {args.data}"
                 f" --output engine/train/nnue_weights.pt"
                 f" --epochs {args.epochs} --batch-size {args.batch_size}"
                 f" --eval-weight {args.eval_weight}"
+                f" --log {log_path}"
             )
 
             # 3. Export candidate with full descriptive name
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            candidate_name = f"nnue_{timestamp}_{total_positions}pos.bin"
             candidate_path = models_dir / candidate_name
             print(f"\n--- Export candidate ({candidate_name}) ---")
             run(

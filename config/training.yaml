@@ -4,7 +4,7 @@ self_play:
   num_threads: 1
   output_file: "training_data.bin"
   max_game_ply: 400
-  search_time_ms: 200
+  search_time_ms: 500
   softmax_plies: 10
   softmax_temperature: 200.0
   default_time_control_ms: 60000
@@ -21,7 +21,7 @@ training:
   max_data_workers: 4
 
 invoke:
-  train_games: 50000
+  train_games: 5000
   train_threads: 16
 
 compare:

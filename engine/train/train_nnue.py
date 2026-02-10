@@ -157,7 +157,8 @@ def train(args):
     print(f"Using device: {device}, threads: {num_cores}")
 
     dataset = SelfPlayDataset(args.data, eval_weight=args.eval_weight)
-    print(f"Loaded {len(dataset)} positions from {args.data}")
+    num_positions = len(dataset)
+    print(f"Loaded {num_positions} positions from {args.data}")
 
     # Split into train/val
     val_size = max(1, int(len(dataset) * _trn["training"]["val_split"]))
@@ -196,6 +197,7 @@ def train(args):
     best_val_loss = float("inf")
     patience_counter = 0
     best_state = None
+    epoch_log = []
 
     for epoch in range(args.epochs):
         # Training
@@ -229,13 +231,16 @@ def train(args):
 
         val_loss /= val_size
 
+        improved = val_loss < best_val_loss
+        epoch_log.append((epoch + 1, train_loss, val_loss, improved))
+
         print(
             f"Epoch {epoch + 1}/{args.epochs} - "
             f"train_loss: {train_loss:.4f}, val_loss: {val_loss:.4f}"
         )
 
         # Early stopping
-        if val_loss < best_val_loss:
+        if improved:
             best_val_loss = val_loss
             patience_counter = 0
             best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
@@ -251,7 +256,35 @@ def train(args):
     print(f"Training complete. Best val loss: {best_val_loss:.4f}")
     if args.output:
         print(f"Model saved to {args.output}")
+
+    if getattr(args, "log", None):
+        _write_log(args, num_positions, epoch_log, best_val_loss)
+
     return best_state
+
+
+def _write_log(args, num_positions, epoch_log, best_val_loss):
+    log_path = Path(args.log)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "# Training Log",
+        "",
+        f"- **Positions**: {num_positions:,}",
+        f"- **Batch size**: {args.batch_size}",
+        f"- **Learning rate**: {args.lr}",
+        f"- **Eval weight**: {args.eval_weight}",
+        f"- **Best val loss**: {best_val_loss:.6f}",
+        f"- **Epochs run**: {len(epoch_log)}/{args.epochs}",
+        "",
+        "| Epoch | Train Loss | Val Loss | Best |",
+        "|------:|-----------:|---------:|:----:|",
+    ]
+    for epoch, tl, vl, improved in epoch_log:
+        marker = "*" if improved else ""
+        lines.append(f"| {epoch} | {tl:.6f} | {vl:.6f} | {marker} |")
+    lines.append("")
+    log_path.write_text("\n".join(lines))
+    print(f"Training log written to {log_path}")
 
 
 def main():
@@ -273,6 +306,10 @@ def main():
         type=float,
         default=_trn["training"]["eval_weight"],
         help="Weight for search eval vs game result in target (0-1)",
+    )
+    parser.add_argument(
+        "--log",
+        help="Path to write training log as markdown (.md)",
     )
     args = parser.parse_args()
 
