@@ -137,7 +137,7 @@ def deploy(c, weights=None):
         c.run(f"cp {weights} {install_dir}/nnue.bin")
     else:
         c.run(
-            f'test -f {pointer}'
+            f"test -f {pointer}"
             f' && cp "{repo_dir}/$(cat {pointer})" {install_dir}/nnue.bin',
             warn=True,
         )
