@@ -191,8 +191,9 @@ class TestGenerate:
         assert "SEARCH_DEPTH = 6" in result
         assert "NUM_THREADS = 16" in result
         assert "SEARCH_TIME_MS = 500" in result
-        assert "SOFTMAX_PLIES = 20" in result
-        assert "SOFTMAX_TEMPERATURE = 200.0f" in result
+        assert "RANDOM_PLIES = 4" in result
+        assert "SOFTMAX_PLIES = 30" in result
+        assert "SOFTMAX_TEMPERATURE = 500.0f" in result
 
     def test_no_resign(self):
         result = generate()

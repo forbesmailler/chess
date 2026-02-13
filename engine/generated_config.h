@@ -236,8 +236,9 @@ static constexpr int NUM_GAMES = 20000;
 static constexpr int SEARCH_DEPTH = 6;
 static constexpr int NUM_THREADS = 16;
 static constexpr int SEARCH_TIME_MS = 500;
-static constexpr int SOFTMAX_PLIES = 20;
-static constexpr float SOFTMAX_TEMPERATURE = 200.0f;
+static constexpr int RANDOM_PLIES = 4;
+static constexpr int SOFTMAX_PLIES = 30;
+static constexpr float SOFTMAX_TEMPERATURE = 500.0f;
 static constexpr int DEFAULT_TIME_CONTROL_MS = 60000;
 static constexpr int PROGRESS_LOG_INTERVAL = 10;
 }  // namespace self_play

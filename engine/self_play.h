@@ -38,6 +38,7 @@ class SelfPlayGenerator {
         std::string output_file = "training_data.bin";
         int max_game_ply = 400;
         int search_time_ms = config::self_play::SEARCH_TIME_MS;
+        int random_plies = config::self_play::RANDOM_PLIES;
         int softmax_plies = config::self_play::SOFTMAX_PLIES;
         float softmax_temperature = config::self_play::SOFTMAX_TEMPERATURE;
         std::string nnue_weights;

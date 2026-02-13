@@ -137,7 +137,16 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
             ChessBoard::Move chosen_move;
             bool white_to_move = board.turn() == ChessBoard::WHITE;
 
-            if (ply < config.softmax_plies) {
+            if (ply < config.random_plies) {
+                // Fully random moves for opening diversity
+                auto legal_moves = board.get_legal_moves();
+                if (legal_moves.empty()) break;
+                std::uniform_int_distribution<int> move_dist(
+                    0, static_cast<int>(legal_moves.size()) - 1);
+                chosen_move = legal_moves[move_dist(rng)];
+                stm_eval = engine->evaluate(board);
+                if (!white_to_move) stm_eval = -stm_eval;
+            } else if (ply < config.softmax_plies) {
                 auto legal_moves = board.get_legal_moves();
                 if (legal_moves.empty()) break;
 

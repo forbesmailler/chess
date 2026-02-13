@@ -380,6 +380,7 @@ def generate() -> str:
     lines.append(f"    static constexpr int SEARCH_DEPTH = {sp['search_depth']};")
     lines.append(f"    static constexpr int NUM_THREADS = {sp['num_threads']};")
     lines.append(f"    static constexpr int SEARCH_TIME_MS = {sp['search_time_ms']};")
+    lines.append(f"    static constexpr int RANDOM_PLIES = {sp['random_plies']};")
     lines.append(f"    static constexpr int SOFTMAX_PLIES = {sp['softmax_plies']};")
     lines.append(
         f"    static constexpr float SOFTMAX_TEMPERATURE = {sp['softmax_temperature']:.1f}f;"
