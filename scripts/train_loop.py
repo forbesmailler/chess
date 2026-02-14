@@ -11,6 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config.load_config import load
 
+_eng = load("engine")
 _trn = load("training")
 _dep = load("deploy")
 
@@ -23,6 +24,41 @@ _cmp = _trn.get("compare", {})
 POSITION_BYTES = 42
 
 _WLD_RE = re.compile(r"New wins:\s*(\d+),\s*Old wins:\s*(\d+),\s*Draws:\s*(\d+)")
+DATA_CAP_MULTIPLIER = 100
+
+
+def compute_param_count() -> int:
+    nnue = _eng["nnue"]
+    inp, h1, h2, out = (
+        nnue["input_size"],
+        nnue["hidden1_size"],
+        nnue["hidden2_size"],
+        nnue["output_size"],
+    )
+    return inp * h1 + h1 + h1 * h2 + h2 + h2 * out + out
+
+
+def cap_training_data(data_path: Path) -> None:
+    if not data_path.exists():
+        return
+    file_size = data_path.stat().st_size
+    total_positions = file_size // POSITION_BYTES
+    max_positions = DATA_CAP_MULTIPLIER * compute_param_count()
+    if total_positions <= max_positions:
+        return
+    trim_count = total_positions - max_positions
+    keep_offset = trim_count * POSITION_BYTES
+    file_size - keep_offset
+    tmp_path = data_path.with_suffix(".tmp")
+    with open(data_path, "rb") as src, open(tmp_path, "wb") as dst:
+        src.seek(keep_offset)
+        while chunk := src.read(1 << 20):
+            dst.write(chunk)
+    tmp_path.replace(data_path)
+    print(
+        f"Data capped: removed {trim_count} oldest positions"
+        f" ({total_positions} -> {max_positions}, max={max_positions})"
+    )
 
 
 def run(cmd: str) -> subprocess.CompletedProcess:
@@ -154,6 +190,7 @@ def main():
             run(selfplay_cmd)
 
         if not args.compare_only:
+            cap_training_data(data_path)
             total_positions = data_path.stat().st_size // POSITION_BYTES
             print(f"Total accumulated positions: {total_positions}")
 

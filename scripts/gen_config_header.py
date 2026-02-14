@@ -51,7 +51,13 @@ def generate() -> str:
 
     # nnue
     lines.append("namespace nnue {")
-    for k in ("input_size", "hidden1_size", "hidden2_size", "output_size"):
+    for k in (
+        "input_size",
+        "hidden1_size",
+        "hidden2_size",
+        "max_hidden2_size",
+        "output_size",
+    ):
         name = k.upper()
         lines.append(f"    static constexpr int {name} = {eng['nnue'][k]};")
     lines.append("}  // namespace nnue")

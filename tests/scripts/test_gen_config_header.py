@@ -105,6 +105,7 @@ class TestGenerate:
         assert "INPUT_SIZE = 773" in result
         assert "HIDDEN1_SIZE = 256" in result
         assert "HIDDEN2_SIZE = 32" in result
+        assert "MAX_HIDDEN2_SIZE = 64" in result
         assert "OUTPUT_SIZE = 1" in result
 
     def test_search_constants(self):
@@ -192,8 +193,8 @@ class TestGenerate:
         assert "NUM_THREADS = 16" in result
         assert "SEARCH_TIME_MS = 500" in result
         assert "RANDOM_PLIES = 4" in result
-        assert "SOFTMAX_PLIES = 30" in result
-        assert "SOFTMAX_TEMPERATURE = 500.0f" in result
+        assert "SOFTMAX_PLIES = 20" in result
+        assert "SOFTMAX_TEMPERATURE = 300.0f" in result
 
     def test_no_resign(self):
         result = generate()

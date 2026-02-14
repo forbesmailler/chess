@@ -595,6 +595,42 @@ class TestRunFunction:
                 train_loop.run("false")
 
 
+class TestDataCapping:
+    def test_compute_param_count(self):
+        count = train_loop.compute_param_count()
+        assert count == 773 * 256 + 256 + 256 * 32 + 32 + 32 * 1 + 1
+
+    def test_cap_noop_when_under_limit(self, tmp_path):
+        data = tmp_path / "data.bin"
+        data.write_bytes(b"\x00" * (POSITION_BYTES * 10))
+        train_loop.cap_training_data(data)
+        assert data.stat().st_size == POSITION_BYTES * 10
+
+    def test_cap_trims_oldest(self, tmp_path):
+        param_count = train_loop.compute_param_count()
+        max_positions = train_loop.DATA_CAP_MULTIPLIER * param_count
+        total = max_positions + 100
+        data = tmp_path / "data.bin"
+        # Write identifiable data: each position is 42 bytes
+        content = bytearray()
+        for i in range(total):
+            pos = bytes([i % 256]) * POSITION_BYTES
+            content.extend(pos)
+        data.write_bytes(bytes(content))
+        train_loop.cap_training_data(data)
+        result_size = data.stat().st_size
+        assert result_size == max_positions * POSITION_BYTES
+        # Verify oldest 100 positions were removed (kept newest)
+        result = data.read_bytes()
+        # First position in result should be what was position 100 originally
+        expected_first_byte = 100 % 256
+        assert result[0] == expected_first_byte
+
+    def test_cap_nonexistent_file(self, tmp_path):
+        data = tmp_path / "missing.bin"
+        train_loop.cap_training_data(data)  # should not raise
+
+
 class TestHelperFunctions:
     def test_read_current_best_missing(self, tmp_path):
         assert train_loop.read_current_best(tmp_path / "missing.txt") is None

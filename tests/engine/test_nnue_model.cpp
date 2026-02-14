@@ -16,10 +16,11 @@
 
 namespace {
 
-std::string create_test_weights_buffer(unsigned int seed = 42) {
+std::string create_test_weights_buffer(unsigned int seed = 42,
+                                       int h2_override = config::nnue::HIDDEN2_SIZE) {
     constexpr int INPUT = config::nnue::INPUT_SIZE;
     constexpr int H1 = config::nnue::HIDDEN1_SIZE;
-    constexpr int H2 = config::nnue::HIDDEN2_SIZE;
+    int H2 = h2_override;
     constexpr int OUTPUT = config::nnue::OUTPUT_SIZE;
 
     std::mt19937 rng(seed);
@@ -27,7 +28,8 @@ std::string create_test_weights_buffer(unsigned int seed = 42) {
 
     std::ostringstream oss;
     oss.write("NNUE", 4);
-    uint32_t header[] = {1, INPUT, H1, H2, OUTPUT};
+    uint32_t header[] = {1, static_cast<uint32_t>(INPUT), static_cast<uint32_t>(H1),
+                         static_cast<uint32_t>(H2), static_cast<uint32_t>(OUTPUT)};
     oss.write(reinterpret_cast<char*>(header), sizeof(header));
 
     auto write_random = [&](size_t count) {
@@ -545,4 +547,79 @@ TEST_F(NNUEModelTest, EvalSpeedBenchmarkIncremental) {
     EXPECT_LT(inc_us, hc_us) << "NNUE incremental (" << inc_us / NUM_EVALS
                              << " us/eval) must be faster than handcrafted ("
                              << hc_us / NUM_EVALS << " us/eval)";
+}
+
+// --- Variable HIDDEN2_SIZE tests ---
+
+TEST(NNUEModel, LoadHidden2Size64) {
+    std::string buf = create_test_weights_buffer(42, 64);
+    std::istringstream stream(buf);
+    NNUEModel model;
+    ASSERT_TRUE(model.load_weights(stream));
+    EXPECT_TRUE(model.is_loaded());
+    EXPECT_EQ(model.hidden2_size(), 64);
+
+    ChessBoard board;
+    float eval = model.predict(board);
+    EXPECT_TRUE(std::isfinite(eval));
+    EXPECT_LE(std::abs(eval), config::MATE_VALUE);
+}
+
+TEST(NNUEModel, LoadHidden2SizeTooLarge) {
+    int too_large = config::nnue::MAX_HIDDEN2_SIZE + 4;
+    std::string buf = create_test_weights_buffer(42, too_large);
+    std::istringstream stream(buf);
+    NNUEModel model;
+    EXPECT_FALSE(model.load_weights(stream));
+    EXPECT_FALSE(model.is_loaded());
+}
+
+TEST(NNUEModel, LoadHidden2SizeNotMultipleOf4) {
+    // hidden2_size=6 is not a multiple of 4
+    std::string buf = create_test_weights_buffer(42, 6);
+    std::istringstream stream(buf);
+    NNUEModel model;
+    EXPECT_FALSE(model.load_weights(stream));
+}
+
+TEST(NNUEModel, ParamCount) {
+    std::string buf32 = create_test_weights_buffer(42, 32);
+    std::istringstream s32(buf32);
+    NNUEModel m32;
+    ASSERT_TRUE(m32.load_weights(s32));
+    // 773*256 + 256 + 256*32 + 32 + 32*1 + 1 = 197888 + 256 + 8192 + 32 + 32 + 1 =
+    // 206401
+    EXPECT_EQ(m32.param_count(), 773 * 256 + 256 + 256 * 32 + 32 + 32 * 1 + 1);
+
+    std::string buf64 = create_test_weights_buffer(42, 64);
+    std::istringstream s64(buf64);
+    NNUEModel m64;
+    ASSERT_TRUE(m64.load_weights(s64));
+    EXPECT_EQ(m64.param_count(), 773 * 256 + 256 + 256 * 64 + 64 + 64 * 1 + 1);
+    EXPECT_GT(m64.param_count(), m32.param_count());
+}
+
+TEST(NNUEModel, AccumulatorCorrectnessH2_64) {
+    std::string buf = create_test_weights_buffer(42, 64);
+    std::istringstream stream(buf);
+    NNUEModel model;
+    ASSERT_TRUE(model.load_weights(stream));
+
+    ChessBoard board;
+    model.init_accumulator(board);
+    float from_scratch = model.predict(board);
+    float incremental = model.predict_from_accumulator(board);
+    EXPECT_NEAR(from_scratch, incremental, 0.01f);
+
+    // Play a move and verify incremental still matches
+    chess::Move move = chess::uci::uciToMove(board.board, "e2e4");
+    chess::Piece moved = board.board.at(move.from());
+    chess::Piece captured = board.board.at(move.to());
+    model.push_accumulator();
+    board.board.makeMove(move);
+    model.update_accumulator(move, moved, captured, board);
+
+    from_scratch = model.predict(board);
+    incremental = model.predict_from_accumulator(board);
+    EXPECT_NEAR(from_scratch, incremental, 0.01f);
 }

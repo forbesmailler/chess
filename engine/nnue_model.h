@@ -14,6 +14,7 @@ class NNUEModel {
     static constexpr int INPUT_SIZE = config::nnue::INPUT_SIZE;
     static constexpr int HIDDEN1_SIZE = config::nnue::HIDDEN1_SIZE;
     static constexpr int HIDDEN2_SIZE = config::nnue::HIDDEN2_SIZE;
+    static constexpr int MAX_HIDDEN2_SIZE = config::nnue::MAX_HIDDEN2_SIZE;
     static constexpr int OUTPUT_SIZE = config::nnue::OUTPUT_SIZE;
     // Padded HIDDEN1_SIZE rounded up to multiple of 16 for AVX2 int16 ops
     static constexpr int H1_PADDED = (HIDDEN1_SIZE + 15) & ~15;
@@ -27,6 +28,8 @@ class NNUEModel {
     float predict(const ChessBoard& board) const;
 
     bool is_loaded() const { return loaded; }
+    int hidden2_size() const { return hidden2_size_; }
+    int param_count() const;
 
     // Public accessor for testing: returns active feature indices for a position
     std::vector<int> get_active_features(const ChessBoard& board) const;
@@ -87,6 +90,7 @@ class NNUEModel {
     static constexpr float DEQUANT_SCALE = 1.0f / (Q1_SCALE * Q2_SCALE);
 
     bool loaded = false;
+    int hidden2_size_ = HIDDEN2_SIZE;
 
     static constexpr int ACC_STACK_SIZE = 128;
     mutable Accumulator acc_stack[ACC_STACK_SIZE];
