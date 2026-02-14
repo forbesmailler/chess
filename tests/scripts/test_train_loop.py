@@ -626,6 +626,18 @@ class TestDataCapping:
         expected_first_byte = 100 % 256
         assert result[0] == expected_first_byte
 
+    def test_cap_creates_backup(self, tmp_path):
+        param_count = train_loop.compute_param_count()
+        max_positions = train_loop.DATA_CAP_MULTIPLIER * param_count
+        total = max_positions + 10
+        data = tmp_path / "training_data.bin"
+        original = b"\x00" * (POSITION_BYTES * total)
+        data.write_bytes(original)
+        train_loop.cap_training_data(data)
+        backups = list(tmp_path.glob("training_data_*.bin"))
+        assert len(backups) == 1
+        assert backups[0].stat().st_size == len(original)
+
     def test_cap_nonexistent_file(self, tmp_path):
         data = tmp_path / "missing.bin"
         train_loop.cap_training_data(data)  # should not raise

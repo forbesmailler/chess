@@ -48,7 +48,10 @@ def cap_training_data(data_path: Path) -> None:
         return
     trim_count = total_positions - max_positions
     keep_offset = trim_count * POSITION_BYTES
-    file_size - keep_offset
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = data_path.with_name(f"{data_path.stem}_{timestamp}{data_path.suffix}")
+    shutil.copy2(str(data_path), str(backup_path))
+    print(f"Backed up {data_path.name} -> {backup_path.name}")
     tmp_path = data_path.with_suffix(".tmp")
     with open(data_path, "rb") as src, open(tmp_path, "wb") as dst:
         src.seek(keep_offset)
