@@ -57,13 +57,17 @@ void ChessEngine::order_moves(const ChessBoard& board, chess::Movelist& moves,
     int n = moves.size();
     score_moves(board, moves, scores, tt_move, ply, prev_move);
 
-    int idx[256];
-    for (int i = 0; i < n; ++i) idx[i] = i;
-    std::sort(idx, idx + n, [&scores](int a, int b) { return scores[a] > scores[b]; });
-
-    chess::Move temp[256];
-    for (int i = 0; i < n; ++i) temp[i] = moves[idx[i]];
-    for (int i = 0; i < n; ++i) moves[i] = temp[i];
+    // Sort move indices by score, then reorder moves in place via temp buffer
+    struct ScoredMove {
+        chess::Move move;
+        int score;
+    };
+    ScoredMove sm[256];
+    for (int i = 0; i < n; ++i) sm[i] = {moves[i], scores[i]};
+    std::sort(sm, sm + n, [](const ScoredMove& a, const ScoredMove& b) {
+        return a.score > b.score;
+    });
+    for (int i = 0; i < n; ++i) moves[i] = sm[i].move;
 }
 
 void ChessEngine::score_moves(const ChessBoard& board, const chess::Movelist& moves,
