@@ -9,243 +9,304 @@ namespace config {
 static constexpr float MATE_VALUE = 10000.0f;
 
 namespace nnue {
-static constexpr int INPUT_SIZE = 773;
-static constexpr int HIDDEN1_SIZE = 256;
-static constexpr int HIDDEN2_SIZE = 32;
-static constexpr int OUTPUT_SIZE = 1;
+    static constexpr int INPUT_SIZE = 773;
+    static constexpr int HIDDEN1_SIZE = 256;
+    static constexpr int HIDDEN2_SIZE = 32;
+    static constexpr int OUTPUT_SIZE = 1;
 }  // namespace nnue
 
 namespace search {
-static constexpr size_t TT_SIZE = 1 << 20;
-static constexpr size_t TT_MASK = TT_SIZE - 1;
-static constexpr size_t EVAL_CACHE_SIZE = 1 << 18;
-static constexpr size_t EVAL_CACHE_MASK = EVAL_CACHE_SIZE - 1;
-static constexpr int TIME_CHECK_INTERVAL = 2048;
-static constexpr int MAX_DEPTH = 50;
-static constexpr int QUIESCENCE_MAX_DEPTH = 8;
-static constexpr int TIME_ALLOCATION_DIVISOR = 40;
-static constexpr int MIN_TIME_MS = 50;
-static constexpr int MAX_TIME_MS = 30000;
-static constexpr float ASPIRATION_DELTA = 50.0f;
-static constexpr int ASPIRATION_MIN_DEPTH = 3;
-static constexpr int MATE_THRESHOLD_MARGIN = 500;
+    static constexpr size_t TT_SIZE = 1 << 20;
+    static constexpr size_t TT_MASK = TT_SIZE - 1;
+    static constexpr size_t EVAL_CACHE_SIZE = 1 << 18;
+    static constexpr size_t EVAL_CACHE_MASK = EVAL_CACHE_SIZE - 1;
+    static constexpr int TIME_CHECK_INTERVAL = 2048;
+    static constexpr int MAX_DEPTH = 50;
+    static constexpr int QUIESCENCE_MAX_DEPTH = 8;
+    static constexpr int TIME_ALLOCATION_DIVISOR = 40;
+    static constexpr int MIN_TIME_MS = 50;
+    static constexpr int MAX_TIME_MS = 30000;
+    static constexpr float ASPIRATION_DELTA = 50.0f;
+    static constexpr int ASPIRATION_MIN_DEPTH = 3;
+    static constexpr int MATE_THRESHOLD_MARGIN = 500;
 
-namespace null_move {
-static constexpr int MIN_DEPTH = 3;
-static constexpr int MATE_MARGIN = 1000;
-static constexpr int DEEP_THRESHOLD = 7;
-static constexpr int SHALLOW_REDUCTION = 3;
-static constexpr int DEEP_REDUCTION = 4;
-}  // namespace null_move
+    namespace null_move {
+        static constexpr int MIN_DEPTH = 3;
+        static constexpr int MATE_MARGIN = 1000;
+        static constexpr int DEEP_THRESHOLD = 7;
+        static constexpr int SHALLOW_REDUCTION = 3;
+        static constexpr int DEEP_REDUCTION = 4;
+    }  // namespace null_move
 
-namespace lmr {
-static constexpr int MIN_MOVES_SEARCHED = 2;
-static constexpr int MIN_DEPTH = 3;
-static constexpr int MANY_MOVES_THRESHOLD = 7;
-static constexpr int SHALLOW_REDUCTION = 1;
-static constexpr int DEEP_REDUCTION = 2;
-}  // namespace lmr
+    namespace lmr {
+        static constexpr int MIN_MOVES_SEARCHED = 2;
+        static constexpr int MIN_DEPTH = 3;
+        static constexpr int MANY_MOVES_THRESHOLD = 7;
+        static constexpr int SHALLOW_REDUCTION = 1;
+        static constexpr int DEEP_REDUCTION = 2;
+    }  // namespace lmr
 
-namespace move_scoring {
-static constexpr int PIECE_VALUES[] = {100, 320, 330, 500, 900, 0, 0};
-static constexpr int TT_MOVE_BONUS = 1000000;
-static constexpr int CAPTURE_BASE_SCORE = 100000;
-static constexpr int PROMOTION_BONUS = 90000;
-static constexpr int KILLER1_BONUS = 80000;
-static constexpr int KILLER2_BONUS = 70000;
-static constexpr int COUNTERMOVE_BONUS = 60000;
-static constexpr int HISTORY_MAX = 1000000;
-static constexpr int VICTIM_VALUE_MULTIPLIER = 10;
-}  // namespace move_scoring
+    namespace move_scoring {
+        static constexpr int PIECE_VALUES[] = {100, 320, 330, 500, 900, 0, 0};
+        static constexpr int TT_MOVE_BONUS = 1000000;
+        static constexpr int CAPTURE_BASE_SCORE = 100000;
+        static constexpr int PROMOTION_BONUS = 90000;
+        static constexpr int KILLER1_BONUS = 80000;
+        static constexpr int KILLER2_BONUS = 70000;
+        static constexpr int COUNTERMOVE_BONUS = 60000;
+        static constexpr int HISTORY_MAX = 1000000;
+        static constexpr int VICTIM_VALUE_MULTIPLIER = 10;
+    }  // namespace move_scoring
 
-namespace tt_replacement {
-static constexpr int DEPTH_WEIGHT = 4;
-static constexpr int EXACT_BONUS = 2;
-}  // namespace tt_replacement
+    namespace tt_replacement {
+        static constexpr int DEPTH_WEIGHT = 4;
+        static constexpr int EXACT_BONUS = 2;
+    }  // namespace tt_replacement
 
-namespace pruning {
-static constexpr float REVERSE_FUTILITY_MARGIN = 1500.0f;
-static constexpr float FUTILITY_MARGIN_DEPTH1 = 1500.0f;
-static constexpr float FUTILITY_MARGIN_DEPTH2 = 3000.0f;
-static constexpr int LMP_BASE = 3;
-}  // namespace pruning
+    namespace pruning {
+        static constexpr float REVERSE_FUTILITY_MARGIN = 1500.0f;
+        static constexpr float FUTILITY_MARGIN_DEPTH1 = 1500.0f;
+        static constexpr float FUTILITY_MARGIN_DEPTH2 = 3000.0f;
+        static constexpr int LMP_BASE = 3;
+    }  // namespace pruning
 
-namespace quiescence {
-static constexpr float PIECE_VALUES[] = {1000.0f, 3200.0f, 3300.0f, 5000.0f,
-                                         9000.0f, 0.0f,    0.0f};
-static constexpr float DELTA_MARGIN = 2000.0f;
-static constexpr float EN_PASSANT_VALUE = 1000.0f;
-}  // namespace quiescence
+    namespace quiescence {
+        static constexpr float PIECE_VALUES[] = {1000.0f, 3200.0f, 3300.0f, 5000.0f, 9000.0f, 0.0f, 0.0f};
+        static constexpr float DELTA_MARGIN = 2000.0f;
+        static constexpr float EN_PASSANT_VALUE = 1000.0f;
+    }  // namespace quiescence
 }  // namespace search
 
 namespace mcts {
-static constexpr float EXPLORATION_CONSTANT = 1.4f;
-static constexpr int MAX_SIMULATION_DEPTH = 100;
-static constexpr int EVAL_FREQUENCY = 10;
-static constexpr float EARLY_TERMINATION_FACTOR = 0.8f;
-static constexpr float PRIOR_SIGMOID_SCALE = 5000.0f;
-static constexpr int NODE_COUNT_INTERVAL = 1000;
+    static constexpr float EXPLORATION_CONSTANT = 1.4f;
+    static constexpr int MAX_SIMULATION_DEPTH = 100;
+    static constexpr int EVAL_FREQUENCY = 10;
+    static constexpr float EARLY_TERMINATION_FACTOR = 0.8f;
+    static constexpr float PRIOR_SIGMOID_SCALE = 5000.0f;
+    static constexpr int NODE_COUNT_INTERVAL = 1000;
 }  // namespace mcts
 
 namespace bot {
-static constexpr int MAX_RETRIES = 3;
-static constexpr int RETRY_DELAY_MS = 5000;
-static constexpr int HEARTBEAT_INTERVAL_MS = 30000;
-static constexpr int CONNECTION_TIMEOUT_MS = 120000;
-static constexpr int MAX_CONSECUTIVE_ERRORS = 10;
-static constexpr int MAX_RESTARTS = 5;
-static constexpr int MAX_GAME_STREAM_RETRIES = 3;
-static constexpr int GAME_STREAM_RECONNECT_DELAY_S = 2;
-static constexpr int DRAW_RESPONSE_RETRY_DELAY_MS = 1000;
-static constexpr int MOVE_RETRY_DELAY_MS = 1000;
-static constexpr std::string_view USER_AGENT = "Lichess-Bot-CPP/1.0";
-static constexpr std::string_view LICHESS_BASE_URL = "https://lichess.org/api";
-static constexpr std::string_view CONNECTIVITY_TEST_URL = "http://www.google.com";
+    static constexpr int MAX_RETRIES = 3;
+    static constexpr int RETRY_DELAY_MS = 5000;
+    static constexpr int HEARTBEAT_INTERVAL_MS = 30000;
+    static constexpr int CONNECTION_TIMEOUT_MS = 120000;
+    static constexpr int MAX_CONSECUTIVE_ERRORS = 10;
+    static constexpr int MAX_RESTARTS = 5;
+    static constexpr int MAX_GAME_STREAM_RETRIES = 3;
+    static constexpr int GAME_STREAM_RECONNECT_DELAY_S = 2;
+    static constexpr int DRAW_RESPONSE_RETRY_DELAY_MS = 1000;
+    static constexpr int MOVE_RETRY_DELAY_MS = 1000;
+    static constexpr std::string_view USER_AGENT = "Lichess-Bot-CPP/1.0";
+    static constexpr std::string_view LICHESS_BASE_URL = "https://lichess.org/api";
+    static constexpr std::string_view CONNECTIVITY_TEST_URL = "http://www.google.com";
 }  // namespace bot
 
 namespace curl {
-static constexpr long REQUEST_TIMEOUT = 30L;
-static constexpr long REQUEST_CONNECT_TIMEOUT = 10L;
-static constexpr long CONNECTIVITY_TIMEOUT = 10L;
-static constexpr long CONNECTIVITY_CONNECT_TIMEOUT = 5L;
-static constexpr long STREAM_CONNECT_TIMEOUT = 30L;
-static constexpr long STREAM_LOW_SPEED_LIMIT = 1L;
-static constexpr long STREAM_LOW_SPEED_TIME = 300L;
-static constexpr long STREAM_KEEPALIVE_IDLE = 120L;
-static constexpr long STREAM_KEEPALIVE_INTERVAL = 60L;
-static constexpr long MAX_REDIRECTS = 5L;
+    static constexpr long REQUEST_TIMEOUT = 30L;
+    static constexpr long REQUEST_CONNECT_TIMEOUT = 10L;
+    static constexpr long CONNECTIVITY_TIMEOUT = 10L;
+    static constexpr long CONNECTIVITY_CONNECT_TIMEOUT = 5L;
+    static constexpr long STREAM_CONNECT_TIMEOUT = 30L;
+    static constexpr long STREAM_LOW_SPEED_LIMIT = 1L;
+    static constexpr long STREAM_LOW_SPEED_TIME = 300L;
+    static constexpr long STREAM_KEEPALIVE_IDLE = 120L;
+    static constexpr long STREAM_KEEPALIVE_INTERVAL = 60L;
+    static constexpr long MAX_REDIRECTS = 5L;
 }  // namespace curl
 
 namespace eval {
-static constexpr int MATERIAL_MG[] = {100, 320, 330, 500, 900, 0};
+    static constexpr int MATERIAL_MG[] = {100, 320, 330, 500, 900, 0};
 
-static constexpr int MATERIAL_EG[] = {110, 310, 330, 520, 950, 0};
+    static constexpr int MATERIAL_EG[] = {110, 310, 330, 520, 950, 0};
 
-static constexpr int PHASE_WEIGHT[] = {0, 1, 1, 2, 4, 0};
+    static constexpr int PHASE_WEIGHT[] = {0, 1, 1, 2, 4, 0};
 
-static constexpr int TOTAL_PHASE = 24;
+    static constexpr int TOTAL_PHASE = 24;
 
-static constexpr int MOBILITY_BONUS[] = {0, 4, 3, 2, 1, 0};
+    static constexpr int MOBILITY_BONUS[] = {0, 4, 3, 2, 1, 0};
 
-static constexpr int PST_PAWN_MG[64] = {
-    0,  0,  0,   0,  0,  0,   0,  0,  5,  10, 10, -20, -20, 10, 10, 5,
-    5,  -5, -10, 0,  0,  -10, -5, 5,  0,  0,  0,  20,  20,  0,  0,  0,
-    5,  5,  10,  25, 25, 10,  5,  5,  10, 10, 20, 30,  30,  20, 10, 10,
-    50, 50, 50,  50, 50, 50,  50, 50, 0,  0,  0,  0,   0,   0,  0,  0};
+    static constexpr int PST_PAWN_MG[64] = {
+           0,    0,    0,    0,    0,    0,    0,    0,
+           5,   10,   10,  -20,  -20,   10,   10,    5,
+           5,   -5,  -10,    0,    0,  -10,   -5,    5,
+           0,    0,    0,   20,   20,    0,    0,    0,
+           5,    5,   10,   25,   25,   10,    5,    5,
+          10,   10,   20,   30,   30,   20,   10,   10,
+          50,   50,   50,   50,   50,   50,   50,   50,
+           0,    0,    0,    0,    0,    0,    0,    0
+    };
 
-static constexpr int PST_PAWN_EG[64] = {
-    0,  0,  0,  0,  0,  0,  0,  0,  10, 10, 10, 10, 10, 10, 10, 10,
-    10, 10, 10, 10, 10, 10, 10, 10, 20, 20, 20, 20, 20, 20, 20, 20,
-    30, 30, 30, 30, 30, 30, 30, 30, 50, 50, 50, 50, 50, 50, 50, 50,
-    80, 80, 80, 80, 80, 80, 80, 80, 0,  0,  0,  0,  0,  0,  0,  0};
+    static constexpr int PST_PAWN_EG[64] = {
+           0,    0,    0,    0,    0,    0,    0,    0,
+          10,   10,   10,   10,   10,   10,   10,   10,
+          10,   10,   10,   10,   10,   10,   10,   10,
+          20,   20,   20,   20,   20,   20,   20,   20,
+          30,   30,   30,   30,   30,   30,   30,   30,
+          50,   50,   50,   50,   50,   50,   50,   50,
+          80,   80,   80,   80,   80,   80,   80,   80,
+           0,    0,    0,    0,    0,    0,    0,    0
+    };
 
-static constexpr int PST_KNIGHT_MG[64] = {
-    -50, -40, -30, -30, -30, -30, -40, -50, -40, -20, 0,   5,   5,   0,   -20, -40,
-    -30, 5,   10,  15,  15,  10,  5,   -30, -30, 0,   15,  20,  20,  15,  0,   -30,
-    -30, 5,   15,  20,  20,  15,  5,   -30, -30, 0,   10,  15,  15,  10,  0,   -30,
-    -40, -20, 0,   0,   0,   0,   -20, -40, -50, -40, -30, -30, -30, -30, -40, -50};
+    static constexpr int PST_KNIGHT_MG[64] = {
+         -50,  -40,  -30,  -30,  -30,  -30,  -40,  -50,
+         -40,  -20,    0,    5,    5,    0,  -20,  -40,
+         -30,    5,   10,   15,   15,   10,    5,  -30,
+         -30,    0,   15,   20,   20,   15,    0,  -30,
+         -30,    5,   15,   20,   20,   15,    5,  -30,
+         -30,    0,   10,   15,   15,   10,    0,  -30,
+         -40,  -20,    0,    0,    0,    0,  -20,  -40,
+         -50,  -40,  -30,  -30,  -30,  -30,  -40,  -50
+    };
 
-static constexpr int PST_KNIGHT_EG[64] = {
-    -40, -30, -20, -20, -20, -20, -30, -40, -30, -10, 0,   5,   5,   0,   -10, -30,
-    -20, 0,   10,  15,  15,  10,  0,   -20, -20, 5,   15,  20,  20,  15,  5,   -20,
-    -20, 5,   15,  20,  20,  15,  5,   -20, -20, 0,   10,  15,  15,  10,  0,   -20,
-    -30, -10, 0,   5,   5,   0,   -10, -30, -40, -30, -20, -20, -20, -20, -30, -40};
+    static constexpr int PST_KNIGHT_EG[64] = {
+         -40,  -30,  -20,  -20,  -20,  -20,  -30,  -40,
+         -30,  -10,    0,    5,    5,    0,  -10,  -30,
+         -20,    0,   10,   15,   15,   10,    0,  -20,
+         -20,    5,   15,   20,   20,   15,    5,  -20,
+         -20,    5,   15,   20,   20,   15,    5,  -20,
+         -20,    0,   10,   15,   15,   10,    0,  -20,
+         -30,  -10,    0,    5,    5,    0,  -10,  -30,
+         -40,  -30,  -20,  -20,  -20,  -20,  -30,  -40
+    };
 
-static constexpr int PST_BISHOP_MG[64] = {
-    -20, -10, -10, -10, -10, -10, -10, -20, -10, 5,   0,   0,   0,   0,   5,   -10,
-    -10, 10,  10,  10,  10,  10,  10,  -10, -10, 0,   10,  10,  10,  10,  0,   -10,
-    -10, 5,   5,   10,  10,  5,   5,   -10, -10, 0,   5,   10,  10,  5,   0,   -10,
-    -10, 0,   0,   0,   0,   0,   0,   -10, -20, -10, -10, -10, -10, -10, -10, -20};
+    static constexpr int PST_BISHOP_MG[64] = {
+         -20,  -10,  -10,  -10,  -10,  -10,  -10,  -20,
+         -10,    5,    0,    0,    0,    0,    5,  -10,
+         -10,   10,   10,   10,   10,   10,   10,  -10,
+         -10,    0,   10,   10,   10,   10,    0,  -10,
+         -10,    5,    5,   10,   10,    5,    5,  -10,
+         -10,    0,    5,   10,   10,    5,    0,  -10,
+         -10,    0,    0,    0,    0,    0,    0,  -10,
+         -20,  -10,  -10,  -10,  -10,  -10,  -10,  -20
+    };
 
-static constexpr int PST_BISHOP_EG[64] = {
-    -20, -10, -10, -10, -10, -10, -10, -20, -10, 0,   0,   0,   0,   0,   0,   -10,
-    -10, 0,   10,  10,  10,  10,  0,   -10, -10, 0,   10,  10,  10,  10,  0,   -10,
-    -10, 0,   10,  10,  10,  10,  0,   -10, -10, 0,   10,  10,  10,  10,  0,   -10,
-    -10, 0,   0,   0,   0,   0,   0,   -10, -20, -10, -10, -10, -10, -10, -10, -20};
+    static constexpr int PST_BISHOP_EG[64] = {
+         -20,  -10,  -10,  -10,  -10,  -10,  -10,  -20,
+         -10,    0,    0,    0,    0,    0,    0,  -10,
+         -10,    0,   10,   10,   10,   10,    0,  -10,
+         -10,    0,   10,   10,   10,   10,    0,  -10,
+         -10,    0,   10,   10,   10,   10,    0,  -10,
+         -10,    0,   10,   10,   10,   10,    0,  -10,
+         -10,    0,    0,    0,    0,    0,    0,  -10,
+         -20,  -10,  -10,  -10,  -10,  -10,  -10,  -20
+    };
 
-static constexpr int PST_ROOK_MG[64] = {
-    0, 0,  0,  5,  5, 0,  0,  0,  -5, 0,  0,  0, 0, 0, 0, -5, -5, 0,  0,  0, 0, 0,
-    0, -5, -5, 0,  0, 0,  0,  0,  0,  -5, -5, 0, 0, 0, 0, 0,  0,  -5, -5, 0, 0, 0,
-    0, 0,  0,  -5, 5, 10, 10, 10, 10, 10, 10, 5, 0, 0, 0, 0,  0,  0,  0,  0};
+    static constexpr int PST_ROOK_MG[64] = {
+           0,    0,    0,    5,    5,    0,    0,    0,
+          -5,    0,    0,    0,    0,    0,    0,   -5,
+          -5,    0,    0,    0,    0,    0,    0,   -5,
+          -5,    0,    0,    0,    0,    0,    0,   -5,
+          -5,    0,    0,    0,    0,    0,    0,   -5,
+          -5,    0,    0,    0,    0,    0,    0,   -5,
+           5,   10,   10,   10,   10,   10,   10,    5,
+           0,    0,    0,    0,    0,    0,    0,    0
+    };
 
-static constexpr int PST_ROOK_EG[64] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                                        5, 5, 5, 5, 5, 5, 5, 5, 0, 0, 0, 0, 0, 0, 0, 0};
+    static constexpr int PST_ROOK_EG[64] = {
+           0,    0,    0,    0,    0,    0,    0,    0,
+           0,    0,    0,    0,    0,    0,    0,    0,
+           0,    0,    0,    0,    0,    0,    0,    0,
+           0,    0,    0,    0,    0,    0,    0,    0,
+           0,    0,    0,    0,    0,    0,    0,    0,
+           0,    0,    0,    0,    0,    0,    0,    0,
+           5,    5,    5,    5,    5,    5,    5,    5,
+           0,    0,    0,    0,    0,    0,    0,    0
+    };
 
-static constexpr int PST_QUEEN_MG[64] = {
-    -20, -10, -10, -5, -5, -10, -10, -20, -10, 0,   5,   0,  0,  0,   0,   -10,
-    -10, 5,   5,   5,  5,  5,   0,   -10, 0,   0,   5,   5,  5,  5,   0,   -5,
-    -5,  0,   5,   5,  5,  5,   0,   -5,  -10, 0,   5,   5,  5,  5,   0,   -10,
-    -10, 0,   0,   0,  0,  0,   0,   -10, -20, -10, -10, -5, -5, -10, -10, -20};
+    static constexpr int PST_QUEEN_MG[64] = {
+         -20,  -10,  -10,   -5,   -5,  -10,  -10,  -20,
+         -10,    0,    5,    0,    0,    0,    0,  -10,
+         -10,    5,    5,    5,    5,    5,    0,  -10,
+           0,    0,    5,    5,    5,    5,    0,   -5,
+          -5,    0,    5,    5,    5,    5,    0,   -5,
+         -10,    0,    5,    5,    5,    5,    0,  -10,
+         -10,    0,    0,    0,    0,    0,    0,  -10,
+         -20,  -10,  -10,   -5,   -5,  -10,  -10,  -20
+    };
 
-static constexpr int PST_QUEEN_EG[64] = {
-    -20, -10, -10, -5, -5, -10, -10, -20, -10, 0,   0,   0,  0,  0,   0,   -10,
-    -10, 0,   5,   5,  5,  5,   0,   -10, -5,  0,   5,   5,  5,  5,   0,   -5,
-    -5,  0,   5,   5,  5,  5,   0,   -5,  -10, 0,   5,   5,  5,  5,   0,   -10,
-    -10, 0,   0,   0,  0,  0,   0,   -10, -20, -10, -10, -5, -5, -10, -10, -20};
+    static constexpr int PST_QUEEN_EG[64] = {
+         -20,  -10,  -10,   -5,   -5,  -10,  -10,  -20,
+         -10,    0,    0,    0,    0,    0,    0,  -10,
+         -10,    0,    5,    5,    5,    5,    0,  -10,
+          -5,    0,    5,    5,    5,    5,    0,   -5,
+          -5,    0,    5,    5,    5,    5,    0,   -5,
+         -10,    0,    5,    5,    5,    5,    0,  -10,
+         -10,    0,    0,    0,    0,    0,    0,  -10,
+         -20,  -10,  -10,   -5,   -5,  -10,  -10,  -20
+    };
 
-static constexpr int PST_KING_MG[64] = {
-    20,  30,  10,  0,   0,   10,  30,  20,  20,  20,  0,   0,   0,   0,   20,  20,
-    -10, -20, -20, -20, -20, -20, -20, -10, -20, -30, -30, -40, -40, -30, -30, -20,
-    -30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30,
-    -30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30};
+    static constexpr int PST_KING_MG[64] = {
+          20,   30,   10,    0,    0,   10,   30,   20,
+          20,   20,    0,    0,    0,    0,   20,   20,
+         -10,  -20,  -20,  -20,  -20,  -20,  -20,  -10,
+         -20,  -30,  -30,  -40,  -40,  -30,  -30,  -20,
+         -30,  -40,  -40,  -50,  -50,  -40,  -40,  -30,
+         -30,  -40,  -40,  -50,  -50,  -40,  -40,  -30,
+         -30,  -40,  -40,  -50,  -50,  -40,  -40,  -30,
+         -30,  -40,  -40,  -50,  -50,  -40,  -40,  -30
+    };
 
-static constexpr int PST_KING_EG[64] = {
-    -50, -30, -30, -30, -30, -30, -30, -50, -30, -30, 0,   0,   0,   0,   -30, -30,
-    -30, -10, 20,  30,  30,  20,  -10, -30, -30, -10, 30,  40,  40,  30,  -10, -30,
-    -30, -10, 30,  40,  40,  30,  -10, -30, -30, -10, 20,  30,  30,  20,  -10, -30,
-    -30, -20, -10, 0,   0,   -10, -20, -30, -50, -40, -30, -20, -20, -30, -40, -50};
+    static constexpr int PST_KING_EG[64] = {
+         -50,  -30,  -30,  -30,  -30,  -30,  -30,  -50,
+         -30,  -30,    0,    0,    0,    0,  -30,  -30,
+         -30,  -10,   20,   30,   30,   20,  -10,  -30,
+         -30,  -10,   30,   40,   40,   30,  -10,  -30,
+         -30,  -10,   30,   40,   40,   30,  -10,  -30,
+         -30,  -10,   20,   30,   30,   20,  -10,  -30,
+         -30,  -20,  -10,    0,    0,  -10,  -20,  -30,
+         -50,  -40,  -30,  -20,  -20,  -30,  -40,  -50
+    };
 
-static constexpr const int* PST_MG[] = {PST_PAWN_MG, PST_KNIGHT_MG, PST_BISHOP_MG,
-                                        PST_ROOK_MG, PST_QUEEN_MG,  PST_KING_MG};
-static constexpr const int* PST_EG[] = {PST_PAWN_EG, PST_KNIGHT_EG, PST_BISHOP_EG,
-                                        PST_ROOK_EG, PST_QUEEN_EG,  PST_KING_EG};
+    static constexpr const int* PST_MG[] = {PST_PAWN_MG, PST_KNIGHT_MG, PST_BISHOP_MG,
+                                             PST_ROOK_MG, PST_QUEEN_MG, PST_KING_MG};
+    static constexpr const int* PST_EG[] = {PST_PAWN_EG, PST_KNIGHT_EG, PST_BISHOP_EG,
+                                             PST_ROOK_EG, PST_QUEEN_EG, PST_KING_EG};
 
-namespace pawn_structure {
-static constexpr int PASSED_BASE = 10;
-static constexpr int PASSED_RANK_SCALE = 3;
-static constexpr int PASSED_MG_DIVISOR = 2;
-static constexpr int ISOLATED_MG = 15;
-static constexpr int ISOLATED_EG = 20;
-static constexpr int DOUBLED_MG = 10;
-static constexpr int DOUBLED_EG = 15;
-}  // namespace pawn_structure
+    namespace pawn_structure {
+        static constexpr int PASSED_BASE = 10;
+        static constexpr int PASSED_RANK_SCALE = 3;
+        static constexpr int PASSED_MG_DIVISOR = 2;
+        static constexpr int ISOLATED_MG = 15;
+        static constexpr int ISOLATED_EG = 20;
+        static constexpr int DOUBLED_MG = 10;
+        static constexpr int DOUBLED_EG = 15;
+    }  // namespace pawn_structure
 
-namespace rook_file {
-static constexpr int OPEN_MG = 15;
-static constexpr int OPEN_EG = 10;
-static constexpr int SEMI_OPEN_MG = 8;
-static constexpr int SEMI_OPEN_EG = 5;
-}  // namespace rook_file
+    namespace rook_file {
+        static constexpr int OPEN_MG = 15;
+        static constexpr int OPEN_EG = 10;
+        static constexpr int SEMI_OPEN_MG = 8;
+        static constexpr int SEMI_OPEN_EG = 5;
+    }  // namespace rook_file
 
-namespace bishop_pair {
-static constexpr int BONUS_MG = 30;
-static constexpr int BONUS_EG = 50;
-}  // namespace bishop_pair
+    namespace bishop_pair {
+        static constexpr int BONUS_MG = 30;
+        static constexpr int BONUS_EG = 50;
+    }  // namespace bishop_pair
 
-namespace king_safety {
-static constexpr int SHIELD_BONUS_MG = 10;
-}  // namespace king_safety
+    namespace king_safety {
+        static constexpr int SHIELD_BONUS_MG = 10;
+    }  // namespace king_safety
 
-static constexpr float SIGMOID_SCALE = 400.0f;
+    static constexpr float SIGMOID_SCALE = 400.0f;
 }  // namespace eval
 
 namespace self_play {
-static constexpr int NUM_GAMES = 20000;
-static constexpr int SEARCH_DEPTH = 6;
-static constexpr int NUM_THREADS = 16;
-static constexpr int SEARCH_TIME_MS = 500;
-static constexpr int RANDOM_PLIES = 4;
-static constexpr int SOFTMAX_PLIES = 30;
-static constexpr float SOFTMAX_TEMPERATURE = 500.0f;
-static constexpr int DEFAULT_TIME_CONTROL_MS = 60000;
-static constexpr int PROGRESS_LOG_INTERVAL = 10;
+    static constexpr int NUM_GAMES = 20000;
+    static constexpr int SEARCH_DEPTH = 6;
+    static constexpr int NUM_THREADS = 16;
+    static constexpr int SEARCH_TIME_MS = 500;
+    static constexpr int RANDOM_PLIES = 4;
+    static constexpr int SOFTMAX_PLIES = 20;
+    static constexpr float SOFTMAX_TEMPERATURE = 300.0f;
+    static constexpr int DEFAULT_TIME_CONTROL_MS = 60000;
+    static constexpr int PROGRESS_LOG_INTERVAL = 10;
 }  // namespace self_play
 
 namespace compare {
-static constexpr int NUM_GAMES = 200;
-static constexpr int PROGRESS_LOG_INTERVAL = 10;
+    static constexpr int NUM_GAMES = 200;
+    static constexpr int PROGRESS_LOG_INTERVAL = 10;
 }  // namespace compare
 
 }  // namespace config

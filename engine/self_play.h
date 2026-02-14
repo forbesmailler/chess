@@ -51,6 +51,7 @@ class SelfPlayGenerator {
 
     static TrainingPosition encode_position(const ChessBoard& board, float eval,
                                             uint8_t result, uint16_t ply);
+    static ChessBoard decode_position(const TrainingPosition& pos);
     static void write_position(std::ofstream& out, const TrainingPosition& pos);
     static bool read_position(std::ifstream& in, TrainingPosition& pos);
 
@@ -67,6 +68,9 @@ class SelfPlayGenerator {
     //                 7=bP, 8=bN, 9=bB, 10=bR, 11=bQ, 12=bK
     static uint8_t encode_piece(const chess::Piece& piece);
 };
+
+void relabel_data(const std::string& input_file, const std::string& nnue_weights,
+                  const std::string& output_file);
 
 class ModelComparator {
    public:

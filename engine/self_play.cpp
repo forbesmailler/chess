@@ -8,6 +8,7 @@
 #include <thread>
 
 #include "chess_engine.h"
+#include "nnue_model.h"
 
 SelfPlayGenerator::SelfPlayGenerator(const Config& config) : config(config) {}
 
@@ -63,6 +64,104 @@ void SelfPlayGenerator::write_position(std::ofstream& out,
 bool SelfPlayGenerator::read_position(std::ifstream& in, TrainingPosition& pos) {
     in.read(reinterpret_cast<char*>(&pos), sizeof(pos));
     return in.good();
+}
+
+ChessBoard SelfPlayGenerator::decode_position(const TrainingPosition& pos) {
+    // Nibble → FEN char: 0=empty, 1-6=PNBRQK, 7-12=pnbrqk
+    static const char NIBBLE_CHAR[] = {'\0', 'P', 'N', 'B', 'R', 'Q', 'K',
+                                       'p',  'n', 'b', 'r', 'q', 'k'};
+
+    std::string fen;
+    fen.reserve(80);
+
+    for (int rank = 7; rank >= 0; --rank) {
+        int empty = 0;
+        for (int file = 0; file < 8; ++file) {
+            int sq = rank * 8 + file;
+            uint8_t byte = pos.piece_placement[sq / 2];
+            uint8_t nibble = (sq % 2 == 0) ? (byte >> 4) : (byte & 0x0F);
+            if (nibble == 0) {
+                ++empty;
+            } else {
+                if (empty > 0) {
+                    fen += static_cast<char>('0' + empty);
+                    empty = 0;
+                }
+                fen += NIBBLE_CHAR[nibble];
+            }
+        }
+        if (empty > 0) fen += static_cast<char>('0' + empty);
+        if (rank > 0) fen += '/';
+    }
+
+    fen += (pos.side_to_move == 0) ? " w " : " b ";
+
+    // Castling: bit3=K, bit2=Q, bit1=k, bit0=q
+    std::string castling;
+    if (pos.castling & 0x08) castling += 'K';
+    if (pos.castling & 0x04) castling += 'Q';
+    if (pos.castling & 0x02) castling += 'k';
+    if (pos.castling & 0x01) castling += 'q';
+    fen += castling.empty() ? "-" : castling;
+
+    // En passant
+    if (pos.en_passant_file < 8) {
+        fen += ' ';
+        fen += static_cast<char>('a' + pos.en_passant_file);
+        fen += (pos.side_to_move == 0) ? '6' : '3';
+    } else {
+        fen += " -";
+    }
+
+    fen += " 0 ";
+    fen += std::to_string(pos.ply_number / 2 + 1);
+
+    return ChessBoard(fen);
+}
+
+void relabel_data(const std::string& input_file, const std::string& nnue_weights,
+                  const std::string& output_file) {
+    auto model = std::make_shared<NNUEModel>();
+    if (!model->load_weights(nnue_weights)) {
+        std::cerr << "Failed to load NNUE weights: " << nnue_weights << std::endl;
+        return;
+    }
+    std::cout << "Loaded NNUE model: " << nnue_weights << std::endl;
+
+    std::ifstream in(input_file, std::ios::binary);
+    if (!in) {
+        std::cerr << "Failed to open input: " << input_file << std::endl;
+        return;
+    }
+
+    std::ofstream out(output_file, std::ios::binary);
+    if (!out) {
+        std::cerr << "Failed to open output: " << output_file << std::endl;
+        return;
+    }
+
+    TrainingPosition pos;
+    int64_t count = 0;
+    auto start = std::chrono::steady_clock::now();
+
+    while (SelfPlayGenerator::read_position(in, pos)) {
+        ChessBoard board = SelfPlayGenerator::decode_position(pos);
+        float white_eval = model->predict(board);
+        pos.search_eval = (pos.side_to_move == 0) ? white_eval : -white_eval;
+        SelfPlayGenerator::write_position(out, pos);
+        ++count;
+        if (count % 1000000 == 0) {
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - start);
+            std::cout << "Relabeled " << count << " positions (" << elapsed.count()
+                      << "s)" << std::endl;
+        }
+    }
+
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::steady_clock::now() - start);
+    std::cout << "Relabel complete: " << count << " positions in " << elapsed.count()
+              << "s" << std::endl;
 }
 
 void SelfPlayGenerator::generate() {

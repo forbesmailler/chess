@@ -667,6 +667,9 @@ int main(int argc, char* argv[]) {
                   << " --compare <old_weights|handcrafted> <new_weights>"
                      " [num_games] [output_file] [threads]"
                   << std::endl;
+        std::cout << "       " << argv[0]
+                  << " --relabel <nnue_weights> <input_file> [output_file]"
+                  << std::endl;
         std::cout << std::endl;
         std::cout << "Set LICHESS_TOKEN environment variable before running."
                   << std::endl;
@@ -704,6 +707,26 @@ int main(int argc, char* argv[]) {
         generator.generate();
         std::cout << "Total positions: " << generator.get_total_positions()
                   << std::endl;
+        return 0;
+    }
+
+    if (first_arg == "--relabel") {
+        if (argc < 4) {
+            std::cerr << "Usage: " << argv[0]
+                      << " --relabel <nnue_weights> <input_file> [output_file]"
+                      << std::endl;
+            return 1;
+        }
+        std::string nnue_weights = argv[2];
+        std::string input = argv[3];
+        std::string output = (argc > 4) ? argv[4] : input;
+
+        std::cout << "=== Relabel Training Data ===" << std::endl;
+        std::cout << "NNUE weights: " << nnue_weights << std::endl;
+        std::cout << "Input: " << input << std::endl;
+        std::cout << "Output: " << output << std::endl;
+
+        relabel_data(input, nnue_weights, output);
         return 0;
     }
 

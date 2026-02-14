@@ -14,5 +14,7 @@ build/
 *.pyc
 *.env
 *training_data.bin
+*training_data_relabeled.bin
+*.bak
 *.pt
 nul

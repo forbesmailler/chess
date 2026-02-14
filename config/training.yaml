@@ -4,8 +4,8 @@ self_play:
   output_file: "training_data.bin"
   search_time_ms: 500
   random_plies: 4
-  softmax_plies: 30
-  softmax_temperature: 500.0
+  softmax_plies: 20
+  softmax_temperature: 300.0
   default_time_control_ms: 60000
   progress_log_interval: 10
 
@@ -14,7 +14,7 @@ training:
   batch_size: 20000
   lr: 0.001
   patience: 5
-  eval_weight: 0.5
+  eval_weight: 0.75
   val_split: 0.1
   random_seed: 42
   max_data_workers: 4
