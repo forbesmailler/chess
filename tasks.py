@@ -79,6 +79,9 @@ def prepare(c):
         "batch_size": f"Training batch size (default: {_train_cfg['batch_size']})",
         "eval_weight": f"Search eval vs game result blend (default: {_train_cfg['eval_weight']})",
         "compare_games": f"Comparison games (default: {_cmp.get('num_games', 100)})",
+        "train_only": "Skip self-play; just train, export, compare, and archive",
+        "compare_only": "Skip self-play and training; just compare candidate vs current best",
+        "candidate": "Candidate weights path (required with --compare-only)",
     }
 )
 def train(
@@ -91,16 +94,26 @@ def train(
     batch_size=_train_cfg["batch_size"],
     eval_weight=_train_cfg["eval_weight"],
     compare_games=_cmp.get("num_games", 100),
+    train_only=False,
+    compare_only=False,
+    candidate=None,
 ):
     """Prepare then run continuous RL loop (Ctrl+C to stop)."""
     prepare(c)
-    c.run(
+    cmd = (
         f"python -u scripts/train_loop.py"
         f" --games {games} --depth {depth} --threads {threads}"
         f" --data {data}"
         f" --epochs {epochs} --batch-size {batch_size}"
         f" --eval-weight {eval_weight} --compare-games {compare_games}"
     )
+    if train_only:
+        cmd += " --train-only"
+    if compare_only:
+        cmd += " --compare-only"
+    if candidate:
+        cmd += f" --candidate {candidate}"
+    c.run(cmd)
 
 
 _vps = _dep["vps"]

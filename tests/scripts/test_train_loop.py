@@ -598,7 +598,7 @@ class TestRunFunction:
 class TestDataCapping:
     def test_compute_param_count(self):
         count = train_loop.compute_param_count()
-        assert count == 773 * 256 + 256 + 256 * 32 + 32 + 32 * 1 + 1
+        assert count == 773 * 256 + 256 + 256 * 64 + 64 + 64 * 1 + 1
 
     def test_cap_noop_when_under_limit(self, tmp_path):
         data = tmp_path / "data.bin"

@@ -54,6 +54,7 @@ def generate() -> str:
     for k in (
         "input_size",
         "hidden1_size",
+        "max_hidden1_size",
         "hidden2_size",
         "max_hidden2_size",
         "output_size",

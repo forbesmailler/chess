@@ -13,11 +13,13 @@ class NNUEModel {
    public:
     static constexpr int INPUT_SIZE = config::nnue::INPUT_SIZE;
     static constexpr int HIDDEN1_SIZE = config::nnue::HIDDEN1_SIZE;
+    static constexpr int MAX_HIDDEN1_SIZE = config::nnue::MAX_HIDDEN1_SIZE;
     static constexpr int HIDDEN2_SIZE = config::nnue::HIDDEN2_SIZE;
     static constexpr int MAX_HIDDEN2_SIZE = config::nnue::MAX_HIDDEN2_SIZE;
     static constexpr int OUTPUT_SIZE = config::nnue::OUTPUT_SIZE;
-    // Padded HIDDEN1_SIZE rounded up to multiple of 16 for AVX2 int16 ops
+    // Padded sizes rounded up to multiple of 16 for AVX2 int16 ops
     static constexpr int H1_PADDED = (HIDDEN1_SIZE + 15) & ~15;
+    static constexpr int MAX_H1_PADDED = (MAX_HIDDEN1_SIZE + 15) & ~15;
 
     NNUEModel() = default;
 
@@ -28,6 +30,7 @@ class NNUEModel {
     float predict(const ChessBoard& board) const;
 
     bool is_loaded() const { return loaded; }
+    int hidden1_size() const { return hidden1_size_; }
     int hidden2_size() const { return hidden2_size_; }
     int param_count() const;
 
@@ -35,10 +38,10 @@ class NNUEModel {
     std::vector<int> get_active_features(const ChessBoard& board) const;
 
     struct Accumulator {
-        alignas(32) int16_t white[H1_PADDED];  // White's perspective
-        alignas(32) int16_t black[H1_PADDED];  // Black's perspective
-        int castling_hash = 0;                 // castlingRights().hashIndex()
-        bool has_ep = false;                   // en passant was available
+        alignas(32) int16_t white[MAX_H1_PADDED];  // White's perspective
+        alignas(32) int16_t black[MAX_H1_PADDED];  // Black's perspective
+        int castling_hash = 0;                     // castlingRights().hashIndex()
+        bool has_ep = false;                       // en passant was available
         bool computed = false;
     };
 
@@ -90,6 +93,8 @@ class NNUEModel {
     static constexpr float DEQUANT_SCALE = 1.0f / (Q1_SCALE * Q2_SCALE);
 
     bool loaded = false;
+    int hidden1_size_ = HIDDEN1_SIZE;
+    int h1_padded_ = H1_PADDED;
     int hidden2_size_ = HIDDEN2_SIZE;
 
     static constexpr int ACC_STACK_SIZE = 128;

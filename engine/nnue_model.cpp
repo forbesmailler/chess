@@ -65,12 +65,18 @@ bool NNUEModel::load_weights(std::istream& file) {
     file.read(reinterpret_cast<char*>(&hidden2_size), 4);
     file.read(reinterpret_cast<char*>(&output_size), 4);
 
-    if (input_size != INPUT_SIZE || hidden1_size != HIDDEN1_SIZE ||
-        output_size != OUTPUT_SIZE) {
+    if (input_size != INPUT_SIZE || output_size != OUTPUT_SIZE) {
         std::cerr << "NNUE architecture mismatch: expected input=" << INPUT_SIZE
-                  << " h1=" << HIDDEN1_SIZE << " output=" << OUTPUT_SIZE << ", got "
-                  << input_size << "/" << hidden1_size << "/" << hidden2_size << "/"
-                  << output_size << std::endl;
+                  << " output=" << OUTPUT_SIZE << ", got " << input_size << "/"
+                  << hidden1_size << "/" << hidden2_size << "/" << output_size
+                  << std::endl;
+        return false;
+    }
+    if (hidden1_size > static_cast<uint32_t>(MAX_HIDDEN1_SIZE) || hidden1_size == 0 ||
+        hidden1_size % 16 != 0) {
+        std::cerr << "NNUE hidden1_size=" << hidden1_size
+                  << " invalid (must be 16..MAX_HIDDEN1_SIZE=" << MAX_HIDDEN1_SIZE
+                  << ", multiple of 16)" << std::endl;
         return false;
     }
     if (hidden2_size > static_cast<uint32_t>(MAX_HIDDEN2_SIZE) || hidden2_size == 0 ||
@@ -80,6 +86,8 @@ bool NNUEModel::load_weights(std::istream& file) {
                   << ", multiple of 4)" << std::endl;
         return false;
     }
+    hidden1_size_ = static_cast<int>(hidden1_size);
+    h1_padded_ = (hidden1_size_ + 15) & ~15;
     hidden2_size_ = static_cast<int>(hidden2_size);
 
     auto read_floats = [&file](size_t count) -> std::vector<float> {
@@ -88,9 +96,9 @@ bool NNUEModel::load_weights(std::istream& file) {
         return v;
     };
 
-    auto w1_f = read_floats(INPUT_SIZE * HIDDEN1_SIZE);
-    auto b1_f = read_floats(HIDDEN1_SIZE);
-    auto w2_f = read_floats(HIDDEN1_SIZE * hidden2_size_);
+    auto w1_f = read_floats(INPUT_SIZE * hidden1_size_);
+    auto b1_f = read_floats(hidden1_size_);
+    auto w2_f = read_floats(hidden1_size_ * hidden2_size_);
     auto b2_f = read_floats(hidden2_size_);
     auto w3_f = read_floats(hidden2_size_ * OUTPUT_SIZE);
     auto b3_f = read_floats(OUTPUT_SIZE);
@@ -100,27 +108,27 @@ bool NNUEModel::load_weights(std::istream& file) {
         return false;
     }
 
-    // Quantize w1 to int16 with padding to H1_PADDED
-    w1_q = alloc_aligned<int16_t>(INPUT_SIZE * H1_PADDED);
+    // Quantize w1 to int16 with padding to h1_padded_
+    w1_q = alloc_aligned<int16_t>(INPUT_SIZE * h1_padded_);
     for (int i = 0; i < INPUT_SIZE; ++i) {
-        for (int j = 0; j < HIDDEN1_SIZE; ++j)
-            w1_q[i * H1_PADDED + j] =
-                quantize_clamp(w1_f[i * HIDDEN1_SIZE + j], Q1_SCALE);
-        for (int j = HIDDEN1_SIZE; j < H1_PADDED; ++j) w1_q[i * H1_PADDED + j] = 0;
+        for (int j = 0; j < hidden1_size_; ++j)
+            w1_q[i * h1_padded_ + j] =
+                quantize_clamp(w1_f[i * hidden1_size_ + j], Q1_SCALE);
+        for (int j = hidden1_size_; j < h1_padded_; ++j) w1_q[i * h1_padded_ + j] = 0;
     }
 
-    b1_q = alloc_aligned<int16_t>(H1_PADDED);
-    for (int j = 0; j < HIDDEN1_SIZE; ++j) b1_q[j] = quantize_clamp(b1_f[j], Q1_SCALE);
-    for (int j = HIDDEN1_SIZE; j < H1_PADDED; ++j) b1_q[j] = 0;
+    b1_q = alloc_aligned<int16_t>(h1_padded_);
+    for (int j = 0; j < hidden1_size_; ++j) b1_q[j] = quantize_clamp(b1_f[j], Q1_SCALE);
+    for (int j = hidden1_size_; j < h1_padded_; ++j) b1_q[j] = 0;
 
-    // Quantize w2 and transpose: (HIDDEN1_SIZE x hidden2_size_) → (hidden2_size_ x
-    // H1_PADDED)
-    w2_q = alloc_aligned<int16_t>(hidden2_size_ * H1_PADDED);
+    // Quantize w2 and transpose: (hidden1_size_ x hidden2_size_) → (hidden2_size_ x
+    // h1_padded_)
+    w2_q = alloc_aligned<int16_t>(hidden2_size_ * h1_padded_);
     for (int j = 0; j < hidden2_size_; ++j) {
-        for (int i = 0; i < HIDDEN1_SIZE; ++i)
-            w2_q[j * H1_PADDED + i] =
+        for (int i = 0; i < hidden1_size_; ++i)
+            w2_q[j * h1_padded_ + i] =
                 quantize_clamp(w2_f[i * hidden2_size_ + j], Q2_SCALE);
-        for (int i = HIDDEN1_SIZE; i < H1_PADDED; ++i) w2_q[j * H1_PADDED + i] = 0;
+        for (int i = hidden1_size_; i < h1_padded_; ++i) w2_q[j * h1_padded_ + i] = 0;
     }
 
     size_t b2_pad = (hidden2_size_ + 7) & ~size_t(7);
@@ -193,8 +201,8 @@ std::vector<int> NNUEModel::get_active_features(const ChessBoard& board) const {
 float NNUEModel::predict(const ChessBoard& board) const {
     if (!loaded) return 0.0f;
 
-    alignas(32) int16_t h1_q[H1_PADDED];
-    std::memcpy(h1_q, b1_q.get(), H1_PADDED * sizeof(int16_t));
+    alignas(32) int16_t h1_q[MAX_H1_PADDED];
+    std::memcpy(h1_q, b1_q.get(), h1_padded_ * sizeof(int16_t));
 
     // Fused feature extraction + Layer 1 sparse accumulation.
     // Accumulate directly as features are discovered (no intermediate array).
@@ -202,17 +210,18 @@ float NNUEModel::predict(const ChessBoard& board) const {
     bool white_to_move = b.sideToMove() == chess::Color::WHITE;
     const int16_t* w1 = w1_q.get();
 
+    const int h1p = h1_padded_;
     auto acc_add = [&](int feature) {
-        const int16_t* row = w1 + feature * H1_PADDED;
+        const int16_t* row = w1 + feature * h1p;
 #ifdef __AVX2__
-        for (int j = 0; j < H1_PADDED; j += 16) {
+        for (int j = 0; j < h1p; j += 16) {
             __m256i h = _mm256_load_si256(reinterpret_cast<const __m256i*>(&h1_q[j]));
             __m256i r = _mm256_load_si256(reinterpret_cast<const __m256i*>(&row[j]));
             _mm256_store_si256(reinterpret_cast<__m256i*>(&h1_q[j]),
                                _mm256_adds_epi16(h, r));
         }
 #else
-        for (int j = 0; j < H1_PADDED; j += 8) {
+        for (int j = 0; j < h1p; j += 8) {
             __m128i h = _mm_load_si128(reinterpret_cast<const __m128i*>(&h1_q[j]));
             __m128i r = _mm_load_si128(reinterpret_cast<const __m128i*>(&row[j]));
             _mm_store_si128(reinterpret_cast<__m128i*>(&h1_q[j]), _mm_adds_epi16(h, r));
@@ -272,7 +281,7 @@ void NNUEModel::compute_accumulator(const ChessBoard& board, int16_t* acc,
     const auto& b = board.board;
     const int16_t* w1 = w1_q.get();
 
-    std::memcpy(acc, b1_q.get(), H1_PADDED * sizeof(int16_t));
+    std::memcpy(acc, b1_q.get(), h1_padded_ * sizeof(int16_t));
 
     static constexpr chess::PieceType PIECE_TYPES[] = {
         chess::PieceType::PAWN, chess::PieceType::KNIGHT, chess::PieceType::BISHOP,
@@ -317,16 +326,16 @@ void NNUEModel::compute_accumulator(const ChessBoard& board, int16_t* acc,
 }
 
 void NNUEModel::accumulate_add(int16_t* acc, int feature) const {
-    const int16_t* row = w1_q.get() + feature * H1_PADDED;
+    const int16_t* row = w1_q.get() + feature * h1_padded_;
 #ifdef __AVX2__
-    for (int j = 0; j < H1_PADDED; j += 16) {
+    for (int j = 0; j < h1_padded_; j += 16) {
         __m256i h = _mm256_load_si256(reinterpret_cast<const __m256i*>(&acc[j]));
         __m256i r = _mm256_load_si256(reinterpret_cast<const __m256i*>(&row[j]));
         _mm256_store_si256(reinterpret_cast<__m256i*>(&acc[j]),
                            _mm256_adds_epi16(h, r));
     }
 #else
-    for (int j = 0; j < H1_PADDED; j += 8) {
+    for (int j = 0; j < h1_padded_; j += 8) {
         __m128i h = _mm_load_si128(reinterpret_cast<const __m128i*>(&acc[j]));
         __m128i r = _mm_load_si128(reinterpret_cast<const __m128i*>(&row[j]));
         _mm_store_si128(reinterpret_cast<__m128i*>(&acc[j]), _mm_adds_epi16(h, r));
@@ -335,16 +344,16 @@ void NNUEModel::accumulate_add(int16_t* acc, int feature) const {
 }
 
 void NNUEModel::accumulate_sub(int16_t* acc, int feature) const {
-    const int16_t* row = w1_q.get() + feature * H1_PADDED;
+    const int16_t* row = w1_q.get() + feature * h1_padded_;
 #ifdef __AVX2__
-    for (int j = 0; j < H1_PADDED; j += 16) {
+    for (int j = 0; j < h1_padded_; j += 16) {
         __m256i h = _mm256_load_si256(reinterpret_cast<const __m256i*>(&acc[j]));
         __m256i r = _mm256_load_si256(reinterpret_cast<const __m256i*>(&row[j]));
         _mm256_store_si256(reinterpret_cast<__m256i*>(&acc[j]),
                            _mm256_subs_epi16(h, r));
     }
 #else
-    for (int j = 0; j < H1_PADDED; j += 8) {
+    for (int j = 0; j < h1_padded_; j += 8) {
         __m128i h = _mm_load_si128(reinterpret_cast<const __m128i*>(&acc[j]));
         __m128i r = _mm_load_si128(reinterpret_cast<const __m128i*>(&row[j]));
         _mm_store_si128(reinterpret_cast<__m128i*>(&acc[j]), _mm_subs_epi16(h, r));
@@ -366,8 +375,8 @@ void NNUEModel::push_accumulator() const {
     if (acc_ply < 0 || acc_ply + 1 >= ACC_STACK_SIZE) return;
     auto& src = acc_stack[acc_ply];
     auto& dst = acc_stack[acc_ply + 1];
-    std::memcpy(dst.white, src.white, H1_PADDED * sizeof(int16_t));
-    std::memcpy(dst.black, src.black, H1_PADDED * sizeof(int16_t));
+    std::memcpy(dst.white, src.white, h1_padded_ * sizeof(int16_t));
+    std::memcpy(dst.black, src.black, h1_padded_ * sizeof(int16_t));
     dst.castling_hash = src.castling_hash;
     dst.has_ep = src.has_ep;
     dst.computed = src.computed;
@@ -547,12 +556,14 @@ void NNUEModel::update_accumulator_null_move() const {
 }
 
 int NNUEModel::param_count() const {
-    return INPUT_SIZE * HIDDEN1_SIZE + HIDDEN1_SIZE + HIDDEN1_SIZE * hidden2_size_ +
+    return INPUT_SIZE * hidden1_size_ + hidden1_size_ + hidden1_size_ * hidden2_size_ +
            hidden2_size_ + hidden2_size_ * OUTPUT_SIZE + OUTPUT_SIZE;
 }
 
 float NNUEModel::forward_from_accumulator(const int16_t* h1_acc) const {
     alignas(32) float h2[MAX_HIDDEN2_SIZE] = {};
+
+    const int h1p = h1_padded_;
 
     // Fused ClippedReLU + Layer 2: clamp h1 on-the-fly during dot product
     // (no copy, no separate clamp pass)
@@ -565,11 +576,11 @@ float NNUEModel::forward_from_accumulator(const int16_t* h1_acc) const {
             __m256i s1 = _mm256_setzero_si256();
             __m256i s2 = _mm256_setzero_si256();
             __m256i s3 = _mm256_setzero_si256();
-            const int16_t* r0 = w2_q.get() + (j + 0) * H1_PADDED;
-            const int16_t* r1 = w2_q.get() + (j + 1) * H1_PADDED;
-            const int16_t* r2 = w2_q.get() + (j + 2) * H1_PADDED;
-            const int16_t* r3 = w2_q.get() + (j + 3) * H1_PADDED;
-            for (int i = 0; i < H1_PADDED; i += 16) {
+            const int16_t* r0 = w2_q.get() + (j + 0) * h1p;
+            const int16_t* r1 = w2_q.get() + (j + 1) * h1p;
+            const int16_t* r2 = w2_q.get() + (j + 2) * h1p;
+            const int16_t* r3 = w2_q.get() + (j + 3) * h1p;
+            for (int i = 0; i < h1p; i += 16) {
                 __m256i h =
                     _mm256_load_si256(reinterpret_cast<const __m256i*>(&h1_acc[i]));
                 h = _mm256_max_epi16(zero, _mm256_min_epi16(qmax, h));
@@ -609,8 +620,8 @@ float NNUEModel::forward_from_accumulator(const int16_t* h1_acc) const {
         __m128i qmax = _mm_set1_epi16(static_cast<int16_t>(Q1_SCALE));
         for (int j = 0; j < hidden2_size_; ++j) {
             __m128i sum_vec = _mm_setzero_si128();
-            const int16_t* row = w2_q.get() + j * H1_PADDED;
-            for (int i = 0; i < H1_PADDED; i += 8) {
+            const int16_t* row = w2_q.get() + j * h1p;
+            for (int i = 0; i < h1p; i += 8) {
                 __m128i h =
                     _mm_load_si128(reinterpret_cast<const __m128i*>(&h1_acc[i]));
                 h = _mm_max_epi16(zero, _mm_min_epi16(qmax, h));

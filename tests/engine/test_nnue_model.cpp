@@ -17,9 +17,10 @@
 namespace {
 
 std::string create_test_weights_buffer(unsigned int seed = 42,
-                                       int h2_override = config::nnue::HIDDEN2_SIZE) {
+                                       int h2_override = config::nnue::HIDDEN2_SIZE,
+                                       int h1_override = config::nnue::HIDDEN1_SIZE) {
     constexpr int INPUT = config::nnue::INPUT_SIZE;
-    constexpr int H1 = config::nnue::HIDDEN1_SIZE;
+    int H1 = h1_override;
     int H2 = h2_override;
     constexpr int OUTPUT = config::nnue::OUTPUT_SIZE;
 
@@ -597,6 +598,79 @@ TEST(NNUEModel, ParamCount) {
     ASSERT_TRUE(m64.load_weights(s64));
     EXPECT_EQ(m64.param_count(), 773 * 256 + 256 + 256 * 64 + 64 + 64 * 1 + 1);
     EXPECT_GT(m64.param_count(), m32.param_count());
+}
+
+// --- Variable HIDDEN1_SIZE tests ---
+
+TEST(NNUEModel, LoadHidden1Size384) {
+    std::string buf = create_test_weights_buffer(42, config::nnue::HIDDEN2_SIZE, 384);
+    std::istringstream stream(buf);
+    NNUEModel model;
+    ASSERT_TRUE(model.load_weights(stream));
+    EXPECT_TRUE(model.is_loaded());
+    EXPECT_EQ(model.hidden1_size(), 384);
+
+    ChessBoard board;
+    float eval = model.predict(board);
+    EXPECT_TRUE(std::isfinite(eval));
+    EXPECT_LE(std::abs(eval), config::MATE_VALUE);
+}
+
+TEST(NNUEModel, LoadHidden1SizeTooLarge) {
+    int too_large = config::nnue::MAX_HIDDEN1_SIZE + 16;
+    std::string buf =
+        create_test_weights_buffer(42, config::nnue::HIDDEN2_SIZE, too_large);
+    std::istringstream stream(buf);
+    NNUEModel model;
+    EXPECT_FALSE(model.load_weights(stream));
+    EXPECT_FALSE(model.is_loaded());
+}
+
+TEST(NNUEModel, LoadHidden1SizeNotMultipleOf16) {
+    std::string buf = create_test_weights_buffer(42, config::nnue::HIDDEN2_SIZE, 100);
+    std::istringstream stream(buf);
+    NNUEModel model;
+    EXPECT_FALSE(model.load_weights(stream));
+}
+
+TEST(NNUEModel, ParamCountWithDifferentH1) {
+    std::string buf256 = create_test_weights_buffer(42, 32, 256);
+    std::istringstream s256(buf256);
+    NNUEModel m256;
+    ASSERT_TRUE(m256.load_weights(s256));
+    EXPECT_EQ(m256.param_count(), 773 * 256 + 256 + 256 * 32 + 32 + 32 * 1 + 1);
+
+    std::string buf384 = create_test_weights_buffer(42, 32, 384);
+    std::istringstream s384(buf384);
+    NNUEModel m384;
+    ASSERT_TRUE(m384.load_weights(s384));
+    EXPECT_EQ(m384.param_count(), 773 * 384 + 384 + 384 * 32 + 32 + 32 * 1 + 1);
+    EXPECT_GT(m384.param_count(), m256.param_count());
+}
+
+TEST(NNUEModel, AccumulatorCorrectnessH1_384) {
+    std::string buf = create_test_weights_buffer(42, config::nnue::HIDDEN2_SIZE, 384);
+    std::istringstream stream(buf);
+    NNUEModel model;
+    ASSERT_TRUE(model.load_weights(stream));
+
+    ChessBoard board;
+    model.init_accumulator(board);
+    float from_scratch = model.predict(board);
+    float incremental = model.predict_from_accumulator(board);
+    EXPECT_NEAR(from_scratch, incremental, 0.01f);
+
+    // Play a move and verify incremental still matches
+    chess::Move move = chess::uci::uciToMove(board.board, "e2e4");
+    chess::Piece moved = board.board.at(move.from());
+    chess::Piece captured = board.board.at(move.to());
+    model.push_accumulator();
+    board.board.makeMove(move);
+    model.update_accumulator(move, moved, captured, board);
+
+    from_scratch = model.predict(board);
+    incremental = model.predict_from_accumulator(board);
+    EXPECT_NEAR(from_scratch, incremental, 0.01f);
 }
 
 TEST(NNUEModel, AccumulatorCorrectnessH2_64) {

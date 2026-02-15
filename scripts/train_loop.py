@@ -205,7 +205,9 @@ def main():
             )
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             candidate_name = f"nnue_{timestamp}_{total_positions}pos.bin"
-            log_path = Path(tempfile.gettempdir()) / candidate_name.replace(".bin", "_train.md")
+            log_path = Path(tempfile.gettempdir()) / candidate_name.replace(
+                ".bin", "_train.md"
+            )
             run(
                 f"python -u engine/train/train_nnue.py --data {args.data}"
                 f" --output engine/train/nnue_weights.pt"
