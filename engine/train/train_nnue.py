@@ -30,10 +30,10 @@ _trn = training()
 
 POSITION_SIZE = 42  # bytes per training position (binary struct layout)
 
-INPUT_SIZE = _eng["nnue"]["input_size"]
-HIDDEN1_SIZE = _eng["nnue"]["hidden1_size"]
-HIDDEN2_SIZE = _eng["nnue"]["hidden2_size"]
-OUTPUT_SIZE = _eng["nnue"]["output_size"]
+INPUT_SIZE = _trn["nnue"]["input_size"]
+HIDDEN1_SIZE = _trn["nnue"]["hidden1_size"]
+HIDDEN2_SIZE = _trn["nnue"]["hidden2_size"]
+OUTPUT_SIZE = _trn["nnue"]["output_size"]
 
 
 class NNUE(nn.Module):
@@ -262,10 +262,8 @@ def train(args):
     game_starts, game_ends = _game_boundaries(dataset.plies)
     num_games = len(game_starts)
 
-    rng = torch.Generator().manual_seed(_trn["training"]["random_seed"])
-
     if num_games >= 2:
-        game_perm = torch.randperm(num_games, generator=rng)
+        game_perm = torch.randperm(num_games)
         val_game_count = max(1, int(num_games * _trn["training"]["val_split"]))
         val_game_count = min(val_game_count, num_games - 1)
 
@@ -286,7 +284,7 @@ def train(args):
             f"{num_games - val_game_count} train / {val_game_count} val"
         )
     else:
-        perm = torch.randperm(num_positions, generator=rng)
+        perm = torch.randperm(num_positions)
         val_count = max(1, int(num_positions * _trn["training"]["val_split"]))
         val_idx = perm[:val_count]
         train_idx = perm[val_count:]

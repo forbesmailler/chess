@@ -7,18 +7,17 @@ from config.load_config import deploy, engine, eval_, load, training
 
 def test_load_engine_config():
     cfg = engine()
-    assert "nnue" in cfg
     assert "search" in cfg
     assert "mcts" in cfg
     assert "bot" in cfg
-    assert cfg["nnue"]["input_size"] == 773
 
 
 def test_load_training_config():
     cfg = training()
+    assert "nnue" in cfg
     assert "self_play" in cfg
     assert "training" in cfg
-    assert "invoke" in cfg
+    assert cfg["nnue"]["input_size"] == 773
     assert cfg["training"]["epochs"] == 100
 
 

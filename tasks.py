@@ -13,7 +13,6 @@ BOT_EXE = str(Path(_dep["paths"]["bot_exe"]))
 
 _sp = _trn["self_play"]
 _train_cfg = _trn["training"]
-_inv = _trn["invoke"]
 _cmp = _trn.get("compare", {})
 
 
@@ -71,8 +70,7 @@ def prepare(c):
 
 @task(
     help={
-        "games": f"Number of self-play games per iteration (default: {_inv['train_games']})",
-        "depth": f"Search depth (default: {_sp['search_depth']})",
+        "games": f"Number of self-play games per iteration (default: {_sp['num_games']})",
         "threads": f"Number of threads (default: {_sp['num_threads']})",
         "data": f"Training data path (default: {_sp['output_file']})",
         "epochs": f"Training epochs (default: {_train_cfg['epochs']})",
@@ -86,8 +84,7 @@ def prepare(c):
 )
 def train(
     c,
-    games=_inv["train_games"],
-    depth=_sp["search_depth"],
+    games=_sp["num_games"],
     threads=_sp["num_threads"],
     data=_sp["output_file"],
     epochs=_train_cfg["epochs"],
@@ -102,7 +99,7 @@ def train(
     prepare(c)
     cmd = (
         f"python -u scripts/train_loop.py"
-        f" --games {games} --depth {depth} --threads {threads}"
+        f" --games {games} --threads {threads}"
         f" --data {data}"
         f" --epochs {epochs} --batch-size {batch_size}"
         f" --eval-weight {eval_weight} --compare-games {compare_games}"

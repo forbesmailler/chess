@@ -1,13 +1,5 @@
 mate_value: 10000.0
 
-nnue:
-  input_size: 773
-  hidden1_size: 256
-  max_hidden1_size: 512
-  hidden2_size: 64
-  max_hidden2_size: 128
-  output_size: 1
-
 search:
   tt_size_log2: 20
   eval_cache_size_log2: 18

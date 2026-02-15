@@ -190,7 +190,6 @@ class TestGenerate:
         result = generate()
         assert "namespace self_play {" in result
         assert "NUM_GAMES = 20000" in result
-        assert "SEARCH_DEPTH = 6" in result
         assert "NUM_THREADS = 16" in result
         assert "SEARCH_TIME_MS = 500" in result
         assert "RANDOM_PLIES = 4" in result
@@ -247,8 +246,11 @@ class TestGenerate:
 class TestLoad:
     def test_load_engine(self):
         cfg = load("engine")
-        assert "nnue" in cfg
         assert "search" in cfg
+
+    def test_load_training(self):
+        cfg = load("training")
+        assert "nnue" in cfg
 
     def test_load_eval(self):
         cfg = load("eval")

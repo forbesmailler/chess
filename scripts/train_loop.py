@@ -19,7 +19,6 @@ _dep = load("deploy")
 BOT_EXE = str(Path(_dep["paths"]["bot_exe"]))
 _sp = _trn["self_play"]
 _train_cfg = _trn["training"]
-_inv = _trn["invoke"]
 _cmp = _trn.get("compare", {})
 
 POSITION_BYTES = 42
@@ -29,7 +28,7 @@ DATA_CAP_MULTIPLIER = 100
 
 
 def compute_param_count() -> int:
-    nnue = _eng["nnue"]
+    nnue = _trn["nnue"]
     inp, h1, h2, out = (
         nnue["input_size"],
         nnue["hidden1_size"],
@@ -131,8 +130,7 @@ def write_report(
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--games", type=int, default=_inv["train_games"])
-    p.add_argument("--depth", type=int, default=_sp["search_depth"])
+    p.add_argument("--games", type=int, default=_sp["num_games"])
     p.add_argument("--threads", type=int, default=_sp["num_threads"])
     p.add_argument("--data", default=_sp["output_file"])
     p.add_argument("--epochs", type=int, default=_train_cfg["epochs"])
@@ -161,6 +159,9 @@ def main():
     )
     args = p.parse_args()
 
+    if args.iterations == 0 and (args.compare_only or args.train_only):
+        args.iterations = 1
+
     pointer_file = Path(_dep["paths"]["current_best_file"])
     data_path = Path(args.data)
     models_dir = Path("models")
@@ -186,8 +187,7 @@ def main():
             eval_label = f"NNUE ({current_best})" if best_path else "handcrafted"
             print(f"\n--- Self-play ({args.games} games, eval: {eval_label}) ---")
             selfplay_cmd = (
-                f"{BOT_EXE} --selfplay {args.games} {args.depth}"
-                f" {args.data} {args.threads}"
+                f"{BOT_EXE} --selfplay {args.games} {args.data} {args.threads}"
             )
             if best_path:
                 selfplay_cmd += f" {best_path}"

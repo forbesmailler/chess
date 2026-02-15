@@ -60,7 +60,7 @@ def generate() -> str:
         "output_size",
     ):
         name = k.upper()
-        lines.append(f"    static constexpr int {name} = {eng['nnue'][k]};")
+        lines.append(f"    static constexpr int {name} = {trn['nnue'][k]};")
     lines.append("}  // namespace nnue")
     lines.append("")
 
@@ -382,9 +382,7 @@ def generate() -> str:
     # self_play
     sp = trn["self_play"]
     lines.append("namespace self_play {")
-    inv = trn.get("invoke", {})
-    lines.append(f"    static constexpr int NUM_GAMES = {inv['train_games']};")
-    lines.append(f"    static constexpr int SEARCH_DEPTH = {sp['search_depth']};")
+    lines.append(f"    static constexpr int NUM_GAMES = {sp['num_games']};")
     lines.append(f"    static constexpr int NUM_THREADS = {sp['num_threads']};")
     lines.append(f"    static constexpr int SEARCH_TIME_MS = {sp['search_time_ms']};")
     lines.append(f"    static constexpr int RANDOM_PLIES = {sp['random_plies']};")
@@ -405,9 +403,6 @@ def generate() -> str:
     cmp = trn.get("compare", {})
     lines.append("namespace compare {")
     lines.append(f"    static constexpr int NUM_GAMES = {cmp.get('num_games', 100)};")
-    lines.append(
-        f"    static constexpr int PROGRESS_LOG_INTERVAL = {cmp.get('progress_log_interval', 10)};"
-    )
     lines.append("}  // namespace compare")
     lines.append("")
 

@@ -507,7 +507,7 @@ void ModelComparator::play_games(int num_games, int thread_id,
                   << ply << " plies, " << result_str << " (" << color_str << ")"
                   << std::endl;
 
-        if (completed % config::compare::PROGRESS_LOG_INTERVAL == 0) {
+        if (completed % config::self_play::PROGRESS_LOG_INTERVAL == 0) {
             auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
                 std::chrono::steady_clock::now() - start_time);
             std::cout << "Compare progress: " << completed << "/" << config.num_games

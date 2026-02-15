@@ -33,7 +33,6 @@ class SelfPlayGenerator {
    public:
     struct Config {
         int num_games = config::self_play::NUM_GAMES;
-        int search_depth = config::self_play::SEARCH_DEPTH;
         int num_threads = config::self_play::NUM_THREADS;
         std::string output_file = "training_data.bin";
         int max_game_ply = 400;

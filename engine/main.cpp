@@ -661,8 +661,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Usage: " << argv[0] << " [max_time_ms] [options]" << std::endl;
         std::cout
             << "       " << argv[0]
-            << " --selfplay [num_games] [search_depth] [output_file] [num_threads]"
-               " [nnue_weights]"
+            << " --selfplay [num_games] [output_file] [num_threads] [nnue_weights]"
             << std::endl;
         std::cout << "       " << argv[0]
                   << " --compare <old_weights|handcrafted> <new_weights>"
@@ -689,17 +688,15 @@ int main(int argc, char* argv[]) {
     if (first_arg == "--selfplay") {
         SelfPlayGenerator::Config config;
         if (argc > 2) config.num_games = std::stoi(argv[2]);
-        if (argc > 3) config.search_depth = std::stoi(argv[3]);
-        if (argc > 4) config.output_file = argv[4];
-        if (argc > 5) config.num_threads = std::stoi(argv[5]);
-        if (argc > 6) config.nnue_weights = argv[6];
+        if (argc > 3) config.output_file = argv[3];
+        if (argc > 4) config.num_threads = std::stoi(argv[4]);
+        if (argc > 5) config.nnue_weights = argv[5];
 
         std::string eval_str = config.nnue_weights.empty()
                                    ? "handcrafted"
                                    : "NNUE (" + config.nnue_weights + ")";
         std::cout << "=== Self-Play Data Generation ===" << std::endl;
         std::cout << "Games: " << config.num_games << std::endl;
-        std::cout << "Search depth (time budget): " << config.search_depth << std::endl;
         std::cout << "Output: " << config.output_file << std::endl;
         std::cout << "Threads: " << config.num_threads << std::endl;
         std::cout << "Eval: " << eval_str << std::endl;
