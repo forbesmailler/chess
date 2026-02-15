@@ -1,1 +1,1 @@
-models/accepted/nnue_20260212_132358_21294968pos.bin
+models/accepted/nnue_20260215_161843_20640100pos.bin

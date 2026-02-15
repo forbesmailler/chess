@@ -3,7 +3,7 @@ mate_value: 10000.0
 nnue:
   input_size: 773
   hidden1_size: 256
-  hidden2_size: 32
+  hidden2_size: 64
   max_hidden2_size: 64
   output_size: 1
 

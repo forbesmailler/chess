@@ -456,7 +456,6 @@ class LichessBot {
                 game_state->is_active.store(false);
                 return;
             }
-            if (event.draw_offer) handle_draw_offer_safely(game_id, game_state);
         } else {
             return;
         }
@@ -464,6 +463,8 @@ class LichessBot {
         process_moves(game_id, game_state, event.moves);
 
         float eval = evaluate_position_safely(game_state);
+
+        if (event.draw_offer) handle_draw_offer_safely(game_id, game_state);
         Utils::log_info("Game " + game_id + " - Eval after ply " +
                         std::to_string(game_state->ply_count) +
                         " (white-persp): " + std::to_string(eval));

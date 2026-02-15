@@ -13,8 +13,7 @@ build/
 !**/CMakeLists.txt
 *.pyc
 *.env
-*training_data.bin
-*training_data_relabeled.bin
+training_data*.bin
 *.bak
 *.pt
 nul
