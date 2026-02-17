@@ -2,8 +2,8 @@ nnue:
   input_size: 773
   hidden1_size: 256
   max_hidden1_size: 512
-  hidden2_size: 64
-  max_hidden2_size: 128
+  hidden2_size: 32
+  max_hidden2_size: 32
   output_size: 1
 
 self_play:

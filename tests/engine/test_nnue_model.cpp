@@ -552,13 +552,14 @@ TEST_F(NNUEModelTest, EvalSpeedBenchmarkIncremental) {
 
 // --- Variable HIDDEN2_SIZE tests ---
 
-TEST(NNUEModel, LoadHidden2Size64) {
-    std::string buf = create_test_weights_buffer(42, 64);
+TEST(NNUEModel, LoadHidden2SizeMax) {
+    constexpr int H2 = config::nnue::MAX_HIDDEN2_SIZE;
+    std::string buf = create_test_weights_buffer(42, H2);
     std::istringstream stream(buf);
     NNUEModel model;
     ASSERT_TRUE(model.load_weights(stream));
     EXPECT_TRUE(model.is_loaded());
-    EXPECT_EQ(model.hidden2_size(), 64);
+    EXPECT_EQ(model.hidden2_size(), H2);
 
     ChessBoard board;
     float eval = model.predict(board);
@@ -584,20 +585,16 @@ TEST(NNUEModel, LoadHidden2SizeNotMultipleOf4) {
 }
 
 TEST(NNUEModel, ParamCount) {
-    std::string buf32 = create_test_weights_buffer(42, 32);
-    std::istringstream s32(buf32);
-    NNUEModel m32;
-    ASSERT_TRUE(m32.load_weights(s32));
-    // 773*256 + 256 + 256*32 + 32 + 32*1 + 1 = 197888 + 256 + 8192 + 32 + 32 + 1 =
-    // 206401
-    EXPECT_EQ(m32.param_count(), 773 * 256 + 256 + 256 * 32 + 32 + 32 * 1 + 1);
+    constexpr int I = config::nnue::INPUT_SIZE;
+    constexpr int H1 = config::nnue::HIDDEN1_SIZE;
+    constexpr int H2 = config::nnue::HIDDEN2_SIZE;
+    constexpr int O = config::nnue::OUTPUT_SIZE;
 
-    std::string buf64 = create_test_weights_buffer(42, 64);
-    std::istringstream s64(buf64);
-    NNUEModel m64;
-    ASSERT_TRUE(m64.load_weights(s64));
-    EXPECT_EQ(m64.param_count(), 773 * 256 + 256 + 256 * 64 + 64 + 64 * 1 + 1);
-    EXPECT_GT(m64.param_count(), m32.param_count());
+    std::string buf = create_test_weights_buffer(42, H2);
+    std::istringstream stream(buf);
+    NNUEModel model;
+    ASSERT_TRUE(model.load_weights(stream));
+    EXPECT_EQ(model.param_count(), I * H1 + H1 + H1 * H2 + H2 + H2 * O + O);
 }
 
 // --- Variable HIDDEN1_SIZE tests ---
@@ -634,17 +631,19 @@ TEST(NNUEModel, LoadHidden1SizeNotMultipleOf16) {
 }
 
 TEST(NNUEModel, ParamCountWithDifferentH1) {
+    constexpr int I = config::nnue::INPUT_SIZE;
+
     std::string buf256 = create_test_weights_buffer(42, 32, 256);
     std::istringstream s256(buf256);
     NNUEModel m256;
     ASSERT_TRUE(m256.load_weights(s256));
-    EXPECT_EQ(m256.param_count(), 773 * 256 + 256 + 256 * 32 + 32 + 32 * 1 + 1);
+    EXPECT_EQ(m256.param_count(), I * 256 + 256 + 256 * 32 + 32 + 32 * 1 + 1);
 
     std::string buf384 = create_test_weights_buffer(42, 32, 384);
     std::istringstream s384(buf384);
     NNUEModel m384;
     ASSERT_TRUE(m384.load_weights(s384));
-    EXPECT_EQ(m384.param_count(), 773 * 384 + 384 + 384 * 32 + 32 + 32 * 1 + 1);
+    EXPECT_EQ(m384.param_count(), I * 384 + 384 + 384 * 32 + 32 + 32 * 1 + 1);
     EXPECT_GT(m384.param_count(), m256.param_count());
 }
 
@@ -673,8 +672,8 @@ TEST(NNUEModel, AccumulatorCorrectnessH1_384) {
     EXPECT_NEAR(from_scratch, incremental, 0.01f);
 }
 
-TEST(NNUEModel, AccumulatorCorrectnessH2_64) {
-    std::string buf = create_test_weights_buffer(42, 64);
+TEST(NNUEModel, AccumulatorCorrectnessH2Max) {
+    std::string buf = create_test_weights_buffer(42, config::nnue::MAX_HIDDEN2_SIZE);
     std::istringstream stream(buf);
     NNUEModel model;
     ASSERT_TRUE(model.load_weights(stream));

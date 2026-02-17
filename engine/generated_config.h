@@ -12,8 +12,8 @@ namespace nnue {
 static constexpr int INPUT_SIZE = 773;
 static constexpr int HIDDEN1_SIZE = 256;
 static constexpr int MAX_HIDDEN1_SIZE = 512;
-static constexpr int HIDDEN2_SIZE = 64;
-static constexpr int MAX_HIDDEN2_SIZE = 128;
+static constexpr int HIDDEN2_SIZE = 32;
+static constexpr int MAX_HIDDEN2_SIZE = 32;
 static constexpr int OUTPUT_SIZE = 1;
 }  // namespace nnue
 

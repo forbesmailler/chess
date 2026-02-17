@@ -102,12 +102,16 @@ class TestGenerate:
 
     def test_nnue_constants(self):
         result = generate()
-        assert "INPUT_SIZE = 773" in result
-        assert "HIDDEN1_SIZE = 256" in result
-        assert "MAX_HIDDEN1_SIZE = 512" in result
-        assert "HIDDEN2_SIZE = 64" in result
-        assert "MAX_HIDDEN2_SIZE = 128" in result
-        assert "OUTPUT_SIZE = 1" in result
+        nn = load("training")["nnue"]
+        for key in (
+            "input_size",
+            "hidden1_size",
+            "max_hidden1_size",
+            "hidden2_size",
+            "max_hidden2_size",
+            "output_size",
+        ):
+            assert f"{key.upper()} = {nn[key]}" in result
 
     def test_search_constants(self):
         result = generate()
