@@ -124,15 +124,19 @@ def train(
     }
 )
 def build_book(
-    c, pgn, output="book.bin", lines=250000, coverage=0.5, max_depth=30, min_elo=0
+    c, pgn, output="book.bin", lines=250000, coverage=0.5, max_depth=30, min_elo=0,
+    workers=0,
 ):
     """Build opening book from a PGN file."""
-    c.run(
+    cmd = (
         f"python scripts/build_opening_book.py {pgn}"
         f" --output {output} --lines {lines}"
         f" --coverage {coverage} --max-depth {max_depth}"
         f" --min-elo {min_elo}"
     )
+    if workers > 0:
+        cmd += f" --workers {workers}"
+    c.run(cmd)
 
 
 _vps = _dep["vps"]

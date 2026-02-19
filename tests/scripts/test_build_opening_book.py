@@ -68,20 +68,20 @@ class TestExtractMoves:
 class TestFindOptimalDepth:
     def test_basic(self, tmp_path):
         pgn_path = _make_pgn(SAMPLE_PGN, tmp_path)
-        depth, total = find_optimal_depth(pgn_path, 250000, 0.5, 30, 0)
+        depth, total = find_optimal_depth(pgn_path, 250000, 0.5, 30, 0, 1)
         assert depth >= 1
         assert total == 4
 
     def test_max_depth_limit(self, tmp_path):
         pgn_path = _make_pgn(SAMPLE_PGN, tmp_path)
-        depth, total = find_optimal_depth(pgn_path, 250000, 0.5, 2, 0)
+        depth, total = find_optimal_depth(pgn_path, 250000, 0.5, 2, 0, 1)
         assert depth <= 2
 
 
 class TestBuildBook:
     def test_basic(self, tmp_path):
         pgn_path = _make_pgn(SAMPLE_PGN, tmp_path)
-        move_counts = build_book(pgn_path, 2, 0)
+        move_counts = build_book(pgn_path, 2, 0, 1)
 
         # Starting position should have entries
         start_hash = chess.polyglot.zobrist_hash(chess.Board())
@@ -96,7 +96,7 @@ class TestBuildBook:
 
     def test_depth_1(self, tmp_path):
         pgn_path = _make_pgn(SAMPLE_PGN, tmp_path)
-        move_counts = build_book(pgn_path, 1, 0)
+        move_counts = build_book(pgn_path, 1, 0, 1)
         # Only first ply: e4 (3 games) and d4 (1 game)
         assert len(move_counts) == 2
 

@@ -19,8 +19,14 @@ Binary format (little-endian):
 
 import argparse
 import io
+import multiprocessing as mp
+import os
+import queue
+import re
 import struct
 import sys
+import threading
+import zlib
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -28,6 +34,11 @@ import chess
 import chess.pgn
 import chess.polyglot
 from tqdm import tqdm
+
+BATCH_SIZE = 2000
+_CHUNK_SIZE = 1 << 20  # 1 MB
+_GAME_SEP = re.compile(r"\n(?=\[Event )")
+_SENTINEL = None
 
 
 def open_pgn(path: Path):
@@ -37,26 +48,66 @@ def open_pgn(path: Path):
 
         fh = open(path, "rb")
         dctx = zstandard.ZstdDecompressor()
-        reader = dctx.stream_reader(fh)
+        reader = dctx.stream_reader(fh, read_size=1 << 22)
         return io.TextIOWrapper(reader, encoding="utf-8", errors="replace")
     return open(path, encoding="utf-8", errors="replace")
 
 
-def stream_games(pgn_handle, min_elo: int = 0):
-    """Yield chess.pgn.Game objects, optionally filtering by minimum Elo."""
+def split_games(pgn_handle):
+    """Yield individual PGN game strings using chunk reads."""
+    remainder = ""
     while True:
-        game = chess.pgn.read_game(pgn_handle)
-        if game is None:
+        chunk = pgn_handle.read(_CHUNK_SIZE)
+        if not chunk:
             break
-        if min_elo > 0:
-            try:
-                white_elo = int(game.headers.get("WhiteElo", "0"))
-                black_elo = int(game.headers.get("BlackElo", "0"))
-                if white_elo < min_elo or black_elo < min_elo:
-                    continue
-            except ValueError:
-                continue
-        yield game
+        data = remainder + chunk
+        parts = _GAME_SEP.split(data)
+        for part in parts[:-1]:
+            if part.strip():
+                yield part
+        remainder = parts[-1]
+    if remainder.strip():
+        yield remainder
+
+
+def _prefetch_batches(pgn_path, batch_size, q):
+    """Producer thread: decompress, split, batch, push to queue."""
+    handle = open_pgn(pgn_path)
+    try:
+        for batch in _batch(split_games(handle), batch_size):
+            q.put(batch)
+    finally:
+        handle.close()
+    q.put(_SENTINEL)
+
+
+def _batch(iterable, n):
+    """Yield lists of up to n items from iterable."""
+    batch = []
+    for item in iterable:
+        batch.append(item)
+        if len(batch) >= n:
+            yield batch
+            batch = []
+    if batch:
+        yield batch
+
+
+def _seq_hash(prev: int, move_uci: str) -> int:
+    """Deterministic running hash for move sequences (cross-process safe)."""
+    return zlib.crc32(move_uci.encode(), prev & 0xFFFFFFFF)
+
+
+def _filter_elo(game, min_elo: int) -> bool:
+    """Return True if game passes Elo filter."""
+    if min_elo <= 0:
+        return True
+    try:
+        white_elo = int(game.headers.get("WhiteElo", "0"))
+        black_elo = int(game.headers.get("BlackElo", "0"))
+        return white_elo >= min_elo and black_elo >= min_elo
+    except ValueError:
+        return False
 
 
 def extract_moves(game, max_depth: int) -> list[chess.Move]:
@@ -71,43 +122,114 @@ def extract_moves(game, max_depth: int) -> list[chess.Move]:
     return moves
 
 
+_P1_ENTRY = struct.Struct("<BII")  # depth_u8, hash_u32, count_u32
+
+
+def _phase1_worker(args):
+    """Process a batch of game texts for depth analysis. Returns packed bytes."""
+    game_texts, max_depth, min_elo = args
+    depth_counters = [Counter() for _ in range(max_depth + 1)]
+    count = 0
+
+    for text in game_texts:
+        game = chess.pgn.read_game(io.StringIO(text))
+        if game is None or not _filter_elo(game, min_elo):
+            continue
+        moves = extract_moves(game, max_depth)
+        if not moves:
+            continue
+        count += 1
+        h = 0
+        for d, move in enumerate(moves, 1):
+            h = _seq_hash(h, move.uci())
+            depth_counters[d][h] += 1
+
+    # Pack as bytes: (depth_u8, hash_u32, count_u32) per entry
+    pack = _P1_ENTRY.pack
+    parts = []
+    for d in range(1, max_depth + 1):
+        for h, c in depth_counters[d].items():
+            parts.append(pack(d, h, c))
+    return b"".join(parts), count
+
+
+_P2_ENTRY = struct.Struct("<QBBBBI")  # hash_u64, from, to, promo, pad, count_u32
+
+
+def _phase2_worker(args):
+    """Process a batch of game texts for book building. Returns packed bytes."""
+    game_texts, depth, min_elo = args
+    move_counts: dict[tuple[int, int, int, int], int] = defaultdict(int)
+    count = 0
+
+    for text in game_texts:
+        game = chess.pgn.read_game(io.StringIO(text))
+        if game is None or not _filter_elo(game, min_elo):
+            continue
+
+        board = game.board()
+        node = game
+        for _ in range(depth):
+            node = node.next()
+            if node is None:
+                break
+            move = node.move
+            h = chess.polyglot.zobrist_hash(board)
+            from_sq = move.from_square
+            to_sq = move.to_square
+            promo = 0
+            if move.promotion is not None:
+                promo = move.promotion
+            move_counts[(h, from_sq, to_sq, promo)] += 1
+            board.push(move)
+
+        count += 1
+
+    pack = _P2_ENTRY.pack
+    data = b"".join(pack(h, f, t, p, 0, c) for (h, f, t, p), c in move_counts.items())
+    return data, count
+
+
 def find_optimal_depth(
     pgn_path: Path,
     max_lines: int,
     coverage: float,
     max_depth: int,
     min_elo: int,
+    workers: int,
 ) -> tuple[int, int]:
     """Find the max depth where top N lines cover >coverage of games.
 
-    Uses running hashes instead of storing all sequences — O(unique_lines)
-    memory per depth instead of O(total_games).
-
     Returns (optimal_depth, total_games).
     """
-    print("Phase 1: Analyzing opening depth...")
+    print(f"Phase 1: Analyzing opening depth... ({workers} workers)")
 
     depth_counters = [Counter() for _ in range(max_depth + 1)]
     total_games = 0
 
-    handle = open_pgn(pgn_path)
-    try:
-        for game in tqdm(
-            stream_games(handle, min_elo),
-            desc="  Scanning",
-            unit=" games",
-            unit_scale=True,
-        ):
-            moves = extract_moves(game, max_depth)
-            if not moves:
-                continue
-            total_games += 1
-            h = 0
-            for d, move in enumerate(moves, 1):
-                h = hash((h, move.uci()))
-                depth_counters[d][h] += 1
-    finally:
-        handle.close()
+    q = queue.Queue(maxsize=workers * 4)
+    producer = threading.Thread(
+        target=_prefetch_batches, args=(pgn_path, BATCH_SIZE, q), daemon=True
+    )
+    producer.start()
+
+    def batch_iter():
+        while True:
+            batch = q.get()
+            if batch is _SENTINEL:
+                break
+            yield (batch, max_depth, min_elo)
+
+    with mp.Pool(workers) as pool:
+        pbar = tqdm(desc="  Scanning", unit=" games", unit_scale=True)
+        for data, count in pool.imap_unordered(_phase1_worker, batch_iter()):
+            total_games += count
+            pbar.update(count)
+            for d, h, c in _P1_ENTRY.iter_unpack(data):
+                depth_counters[d][h] += c
+        pbar.close()
+
+    producer.join()
 
     if total_games == 0:
         print("No games found!")
@@ -148,42 +270,37 @@ def build_book(
     pgn_path: Path,
     depth: int,
     min_elo: int,
+    workers: int,
 ) -> dict[tuple[int, int, int, int], int]:
     """Replay games to depth, collecting (hash, from, to, promo) → count."""
-    print(f"Phase 2: Building book at depth {depth}...")
+    print(f"Phase 2: Building book at depth {depth}... ({workers} workers)")
 
     move_counts: dict[tuple[int, int, int, int], int] = defaultdict(int)
     game_count = 0
 
-    handle = open_pgn(pgn_path)
-    try:
-        for game in tqdm(
-            stream_games(handle, min_elo),
-            desc="  Building",
-            unit=" games",
-            unit_scale=True,
-        ):
-            board = game.board()
-            node = game
-            for ply in range(depth):
-                node = node.next()
-                if node is None:
-                    break
+    q = queue.Queue(maxsize=workers * 4)
+    producer = threading.Thread(
+        target=_prefetch_batches, args=(pgn_path, BATCH_SIZE, q), daemon=True
+    )
+    producer.start()
 
-                move = node.move
-                h = chess.polyglot.zobrist_hash(board)
-                from_sq = move.from_square
-                to_sq = move.to_square
-                promo = 0
-                if move.promotion is not None:
-                    promo = move.promotion  # chess.KNIGHT=2..QUEEN=5
+    def batch_iter():
+        while True:
+            batch = q.get()
+            if batch is _SENTINEL:
+                break
+            yield (batch, depth, min_elo)
 
-                move_counts[(h, from_sq, to_sq, promo)] += 1
-                board.push(move)
+    with mp.Pool(workers) as pool:
+        pbar = tqdm(desc="  Building", unit=" games", unit_scale=True)
+        for data, count in pool.imap_unordered(_phase2_worker, batch_iter()):
+            game_count += count
+            pbar.update(count)
+            for h, f, t, p, _, c in _P2_ENTRY.iter_unpack(data):
+                move_counts[(h, f, t, p)] += c
+        pbar.close()
 
-            game_count += 1
-    finally:
-        handle.close()
+    producer.join()
 
     print(
         f"  Processed {game_count:,} games, {len(move_counts):,} unique position-moves"
@@ -196,21 +313,17 @@ def write_book(
     output: Path,
 ) -> None:
     """Write the binary book file."""
-    # Group moves by position hash
     positions: dict[int, list[tuple[int, int, int, int]]] = defaultdict(list)
     for (h, from_sq, to_sq, promo), count in move_counts.items():
         positions[h].append((from_sq, to_sq, promo, count))
 
-    # Sort positions by hash for binary search
     sorted_hashes = sorted(positions.keys())
 
-    # Build moves array and position table
     pos_table = []
     moves_array = []
 
     for h in sorted_hashes:
         entries = positions[h]
-        # Sort moves by count descending for better weight distribution
         entries.sort(key=lambda x: x[3], reverse=True)
 
         max_count = max(c for _, _, _, c in entries)
@@ -222,17 +335,13 @@ def write_book(
 
         pos_table.append((h, offset, len(entries)))
 
-    # Write binary
     with open(output, "wb") as f:
-        # Header
         f.write(b"BOOK")
         f.write(struct.pack("<III", 1, len(pos_table), len(moves_array)))
 
-        # Position table
         for h, offset, count in pos_table:
             f.write(struct.pack("<QIHxx", h, offset, count))
 
-        # Moves array
         for from_sq, to_sq, promo, weight in moves_array:
             f.write(struct.pack("<BBBB", from_sq, to_sq, promo, weight))
 
@@ -269,6 +378,13 @@ def main():
         default=1,
         help="Minimum times a position-move must appear (filters noise)",
     )
+    parser.add_argument(
+        "--workers",
+        "-w",
+        type=int,
+        default=os.cpu_count(),
+        help="Number of worker processes (default: cpu_count)",
+    )
     args = parser.parse_args()
 
     if not args.pgn.exists():
@@ -280,13 +396,14 @@ def main():
         print(f"Using fixed depth: {depth}")
     else:
         depth, _ = find_optimal_depth(
-            args.pgn, args.lines, args.coverage, args.max_depth, args.min_elo
+            args.pgn, args.lines, args.coverage, args.max_depth, args.min_elo,
+            args.workers,
         )
         if depth == 0:
             print("No suitable depth found.", file=sys.stderr)
             sys.exit(1)
 
-    move_counts = build_book(args.pgn, depth, args.min_elo)
+    move_counts = build_book(args.pgn, depth, args.min_elo, args.workers)
 
     if args.min_count > 1:
         before = len(move_counts)
