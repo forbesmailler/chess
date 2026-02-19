@@ -1,16 +1,15 @@
 """Tests for scripts/build_opening_book.py."""
 
-import io
 import struct
 from pathlib import Path
 
 import chess
-import chess.pgn
 import chess.polyglot
 
 from scripts.build_opening_book import (
+    _extract_san_moves,
+    _parse_game_text,
     build_book,
-    extract_moves,
     find_optimal_depth,
     write_book,
 )
@@ -47,22 +46,47 @@ SAMPLE_PGN = """\
 """
 
 
-class TestExtractMoves:
-    def test_full_game(self):
-        game = chess.pgn.read_game(io.StringIO("1. e4 e5 2. Nf3 Nc6 1-0"))
-        moves = extract_moves(game, 10)
-        assert len(moves) == 4
-        assert moves[0].uci() == "e2e4"
+class TestParseGameText:
+    def test_elo_parsing(self):
+        text = '[WhiteElo "1500"]\n[BlackElo "1600"]\n\n1. e4 e5 1-0'
+        we, be, mt = _parse_game_text(text)
+        assert we == 1500
+        assert be == 1600
+        assert "e4" in mt
+
+    def test_missing_elo(self):
+        text = '[Event "Test"]\n\n1. e4 1-0'
+        we, be, mt = _parse_game_text(text)
+        assert we == 0
+        assert be == 0
+
+    def test_no_movetext(self):
+        we, be, mt = _parse_game_text('[Event "Test"]')
+        assert mt == ""
+
+
+class TestExtractSanMoves:
+    def test_basic(self):
+        moves = _extract_san_moves("1. e4 e5 2. Nf3 Nc6 1-0", 10)
+        assert moves == ["e4", "e5", "Nf3", "Nc6"]
 
     def test_max_depth(self):
-        game = chess.pgn.read_game(io.StringIO("1. e4 e5 2. Nf3 Nc6 1-0"))
-        moves = extract_moves(game, 2)
-        assert len(moves) == 2
+        moves = _extract_san_moves("1. e4 e5 2. Nf3 Nc6 1-0", 2)
+        assert moves == ["e4", "e5"]
 
-    def test_empty_game(self):
-        game = chess.pgn.read_game(io.StringIO('[Result "*"]\n\n*'))
-        moves = extract_moves(game, 10)
-        assert len(moves) == 0
+    def test_with_comments(self):
+        moves = _extract_san_moves(
+            "1. e4 { [%clk 0:03:00] } 1... e5 { [%clk 0:03:00] } 1-0", 10
+        )
+        assert moves == ["e4", "e5"]
+
+    def test_result_only(self):
+        moves = _extract_san_moves("*", 10)
+        assert moves == []
+
+    def test_with_nags(self):
+        moves = _extract_san_moves("1. e4 $1 e5 $2 1-0", 10)
+        assert moves == ["e4", "e5"]
 
 
 class TestFindOptimalDepth:

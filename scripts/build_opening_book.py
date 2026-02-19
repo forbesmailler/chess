@@ -31,7 +31,6 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 import chess
-import chess.pgn
 import chess.polyglot
 from tqdm import tqdm
 
@@ -98,18 +97,6 @@ def _seq_hash(prev: int, move_uci: str) -> int:
     return zlib.crc32(move_uci.encode(), prev & 0xFFFFFFFF)
 
 
-def _filter_elo(game, min_elo: int) -> bool:
-    """Return True if game passes Elo filter."""
-    if min_elo <= 0:
-        return True
-    try:
-        white_elo = int(game.headers.get("WhiteElo", "0"))
-        black_elo = int(game.headers.get("BlackElo", "0"))
-        return white_elo >= min_elo and black_elo >= min_elo
-    except ValueError:
-        return False
-
-
 def extract_moves(game, max_depth: int) -> list[chess.Move]:
     """Extract the first max_depth moves from a game."""
     moves = []
@@ -122,6 +109,77 @@ def extract_moves(game, max_depth: int) -> list[chess.Move]:
     return moves
 
 
+def _parse_game_text(game_text):
+    """Extract (white_elo, black_elo, movetext) from PGN game text."""
+    idx = game_text.find("\n\n")
+    if idx == -1:
+        return 0, 0, ""
+    headers = game_text[:idx]
+    movetext = game_text[idx + 2:]
+
+    white_elo = black_elo = 0
+    i = headers.find('[WhiteElo "')
+    if i != -1:
+        j = headers.index('"', i + 11)
+        try:
+            white_elo = int(headers[i + 11 : j])
+        except ValueError:
+            pass
+    i = headers.find('[BlackElo "')
+    if i != -1:
+        j = headers.index('"', i + 11)
+        try:
+            black_elo = int(headers[i + 11 : j])
+        except ValueError:
+            pass
+    return white_elo, black_elo, movetext
+
+
+def _extract_san_moves(movetext, max_depth):
+    """Extract SAN move tokens from movetext, skipping comments efficiently."""
+    moves = []
+    i = 0
+    n = len(movetext)
+    while i < n and len(moves) < max_depth:
+        c = movetext[i]
+        if c <= " ":  # whitespace
+            i += 1
+            continue
+        if c == "{":  # skip comment
+            j = movetext.find("}", i + 1)
+            i = n if j == -1 else j + 1
+            continue
+        if c == "(":  # skip variation
+            depth = 1
+            i += 1
+            while i < n and depth > 0:
+                if movetext[i] == "(":
+                    depth += 1
+                elif movetext[i] == ")":
+                    depth -= 1
+                i += 1
+            continue
+        # read token
+        j = i
+        while j < n and movetext[j] > " " and movetext[j] not in "{}()":
+            j += 1
+        token = movetext[i:j]
+        i = j
+        if not token:
+            continue
+        fc = token[0]
+        if fc.isdigit():
+            if "-" in token or "/" in token:
+                break  # result
+            continue  # move number
+        if fc == "*":
+            break  # result
+        if fc == "$":
+            continue  # NAG
+        moves.append(token)
+    return moves
+
+
 _P1_ENTRY = struct.Struct("<BII")  # depth_u8, hash_u32, count_u32
 
 
@@ -130,21 +188,21 @@ def _phase1_worker(args):
     game_texts, max_depth, min_elo = args
     depth_counters = [Counter() for _ in range(max_depth + 1)]
     count = 0
+    seq_hash = _seq_hash
 
     for text in game_texts:
-        game = chess.pgn.read_game(io.StringIO(text))
-        if game is None or not _filter_elo(game, min_elo):
+        white_elo, black_elo, movetext = _parse_game_text(text)
+        if min_elo > 0 and (white_elo < min_elo or black_elo < min_elo):
             continue
-        moves = extract_moves(game, max_depth)
-        if not moves:
+        san_moves = _extract_san_moves(movetext, max_depth)
+        if not san_moves:
             continue
         count += 1
         h = 0
-        for d, move in enumerate(moves, 1):
-            h = _seq_hash(h, move.uci())
+        for d, san in enumerate(san_moves, 1):
+            h = seq_hash(h, san)
             depth_counters[d][h] += 1
 
-    # Pack as bytes: (depth_u8, hash_u32, count_u32) per entry
     pack = _P1_ENTRY.pack
     parts = []
     for d in range(1, max_depth + 1):
@@ -163,26 +221,24 @@ def _phase2_worker(args):
     count = 0
 
     for text in game_texts:
-        game = chess.pgn.read_game(io.StringIO(text))
-        if game is None or not _filter_elo(game, min_elo):
+        white_elo, black_elo, movetext = _parse_game_text(text)
+        if min_elo > 0 and (white_elo < min_elo or black_elo < min_elo):
+            continue
+        san_moves = _extract_san_moves(movetext, depth)
+        if not san_moves:
             continue
 
-        board = game.board()
-        node = game
-        for _ in range(depth):
-            node = node.next()
-            if node is None:
-                break
-            move = node.move
-            h = chess.polyglot.zobrist_hash(board)
-            from_sq = move.from_square
-            to_sq = move.to_square
-            promo = 0
-            if move.promotion is not None:
-                promo = move.promotion
-            move_counts[(h, from_sq, to_sq, promo)] += 1
-            board.push(move)
-
+        board = chess.Board()
+        try:
+            for san in san_moves:
+                h = chess.polyglot.zobrist_hash(board)
+                move = board.parse_san(san)
+                promo = move.promotion if move.promotion is not None else 0
+                move_counts[(h, move.from_square, move.to_square, promo)] += 1
+                board.push(move)
+        except (chess.IllegalMoveError, chess.InvalidMoveError,
+                chess.AmbiguousMoveError):
+            pass
         count += 1
 
     pack = _P2_ENTRY.pack
