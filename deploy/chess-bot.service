@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 EnvironmentFile=/opt/chess-bot/.env
-ExecStart=/opt/chess-bot/lichess_bot 1000 --engine=negamax --eval=nnue --nnue-weights=/opt/chess-bot/nnue.bin
+ExecStart=/opt/chess-bot/lichess_bot 1000 --engine=negamax --eval=nnue --nnue-weights=/opt/chess-bot/nnue.bin --book=/opt/chess-bot/book.bin
 TimeoutStopSec=5
 Restart=always
 RestartSec=5

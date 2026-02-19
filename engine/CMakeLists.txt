@@ -123,6 +123,7 @@ add_library(chess_engine_lib STATIC
     mcts_engine.cpp
     handcrafted_eval.cpp
     nnue_model.cpp
+    opening_book.cpp
     self_play.cpp
     utils.cpp
 )
@@ -187,6 +188,7 @@ if(BUILD_TESTS)
         ../tests/engine/test_handcrafted_eval.cpp
         ../tests/engine/test_self_play.cpp
         ../tests/engine/test_nnue_model.cpp
+        ../tests/engine/test_opening_book.cpp
         ../tests/engine/test_utils.cpp
     )
 

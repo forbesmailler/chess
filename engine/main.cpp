@@ -15,6 +15,7 @@
 #include "chess_engine.h"
 #include "lichess_client.h"
 #include "mcts_engine.h"
+#include "opening_book.h"
 #include "self_play.h"
 #include "utils.h"
 #ifdef _WIN32
@@ -58,7 +59,8 @@ class LichessBot {
     LichessBot(const std::string& token, int max_time_ms = 1000,
                EngineType engine_type = EngineType::NEGAMAX,
                EvalMode eval_mode = EvalMode::HANDCRAFTED,
-               const std::string& nnue_weights_path = "")
+               const std::string& nnue_weights_path = "",
+               const std::string& book_path = "")
         : client(token), engine_type(engine_type), eval_mode(eval_mode) {
         signal(SIGINT, signal_handler);
         signal(SIGTERM, signal_handler);
@@ -73,6 +75,17 @@ class LichessBot {
                                    ", falling back to handcrafted eval");
                 this->eval_mode = EvalMode::HANDCRAFTED;
                 nnue_model.reset();
+            }
+        }
+
+        if (!book_path.empty()) {
+            opening_book = std::make_shared<OpeningBook>();
+            if (opening_book->load(book_path)) {
+                Utils::log_info("Loaded opening book: " + book_path + " (" +
+                                std::to_string(opening_book->size()) + " positions)");
+            } else {
+                Utils::log_warning("Failed to load opening book from " + book_path);
+                opening_book.reset();
             }
         }
 
@@ -124,6 +137,7 @@ class LichessBot {
    private:
     LichessClient client;
     std::shared_ptr<NNUEModel> nnue_model;
+    std::shared_ptr<OpeningBook> opening_book;
     std::unique_ptr<BaseEngine> engine;
     EngineType engine_type;
     EvalMode eval_mode;
@@ -518,6 +532,20 @@ class LichessBot {
                                std::shared_ptr<GameState> game_state,
                                const TimeControl& time_control) {
         try {
+            if (opening_book && opening_book->is_loaded()) {
+                auto book_move = opening_book->probe(game_state->board.board);
+                if (book_move) {
+                    std::string uci = chess::uci::moveToUci(*book_move);
+                    Utils::log_info("Game " + game_id + ": Book move: " + uci);
+                    if (make_move_with_retry(game_id, uci)) {
+                        game_state->board.make_move(ChessBoard::Move::from_uci(uci));
+                        game_state->ply_count++;
+                        game_state->last_move_time = std::chrono::steady_clock::now();
+                        return true;
+                    }
+                }
+            }
+
             Utils::log_info("Game " + game_id + ": Thinking with " +
                             std::to_string(time_control.time_left_ms) + "ms left, " +
                             std::to_string(time_control.increment_ms) + "ms increment");
@@ -681,6 +709,8 @@ int main(int argc, char* argv[]) {
                   << std::endl;
         std::cout << "  --nnue-weights=<path>    Path to NNUE binary weights"
                   << std::endl;
+        std::cout << "  --book=<path>            Path to opening book binary"
+                  << std::endl;
         return 0;
     }
 
@@ -811,6 +841,7 @@ int main(int argc, char* argv[]) {
     LichessBot::EngineType engine_type = LichessBot::EngineType::NEGAMAX;
     EvalMode eval_mode = EvalMode::HANDCRAFTED;
     std::string nnue_weights_path;
+    std::string book_path;
 
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
@@ -837,6 +868,8 @@ int main(int argc, char* argv[]) {
             }
         } else if (arg.find("--nnue-weights=") == 0) {
             nnue_weights_path = arg.substr(15);
+        } else if (arg.find("--book=") == 0) {
+            book_path = arg.substr(7);
         } else {
             try {
                 max_time_ms = std::stoi(arg);
@@ -868,7 +901,8 @@ int main(int argc, char* argv[]) {
 
     int exit_code = 0;
     try {
-        LichessBot bot(token, max_time_ms, engine_type, eval_mode, nnue_weights_path);
+        LichessBot bot(token, max_time_ms, engine_type, eval_mode, nnue_weights_path,
+                       book_path);
         Utils::log_info("Bot initialized successfully, starting main loop...");
 
         bot.start();

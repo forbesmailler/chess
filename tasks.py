@@ -113,6 +113,28 @@ def train(
     c.run(cmd)
 
 
+@task(
+    help={
+        "pgn": "Path to PGN file (.pgn or .pgn.zst)",
+        "output": "Output book file (default: book.bin)",
+        "lines": "Max opening lines (default: 250000)",
+        "coverage": "Min coverage threshold (default: 0.5)",
+        "max_depth": "Max search depth (default: 30)",
+        "min_elo": "Min player Elo filter (default: 0)",
+    }
+)
+def build_book(
+    c, pgn, output="book.bin", lines=250000, coverage=0.5, max_depth=30, min_elo=0
+):
+    """Build opening book from a PGN file."""
+    c.run(
+        f"python scripts/build_opening_book.py {pgn}"
+        f" --output {output} --lines {lines}"
+        f" --coverage {coverage} --max-depth {max_depth}"
+        f" --min-elo {min_elo}"
+    )
+
+
 _vps = _dep["vps"]
 _pointer_file = _dep["paths"]["current_best_file"]
 
@@ -151,6 +173,8 @@ def deploy(c, weights=None):
             f' && cp "{repo_dir}/$(cat {pointer})" {install_dir}/nnue.bin',
             warn=True,
         )
+    book_src = f"{repo_dir}/book.bin"
+    c.run(f"test -f {book_src} && cp {book_src} {install_dir}/", warn=True)
     c.run(f"cp {repo_dir}/{_vps['service_file']} {_vps['systemd_path']}")
 
     print("=== Step 5/5: Restart service ===")
