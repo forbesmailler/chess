@@ -18,11 +18,9 @@ Binary format (little-endian):
 """
 
 import argparse
-import io
 import multiprocessing as mp
 import os
 import queue
-import re
 import struct
 import sys
 import threading
@@ -34,100 +32,79 @@ import chess
 import chess.polyglot
 from tqdm import tqdm
 
-BATCH_SIZE = 2000
-_CHUNK_SIZE = 1 << 20  # 1 MB
-_GAME_SEP = re.compile(r"\n(?=\[Event )")
+_CHUNK_SIZE = 1 << 24  # 16 MB
+_GAME_SEP = b"\n[Event "
+_GAME_PREFIX = b"[Event "
 _SENTINEL = None
 
 
 def open_pgn(path: Path):
-    """Open a PGN file, handling .zst compression."""
+    """Open a PGN file as binary reader, handling .zst compression."""
     if path.suffix == ".zst" or path.name.endswith(".pgn.zst"):
         import zstandard
 
         fh = open(path, "rb")
         dctx = zstandard.ZstdDecompressor()
-        reader = dctx.stream_reader(fh, read_size=1 << 22)
-        return io.TextIOWrapper(reader, encoding="utf-8", errors="replace")
-    return open(path, encoding="utf-8", errors="replace")
+        return dctx.stream_reader(fh, read_size=1 << 22)
+    return open(path, "rb")
 
 
-def split_games(pgn_handle):
-    """Yield individual PGN game strings using chunk reads."""
-    remainder = ""
-    while True:
-        chunk = pgn_handle.read(_CHUNK_SIZE)
-        if not chunk:
-            break
-        data = remainder + chunk
-        parts = _GAME_SEP.split(data)
-        for part in parts[:-1]:
-            if part.strip():
-                yield part
-        remainder = parts[-1]
-    if remainder.strip():
-        yield remainder
-
-
-def _prefetch_batches(pgn_path, batch_size, q):
-    """Producer thread: decompress, split, batch, push to queue."""
-    handle = open_pgn(pgn_path)
+def _prefetch_chunks(pgn_path, q):
+    """Producer thread: read raw byte chunks split at game boundaries."""
+    reader = open_pgn(pgn_path)
     try:
-        for batch in _batch(split_games(handle), batch_size):
-            q.put(batch)
+        tail = b""
+        while True:
+            raw = reader.read(_CHUNK_SIZE)
+            if not raw:
+                break
+            data = tail + raw.replace(b"\r", b"")
+            last = data.rfind(_GAME_SEP)
+            if last == -1:
+                tail = data
+                continue
+            q.put(data[:last])
+            tail = data[last + 1:]  # starts with "[Event ..."
+        if tail.strip():
+            q.put(tail)
     finally:
-        handle.close()
+        reader.close()
     q.put(_SENTINEL)
 
 
-def _batch(iterable, n):
-    """Yield lists of up to n items from iterable."""
-    batch = []
-    for item in iterable:
-        batch.append(item)
-        if len(batch) >= n:
-            yield batch
-            batch = []
-    if batch:
-        yield batch
+def _split_chunk(chunk):
+    """Split a byte chunk into individual game byte strings."""
+    parts = chunk.split(_GAME_SEP)
+    result = [parts[0]]
+    for p in parts[1:]:
+        result.append(_GAME_PREFIX + p)
+    return result
 
 
-def _seq_hash(prev: int, move_uci: str) -> int:
+def _seq_hash(prev: int, move_san: str) -> int:
     """Deterministic running hash for move sequences (cross-process safe)."""
-    return zlib.crc32(move_uci.encode(), prev & 0xFFFFFFFF)
+    return zlib.crc32(move_san.encode(), prev & 0xFFFFFFFF)
 
 
-def extract_moves(game, max_depth: int) -> list[chess.Move]:
-    """Extract the first max_depth moves from a game."""
-    moves = []
-    node = game
-    for _ in range(max_depth):
-        node = node.next()
-        if node is None:
-            break
-        moves.append(node.move)
-    return moves
-
-
-def _parse_game_text(game_text):
-    """Extract (white_elo, black_elo, movetext) from PGN game text."""
-    idx = game_text.find("\n\n")
+def _parse_game_bytes(game_data):
+    """Extract (white_elo, black_elo, movetext_str) from PGN game bytes."""
+    idx = game_data.find(b"\n\n")
     if idx == -1:
         return 0, 0, ""
-    headers = game_text[:idx]
-    movetext = game_text[idx + 2:]
+    headers = game_data[:idx]
+    movetext = game_data[idx + 2 :].decode("utf-8", errors="replace")
 
     white_elo = black_elo = 0
-    i = headers.find('[WhiteElo "')
+    i = headers.find(b'[WhiteElo "')
     if i != -1:
-        j = headers.index('"', i + 11)
+        j = headers.index(b'"', i + 11)
         try:
             white_elo = int(headers[i + 11 : j])
         except ValueError:
             pass
-    i = headers.find('[BlackElo "')
+    i = headers.find(b'[BlackElo "')
     if i != -1:
-        j = headers.index('"', i + 11)
+        j = headers.index(b'"', i + 11)
         try:
             black_elo = int(headers[i + 11 : j])
         except ValueError:
@@ -184,14 +161,17 @@ _P1_ENTRY = struct.Struct("<BII")  # depth_u8, hash_u32, count_u32
 
 
 def _phase1_worker(args):
-    """Process a batch of game texts for depth analysis. Returns packed bytes."""
-    game_texts, max_depth, min_elo = args
+    """Process a raw byte chunk for depth analysis. Returns packed bytes."""
+    chunk, max_depth, min_elo = args
+    games = _split_chunk(chunk)
     depth_counters = [Counter() for _ in range(max_depth + 1)]
     count = 0
     seq_hash = _seq_hash
 
-    for text in game_texts:
-        white_elo, black_elo, movetext = _parse_game_text(text)
+    for game_data in games:
+        if not game_data.strip():
+            continue
+        white_elo, black_elo, movetext = _parse_game_bytes(game_data)
         if min_elo > 0 and (white_elo < min_elo or black_elo < min_elo):
             continue
         san_moves = _extract_san_moves(movetext, max_depth)
@@ -215,13 +195,16 @@ _P2_ENTRY = struct.Struct("<QBBBBI")  # hash_u64, from, to, promo, pad, count_u3
 
 
 def _phase2_worker(args):
-    """Process a batch of game texts for book building. Returns packed bytes."""
-    game_texts, depth, min_elo = args
+    """Process a raw byte chunk for book building. Returns packed bytes."""
+    chunk, depth, min_elo = args
+    games = _split_chunk(chunk)
     move_counts: dict[tuple[int, int, int, int], int] = defaultdict(int)
     count = 0
 
-    for text in game_texts:
-        white_elo, black_elo, movetext = _parse_game_text(text)
+    for game_data in games:
+        if not game_data.strip():
+            continue
+        white_elo, black_elo, movetext = _parse_game_bytes(game_data)
         if min_elo > 0 and (white_elo < min_elo or black_elo < min_elo):
             continue
         san_moves = _extract_san_moves(movetext, depth)
@@ -263,22 +246,22 @@ def find_optimal_depth(
     depth_counters = [Counter() for _ in range(max_depth + 1)]
     total_games = 0
 
-    q = queue.Queue(maxsize=workers * 4)
+    q = queue.Queue(maxsize=workers * 2)
     producer = threading.Thread(
-        target=_prefetch_batches, args=(pgn_path, BATCH_SIZE, q), daemon=True
+        target=_prefetch_chunks, args=(pgn_path, q), daemon=True
     )
     producer.start()
 
-    def batch_iter():
+    def chunk_iter():
         while True:
-            batch = q.get()
-            if batch is _SENTINEL:
+            chunk = q.get()
+            if chunk is _SENTINEL:
                 break
-            yield (batch, max_depth, min_elo)
+            yield (chunk, max_depth, min_elo)
 
     with mp.Pool(workers) as pool:
         pbar = tqdm(desc="  Scanning", unit=" games", unit_scale=True)
-        for data, count in pool.imap_unordered(_phase1_worker, batch_iter()):
+        for data, count in pool.imap_unordered(_phase1_worker, chunk_iter()):
             total_games += count
             pbar.update(count)
             for d, h, c in _P1_ENTRY.iter_unpack(data):
@@ -334,22 +317,22 @@ def build_book(
     move_counts: dict[tuple[int, int, int, int], int] = defaultdict(int)
     game_count = 0
 
-    q = queue.Queue(maxsize=workers * 4)
+    q = queue.Queue(maxsize=workers * 2)
     producer = threading.Thread(
-        target=_prefetch_batches, args=(pgn_path, BATCH_SIZE, q), daemon=True
+        target=_prefetch_chunks, args=(pgn_path, q), daemon=True
     )
     producer.start()
 
-    def batch_iter():
+    def chunk_iter():
         while True:
-            batch = q.get()
-            if batch is _SENTINEL:
+            chunk = q.get()
+            if chunk is _SENTINEL:
                 break
-            yield (batch, depth, min_elo)
+            yield (chunk, depth, min_elo)
 
     with mp.Pool(workers) as pool:
         pbar = tqdm(desc="  Building", unit=" games", unit_scale=True)
-        for data, count in pool.imap_unordered(_phase2_worker, batch_iter()):
+        for data, count in pool.imap_unordered(_phase2_worker, chunk_iter()):
             game_count += count
             pbar.update(count)
             for h, f, t, p, _, c in _P2_ENTRY.iter_unpack(data):
@@ -420,7 +403,9 @@ def main():
     parser.add_argument(
         "--coverage", type=float, default=0.5, help="Min coverage threshold"
     )
-    parser.add_argument("--max-depth", type=int, default=30, help="Max search depth")
+    parser.add_argument(
+        "--max-depth", type=int, default=20, help="Max search depth for Phase 1"
+    )
     parser.add_argument("--min-elo", type=int, default=0, help="Min player Elo filter")
     parser.add_argument(
         "--depth",

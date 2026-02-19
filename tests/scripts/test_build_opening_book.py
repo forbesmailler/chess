@@ -8,7 +8,7 @@ import chess.polyglot
 
 from scripts.build_opening_book import (
     _extract_san_moves,
-    _parse_game_text,
+    _parse_game_bytes,
     build_book,
     find_optimal_depth,
     write_book,
@@ -46,22 +46,22 @@ SAMPLE_PGN = """\
 """
 
 
-class TestParseGameText:
+class TestParseGameBytes:
     def test_elo_parsing(self):
-        text = '[WhiteElo "1500"]\n[BlackElo "1600"]\n\n1. e4 e5 1-0'
-        we, be, mt = _parse_game_text(text)
+        data = b'[WhiteElo "1500"]\n[BlackElo "1600"]\n\n1. e4 e5 1-0'
+        we, be, mt = _parse_game_bytes(data)
         assert we == 1500
         assert be == 1600
         assert "e4" in mt
 
     def test_missing_elo(self):
-        text = '[Event "Test"]\n\n1. e4 1-0'
-        we, be, mt = _parse_game_text(text)
+        data = b'[Event "Test"]\n\n1. e4 1-0'
+        we, be, mt = _parse_game_bytes(data)
         assert we == 0
         assert be == 0
 
     def test_no_movetext(self):
-        we, be, mt = _parse_game_text('[Event "Test"]')
+        we, be, mt = _parse_game_bytes(b'[Event "Test"]')
         assert mt == ""
 
 
