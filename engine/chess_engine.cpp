@@ -565,6 +565,8 @@ SearchResult ChessEngine::iterative_deepening_search(ChessBoard board,
             break;
     }
 
+    if (use_acc) nnue_model->reset_accumulator();
+
     best_result.time_used = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - start_time);
 

@@ -59,6 +59,7 @@ class NNUEModel {
     void update_accumulator_null_move() const;
     float predict_from_accumulator(const ChessBoard& board) const;
     bool has_accumulator() const { return acc_ply >= 0; }
+    void reset_accumulator() const { acc_ply = -1; }
 
    private:
     static constexpr float MATE_VALUE = config::MATE_VALUE;
