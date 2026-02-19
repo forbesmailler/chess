@@ -1,10 +1,10 @@
 """Build a binary opening book from a PGN file.
 
-Accepts .pgn or .pgn.zst files. Streams games without loading the full file.
+Accepts .pgn or .pgn.zst files. For .zst, streams decompression in ~256 MB
+chunks to avoid needing disk space for the full decompressed file.
 
 Phase 1 — Depth analysis: finds maximum depth D where the top N opening
-sequences cover >threshold of games. Uses running hashes to avoid storing
-all game sequences in memory.
+sequences cover >threshold of games.
 
 Phase 2 — Book building: replays all games to depth D, recording
 (polyglot_hash, from_sq, to_sq, promotion) → count for each position-move.
@@ -20,10 +20,9 @@ Binary format (little-endian):
 import argparse
 import multiprocessing as mp
 import os
-import queue
 import struct
 import sys
-import threading
+import tempfile
 import zlib
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -32,44 +31,110 @@ import chess
 import chess.polyglot
 from tqdm import tqdm
 
-_CHUNK_SIZE = 1 << 24  # 16 MB
 _GAME_SEP = b"\n[Event "
 _GAME_PREFIX = b"[Event "
-_SENTINEL = None
 
 
-def open_pgn(path: Path):
-    """Open a PGN file as binary reader, handling .zst compression."""
-    if path.suffix == ".zst" or path.name.endswith(".pgn.zst"):
-        import zstandard
+def _iter_zst_chunks(pgn_path, chunk_size=256 << 20):
+    """Stream decompress .zst in ~256 MB chunks, yielding temp file paths.
 
-        fh = open(path, "rb")
-        dctx = zstandard.ZstdDecompressor()
-        return dctx.stream_reader(fh, read_size=1 << 22)
-    return open(path, "rb")
+    Each temp file is deleted before the next is written, so peak disk usage
+    stays around chunk_size. The .zst file is re-decompressed for each phase.
+    """
+    import zstandard
 
+    fh = open(pgn_path, "rb")
+    dctx = zstandard.ZstdDecompressor()
+    reader = dctx.stream_reader(fh, read_size=1 << 22)
+    tmp_path = None
+    leftover = b""
 
-def _prefetch_chunks(pgn_path, q):
-    """Producer thread: read raw byte chunks split at game boundaries."""
-    reader = open_pgn(pgn_path)
     try:
-        tail = b""
         while True:
-            raw = reader.read(_CHUNK_SIZE)
-            if not raw:
+            parts = [leftover] if leftover else []
+            total = len(leftover)
+            eof = False
+
+            while total < chunk_size:
+                data = reader.read(1 << 22)
+                if not data:
+                    eof = True
+                    break
+                clean = data.replace(b"\r", b"")
+                parts.append(clean)
+                total += len(clean)
+
+            if total == 0:
                 break
-            data = tail + raw.replace(b"\r", b"")
-            last = data.rfind(_GAME_SEP)
-            if last == -1:
-                tail = data
-                continue
-            q.put(data[:last])
-            tail = data[last + 1:]  # starts with "[Event ..."
-        if tail.strip():
-            q.put(tail)
+
+            chunk = b"".join(parts)
+
+            if not eof:
+                boundary = chunk.rfind(_GAME_SEP)
+                if boundary > 0:
+                    leftover = chunk[boundary + 1:]
+                    chunk = chunk[: boundary + 1]
+                else:
+                    leftover = b""
+            else:
+                leftover = b""
+
+            tmp = tempfile.NamedTemporaryFile(
+                delete=False, suffix=".pgn", mode="wb"
+            )
+            tmp.write(chunk)
+            tmp.close()
+            tmp_path = tmp.name
+
+            yield tmp_path
+
+            os.unlink(tmp_path)
+            tmp_path = None
     finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
         reader.close()
-    q.put(_SENTINEL)
+        fh.close()
+
+
+def _iter_files(pgn_path):
+    """Yield file paths for processing. .zst streams chunks; .pgn yields once."""
+    if str(pgn_path).endswith(".pgn.zst") or Path(pgn_path).suffix == ".zst":
+        yield from _iter_zst_chunks(pgn_path)
+    else:
+        yield str(pgn_path)
+
+
+def _find_boundaries(filepath, num_chunks):
+    """Find game boundaries for parallel processing."""
+    size = os.path.getsize(filepath)
+    if size == 0:
+        return []
+
+    offsets = [0]
+    with open(filepath, "rb") as f:
+        for i in range(1, num_chunks):
+            target = size * i // num_chunks
+            f.seek(target)
+            buf = f.read(1 << 16)  # 64 KB search window
+            idx = buf.find(_GAME_SEP)
+            if idx != -1:
+                offsets.append(target + idx + 1)  # start of "[Event ..."
+    offsets.append(size)
+
+    offsets = sorted(set(offsets))
+    return [
+        (offsets[i], offsets[i + 1])
+        for i in range(len(offsets) - 1)
+        if offsets[i] < offsets[i + 1]
+    ]
+
+
+def _read_chunk(filepath, start, end):
+    """Read a byte range from a file."""
+    with open(filepath, "rb") as f:
+        f.seek(start)
+        return f.read(end - start)
 
 
 def _split_chunk(chunk):
@@ -119,14 +184,14 @@ def _extract_san_moves(movetext, max_depth):
     n = len(movetext)
     while i < n and len(moves) < max_depth:
         c = movetext[i]
-        if c <= " ":  # whitespace
+        if c <= " ":
             i += 1
             continue
-        if c == "{":  # skip comment
+        if c == "{":
             j = movetext.find("}", i + 1)
             i = n if j == -1 else j + 1
             continue
-        if c == "(":  # skip variation
+        if c == "(":
             depth = 1
             i += 1
             while i < n and depth > 0:
@@ -136,7 +201,6 @@ def _extract_san_moves(movetext, max_depth):
                     depth -= 1
                 i += 1
             continue
-        # read token
         j = i
         while j < n and movetext[j] > " " and movetext[j] not in "{}()":
             j += 1
@@ -147,12 +211,12 @@ def _extract_san_moves(movetext, max_depth):
         fc = token[0]
         if fc.isdigit():
             if "-" in token or "/" in token:
-                break  # result
-            continue  # move number
+                break
+            continue
         if fc == "*":
-            break  # result
+            break
         if fc == "$":
-            continue  # NAG
+            continue
         moves.append(token)
     return moves
 
@@ -161,8 +225,9 @@ _P1_ENTRY = struct.Struct("<BII")  # depth_u8, hash_u32, count_u32
 
 
 def _phase1_worker(args):
-    """Process a raw byte chunk for depth analysis. Returns packed bytes."""
-    chunk, max_depth, min_elo = args
+    """Read a file range and process for depth analysis."""
+    filepath, start, end, max_depth, min_elo = args
+    chunk = _read_chunk(filepath, start, end).replace(b"\r", b"")
     games = _split_chunk(chunk)
     depth_counters = [Counter() for _ in range(max_depth + 1)]
     count = 0
@@ -195,8 +260,9 @@ _P2_ENTRY = struct.Struct("<QBBBBI")  # hash_u64, from, to, promo, pad, count_u3
 
 
 def _phase2_worker(args):
-    """Process a raw byte chunk for book building. Returns packed bytes."""
-    chunk, depth, min_elo = args
+    """Read a file range and process for book building."""
+    filepath, start, end, depth, min_elo = args
+    chunk = _read_chunk(filepath, start, end).replace(b"\r", b"")
     games = _split_chunk(chunk)
     move_counts: dict[tuple[int, int, int, int], int] = defaultdict(int)
     count = 0
@@ -230,45 +296,34 @@ def _phase2_worker(args):
 
 
 def find_optimal_depth(
-    pgn_path: Path,
+    file_iter,
     max_lines: int,
     coverage: float,
     max_depth: int,
     min_elo: int,
     workers: int,
 ) -> tuple[int, int]:
-    """Find the max depth where top N lines cover >coverage of games.
-
-    Returns (optimal_depth, total_games).
-    """
+    """Find the max depth where top N lines cover >coverage of games."""
     print(f"Phase 1: Analyzing opening depth... ({workers} workers)")
 
     depth_counters = [Counter() for _ in range(max_depth + 1)]
     total_games = 0
 
-    q = queue.Queue(maxsize=workers * 2)
-    producer = threading.Thread(
-        target=_prefetch_chunks, args=(pgn_path, q), daemon=True
-    )
-    producer.start()
-
-    def chunk_iter():
-        while True:
-            chunk = q.get()
-            if chunk is _SENTINEL:
-                break
-            yield (chunk, max_depth, min_elo)
-
     with mp.Pool(workers) as pool:
         pbar = tqdm(desc="  Scanning", unit=" games", unit_scale=True)
-        for data, count in pool.imap_unordered(_phase1_worker, chunk_iter()):
-            total_games += count
-            pbar.update(count)
-            for d, h, c in _P1_ENTRY.iter_unpack(data):
-                depth_counters[d][h] += c
+        for filepath in file_iter:
+            boundaries = _find_boundaries(filepath, workers * 10)
+            if not boundaries:
+                continue
+            args_list = [
+                (filepath, s, e, max_depth, min_elo) for s, e in boundaries
+            ]
+            for data, count in pool.imap_unordered(_phase1_worker, args_list):
+                total_games += count
+                pbar.update(count)
+                for d, h, c in _P1_ENTRY.iter_unpack(data):
+                    depth_counters[d][h] += c
         pbar.close()
-
-    producer.join()
 
     if total_games == 0:
         print("No games found!")
@@ -306,7 +361,7 @@ def find_optimal_depth(
 
 
 def build_book(
-    pgn_path: Path,
+    file_iter,
     depth: int,
     min_elo: int,
     workers: int,
@@ -317,29 +372,21 @@ def build_book(
     move_counts: dict[tuple[int, int, int, int], int] = defaultdict(int)
     game_count = 0
 
-    q = queue.Queue(maxsize=workers * 2)
-    producer = threading.Thread(
-        target=_prefetch_chunks, args=(pgn_path, q), daemon=True
-    )
-    producer.start()
-
-    def chunk_iter():
-        while True:
-            chunk = q.get()
-            if chunk is _SENTINEL:
-                break
-            yield (chunk, depth, min_elo)
-
     with mp.Pool(workers) as pool:
         pbar = tqdm(desc="  Building", unit=" games", unit_scale=True)
-        for data, count in pool.imap_unordered(_phase2_worker, chunk_iter()):
-            game_count += count
-            pbar.update(count)
-            for h, f, t, p, _, c in _P2_ENTRY.iter_unpack(data):
-                move_counts[(h, f, t, p)] += c
+        for filepath in file_iter:
+            boundaries = _find_boundaries(filepath, workers * 10)
+            if not boundaries:
+                continue
+            args_list = [
+                (filepath, s, e, depth, min_elo) for s, e in boundaries
+            ]
+            for data, count in pool.imap_unordered(_phase2_worker, args_list):
+                game_count += count
+                pbar.update(count)
+                for h, f, t, p, _, c in _P2_ENTRY.iter_unpack(data):
+                    move_counts[(h, f, t, p)] += c
         pbar.close()
-
-    producer.join()
 
     print(
         f"  Processed {game_count:,} games, {len(move_counts):,} unique position-moves"
@@ -437,14 +484,16 @@ def main():
         print(f"Using fixed depth: {depth}")
     else:
         depth, _ = find_optimal_depth(
-            args.pgn, args.lines, args.coverage, args.max_depth, args.min_elo,
-            args.workers,
+            _iter_files(args.pgn), args.lines, args.coverage, args.max_depth,
+            args.min_elo, args.workers,
         )
         if depth == 0:
             print("No suitable depth found.", file=sys.stderr)
             sys.exit(1)
 
-    move_counts = build_book(args.pgn, depth, args.min_elo, args.workers)
+    move_counts = build_book(
+        _iter_files(args.pgn), depth, args.min_elo, args.workers,
+    )
 
     if args.min_count > 1:
         before = len(move_counts)
