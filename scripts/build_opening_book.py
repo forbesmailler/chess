@@ -160,6 +160,41 @@ def _seq_hash(prev: int, move_san: str) -> int:
     return zlib.crc32(move_san.encode(), prev & 0xFFFFFFFF)
 
 
+def _check_elo(game_data, min_elo):
+    """Fast ELO check on raw bytes. Returns False if either player < min_elo."""
+    i = game_data.find(b'[WhiteElo "')
+    if i == -1:
+        return False
+    j = game_data.find(b'"', i + 11)
+    if j == -1:
+        return False
+    try:
+        if int(game_data[i + 11 : j]) < min_elo:
+            return False
+    except ValueError:
+        return False
+    i = game_data.find(b'[BlackElo "')
+    if i == -1:
+        return False
+    j = game_data.find(b'"', i + 11)
+    if j == -1:
+        return False
+    try:
+        if int(game_data[i + 11 : j]) < min_elo:
+            return False
+    except ValueError:
+        return False
+    return True
+
+
+def _get_movetext(game_data):
+    """Extract movetext string from game bytes (decode only the movetext)."""
+    idx = game_data.find(b"\n\n")
+    if idx == -1:
+        return ""
+    return game_data[idx + 2 :].decode("utf-8", errors="replace")
+
+
 def _parse_game_bytes(game_data):
     """Extract (white_elo, black_elo, movetext_str) from PGN game bytes."""
     idx = game_data.find(b"\n\n")
@@ -243,11 +278,11 @@ def _phase1_worker(args):
     seq_hash = _seq_hash
 
     for game_data in games:
-        if not game_data.strip():
+        if len(game_data) < 20:
             continue
-        white_elo, black_elo, movetext = _parse_game_bytes(game_data)
-        if min_elo > 0 and (white_elo < min_elo or black_elo < min_elo):
+        if min_elo > 0 and not _check_elo(game_data, min_elo):
             continue
+        movetext = _get_movetext(game_data)
         san_moves = _extract_san_moves(movetext, max_depth)
         if not san_moves:
             continue
@@ -340,35 +375,92 @@ def find_optimal_depth(
     return optimal_depth, total_games
 
 
-_P2_ENTRY = struct.Struct("<QBBBxI")  # hash_u64, from_u8, to_u8, promo_u8, pad, count_u32
+_LC_ENTRY = struct.Struct("<II")  # hash_u32, count_u32
 
 
-def _build_book_worker(args):
-    """Replay games to depth D, recording position-move frequencies."""
+def _count_lines_worker(args):
+    """Count opening line frequencies and capture one example per hash."""
     filepath, start, end, depth, min_elo = args
     chunk = _read_chunk(filepath, start, end).replace(b"\r", b"")
     games = _split_chunk(chunk)
-    move_counts = Counter()
-    depth_positions = set()
-    game_count = 0
+    line_counts = Counter()
+    sequences = {}
+    count = 0
+    seq_hash = _seq_hash
 
     for game_data in games:
-        if not game_data.strip():
+        if len(game_data) < 20:
             continue
-        white_elo, black_elo, movetext = _parse_game_bytes(game_data)
-        if min_elo > 0 and (white_elo < min_elo or black_elo < min_elo):
+        if min_elo > 0 and not _check_elo(game_data, min_elo):
             continue
+        movetext = _get_movetext(game_data)
         san_moves = _extract_san_moves(movetext, depth)
         if not san_moves:
             continue
-        game_count += 1
+        count += 1
+        h = 0
+        for san in san_moves:
+            h = seq_hash(h, san)
+        line_counts[h] += 1
+        if h not in sequences:
+            sequences[h] = tuple(san_moves)
+
+    pack = _LC_ENTRY.pack
+    data = b"".join(pack(h, c) for h, c in line_counts.items())
+    return data, count, sequences
+
+
+def build_book(
+    file_iter,
+    depth: int,
+    min_elo: int,
+    workers: int,
+) -> dict[tuple[int, int, int, int], int]:
+    """Count unique move sequences in workers, then replay each once."""
+    print(f"Building book at depth {depth}... ({workers} workers)")
+
+    line_counts = Counter()
+    all_sequences: dict[int, tuple[str, ...]] = {}
+    total_games = 0
+
+    with mp.Pool(workers) as pool:
+        pbar = tqdm(desc="  Scanning", unit=" games", unit_scale=True)
+        for filepath in file_iter:
+            boundaries = _find_boundaries(filepath, workers * 10)
+            if not boundaries:
+                continue
+            args_list = [(filepath, s, e, depth, min_elo) for s, e in boundaries]
+            for data, count, sequences in pool.imap_unordered(
+                _count_lines_worker, args_list
+            ):
+                total_games += count
+                pbar.update(count)
+                for h, c in _LC_ENTRY.iter_unpack(data):
+                    line_counts[h] += c
+                for h, seq in sequences.items():
+                    if h not in all_sequences:
+                        all_sequences[h] = seq
+        pbar.close()
+
+    print(
+        f"  {total_games:,} games, {len(line_counts):,} unique sequences"
+    )
+
+    # Replay each unique sequence once (board ops only here, not in workers)
+    move_counts: dict[tuple[int, int, int, int], int] = defaultdict(int)
+    depth_positions: set[int] = set()
+
+    for h, weight in line_counts.items():
+        san_moves = all_sequences[h]
         board = chess.Board()
         try:
             for san in san_moves:
                 pos_hash = chess.polyglot.zobrist_hash(board)
                 move = board.parse_san(san)
                 promo = move.promotion if move.promotion is not None else 0
-                move_counts[(pos_hash, move.from_square, move.to_square, promo)] += 1
+                move_counts[(pos_hash, move.from_square, move.to_square, promo)] += (
+                    weight
+                )
                 board.push(move)
             if len(san_moves) == depth:
                 depth_positions.add(chess.polyglot.zobrist_hash(board))
@@ -379,46 +471,10 @@ def _build_book_worker(args):
         ):
             pass
 
-    pack = _P2_ENTRY.pack
-    data = b"".join(pack(h, f, t, p, c) for (h, f, t, p), c in move_counts.items())
-    return data, game_count, depth_positions
-
-
-def build_book(
-    file_iter,
-    depth: int,
-    min_elo: int,
-    workers: int,
-) -> dict[tuple[int, int, int, int], int]:
-    """Replay all games to depth D, building position-move frequency table."""
-    print(f"Building book at depth {depth}... ({workers} workers)")
-
-    move_counts: dict[tuple[int, int, int, int], int] = defaultdict(int)
-    depth_positions: set[int] = set()
-    total_games = 0
-
-    with mp.Pool(workers) as pool:
-        pbar = tqdm(desc="  Replaying", unit=" games", unit_scale=True)
-        for filepath in file_iter:
-            boundaries = _find_boundaries(filepath, workers * 10)
-            if not boundaries:
-                continue
-            args_list = [(filepath, s, e, depth, min_elo) for s, e in boundaries]
-            for data, count, positions in pool.imap_unordered(
-                _build_book_worker, args_list
-            ):
-                total_games += count
-                pbar.update(count)
-                for h, f, t, p, c in _P2_ENTRY.iter_unpack(data):
-                    move_counts[(h, f, t, p)] += c
-                depth_positions |= positions
-        pbar.close()
-
     print(
-        f"  {total_games:,} games,"
-        f" {len(depth_positions):,} unique positions at depth {depth}"
+        f"  {len(depth_positions):,} unique positions at depth {depth},"
+        f" {len(move_counts):,} position-moves in book"
     )
-    print(f"  {len(move_counts):,} unique position-moves in book")
     return dict(move_counts)
 
 

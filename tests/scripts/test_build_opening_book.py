@@ -7,6 +7,7 @@ import chess
 import chess.polyglot
 
 from scripts.build_opening_book import (
+    _check_elo,
     _extract_san_moves,
     _parse_game_bytes,
     build_book,
@@ -44,6 +45,24 @@ SAMPLE_PGN = """\
 1. e4 c5 1-0
 
 """
+
+
+class TestCheckElo:
+    def test_both_above(self):
+        data = b'[WhiteElo "2300"]\n[BlackElo "2400"]\n\n1. e4 1-0'
+        assert _check_elo(data, 2200) is True
+
+    def test_white_below(self):
+        data = b'[WhiteElo "2100"]\n[BlackElo "2400"]\n\n1. e4 1-0'
+        assert _check_elo(data, 2200) is False
+
+    def test_black_below(self):
+        data = b'[WhiteElo "2300"]\n[BlackElo "2100"]\n\n1. e4 1-0'
+        assert _check_elo(data, 2200) is False
+
+    def test_missing_elo(self):
+        data = b'[Event "Test"]\n\n1. e4 1-0'
+        assert _check_elo(data, 2200) is False
 
 
 class TestParseGameBytes:
