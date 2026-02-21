@@ -158,30 +158,28 @@ def sweep(
     help={
         "pgn": "Path to PGN file (.pgn or .pgn.zst)",
         "output": "Output book file (default: book.bin)",
-        "lines": "Max opening lines for depth analysis (default: 250000)",
-        "coverage": "Min coverage threshold for depth analysis (default: 0.5)",
-        "max_depth": "Max search depth for depth analysis (default: 20)",
         "min_elo": "Min player Elo filter (default: 2200)",
-        "depth": "Opening depth in plies (default: auto-detect)",
+        "min_time": "Min initial time in seconds (default: 180)",
+        "min_count": "Min games per position-move (default: 5)",
+        "min_weight_pct": "Min weight fraction per position (default: 0.01)",
     }
 )
 def build_book(
     c,
     pgn,
     output="book.bin",
-    lines=250000,
-    coverage=0.5,
-    max_depth=20,
-    min_elo=2200,
-    depth=0,
+    min_elo=1600,
+    min_time=180,
+    min_count=10,
+    min_weight_pct=0.01,
     workers=0,
 ):
     """Build opening book from a PGN file."""
     cmd = (
         f"python scripts/build_opening_book.py {pgn}"
-        f" --output {output} --lines {lines}"
-        f" --coverage {coverage} --max-depth {max_depth}"
-        f" --min-elo {min_elo} --depth {depth}"
+        f" --output {output}"
+        f" --min-elo {min_elo} --min-time {min_time}"
+        f" --min-count {min_count} --min-weight-pct {min_weight_pct}"
     )
     if workers > 0:
         cmd += f" --workers {workers}"

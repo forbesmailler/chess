@@ -3,11 +3,9 @@
 Accepts .pgn or .pgn.zst files. For .zst, streams decompression in ~256 MB
 chunks to avoid needing disk space for the full decompressed file.
 
-Phase 1 — Depth analysis: finds maximum depth D where the top N opening
-sequences cover >threshold of games.
-
-Phase 2 — Book building: replays all games to depth D, recording
-(polyglot_hash, from_sq, to_sq, promotion) → count for each position-move.
+Depth-agnostic: follows the game tree as deep as games go, keeping only moves
+that are popular (>min_weight_pct at their position) and well-supported
+(at least min_count games). Bullet games are excluded by default.
 
 Binary format (little-endian):
   Header (16 bytes): magic "BOOK", version u32, num_positions u32, num_moves u32
@@ -187,6 +185,23 @@ def _check_elo(game_data, min_elo):
     return True
 
 
+def _check_time_control(game_data, min_seconds):
+    """Fast time control check on raw bytes. Returns False if initial time < min_seconds."""
+    i = game_data.find(b'[TimeControl "')
+    if i == -1:
+        return False
+    j = game_data.find(b'"', i + 14)
+    if j == -1:
+        return False
+    tc = game_data[i + 14 : j]
+    plus = tc.find(b"+")
+    try:
+        base = int(tc[:plus]) if plus != -1 else int(tc)
+    except ValueError:
+        return False
+    return base >= min_seconds
+
+
 def _get_movetext(game_data):
     """Extract movetext string from game bytes (decode only the movetext)."""
     idx = game_data.find(b"\n\n")
@@ -265,120 +280,12 @@ def _extract_san_moves(movetext, max_depth):
     return moves
 
 
-_P1_ENTRY = struct.Struct("<BII")  # depth_u8, hash_u32, count_u32
-
-
-def _phase1_worker(args):
-    """Read a file range and process for depth analysis."""
-    filepath, start, end, max_depth, min_elo = args
-    chunk = _read_chunk(filepath, start, end).replace(b"\r", b"")
-    games = _split_chunk(chunk)
-    depth_counters = [Counter() for _ in range(max_depth + 1)]
-    matched = 0
-    scanned = 0
-    seq_hash = _seq_hash
-
-    for game_data in games:
-        if len(game_data) < 20:
-            continue
-        scanned += 1
-        if min_elo > 0 and not _check_elo(game_data, min_elo):
-            continue
-        movetext = _get_movetext(game_data)
-        san_moves = _extract_san_moves(movetext, max_depth)
-        if not san_moves:
-            continue
-        matched += 1
-        h = 0
-        for d, san in enumerate(san_moves, 1):
-            h = seq_hash(h, san)
-            depth_counters[d][h] += 1
-
-    pack = _P1_ENTRY.pack
-    parts = []
-    for d in range(1, max_depth + 1):
-        for h, c in depth_counters[d].items():
-            parts.append(pack(d, h, c))
-    return b"".join(parts), matched, scanned
-
-
-def find_optimal_depth(
-    file_iter,
-    max_lines: int,
-    coverage: float,
-    max_depth: int,
-    min_elo: int,
-    workers: int,
-) -> tuple[int, int]:
-    """Find the max depth where top N lines cover >coverage of games."""
-    print(f"Phase 1: Analyzing opening depth... ({workers} workers)")
-
-    depth_counters = [Counter() for _ in range(max_depth + 1)]
-    total_matched = 0
-    total_scanned = 0
-
-    with mp.Pool(workers) as pool:
-        pbar = tqdm(desc="  Scanning", unit=" games", unit_scale=True)
-        for filepath in file_iter:
-            boundaries = _find_boundaries(filepath, workers * 10)
-            if not boundaries:
-                continue
-            args_list = [(filepath, s, e, max_depth, min_elo) for s, e in boundaries]
-            for data, matched, scanned in pool.imap_unordered(
-                _phase1_worker, args_list
-            ):
-                total_matched += matched
-                total_scanned += scanned
-                pbar.update(scanned)
-                for d, h, c in _P1_ENTRY.iter_unpack(data):
-                    depth_counters[d][h] += c
-        pbar.close()
-
-    # Close generator to clean up any temp chunk file
-    if hasattr(file_iter, "close"):
-        file_iter.close()
-
-    if total_matched == 0:
-        print("No games found!")
-        return 0, 0
-
-    print(f"  {total_scanned:,} games scanned, {total_matched:,} matched ELO filter")
-
-    optimal_depth = 1
-    for depth in range(1, max_depth + 1):
-        counter = depth_counters[depth]
-        if not counter:
-            break
-        games_at_depth = sum(counter.values())
-
-        if games_at_depth < total_matched * 0.5:
-            break
-
-        top_lines = counter.most_common(max_lines)
-        top_coverage = sum(c for _, c in top_lines) / games_at_depth
-
-        print(
-            f"  Depth {depth:2d}: {len(counter):>8,d} unique lines,"
-            f" top {min(max_lines, len(counter)):>6,d} cover {top_coverage:.1%}"
-            f" of {games_at_depth:,} games"
-        )
-
-        if top_coverage >= coverage:
-            optimal_depth = depth
-        else:
-            break
-
-    del depth_counters
-    print(f"  Optimal depth: {optimal_depth}")
-    return optimal_depth, total_matched
-
-
 _LC_ENTRY = struct.Struct("<II")  # hash_u32, count_u32
 
 
 def _count_lines_worker(args):
     """Count opening line frequencies and capture one example per hash."""
-    filepath, start, end, depth, min_elo = args
+    filepath, start, end, min_elo, min_time = args
     chunk = _read_chunk(filepath, start, end).replace(b"\r", b"")
     games = _split_chunk(chunk)
     line_counts = Counter()
@@ -393,8 +300,10 @@ def _count_lines_worker(args):
         scanned += 1
         if min_elo > 0 and not _check_elo(game_data, min_elo):
             continue
+        if min_time > 0 and not _check_time_control(game_data, min_time):
+            continue
         movetext = _get_movetext(game_data)
-        san_moves = _extract_san_moves(movetext, depth)
+        san_moves = _extract_san_moves(movetext, 500)
         if not san_moves:
             continue
         matched += 1
@@ -410,12 +319,10 @@ def _count_lines_worker(args):
     return data, matched, scanned, sequences
 
 
-def _replay_worker(args):
+def _replay_worker(items):
     """Replay unique opening sequences to extract position-move data."""
-    items, depth = args
     move_counts = defaultdict(int)
     dest_hashes = {}
-    depth_positions = set()
     for h, weight, san_moves in items:
         board = chess.Board()
         try:
@@ -428,25 +335,23 @@ def _replay_worker(args):
                 board.push(move)
                 if key not in dest_hashes:
                     dest_hashes[key] = chess.polyglot.zobrist_hash(board)
-            if len(san_moves) == depth:
-                depth_positions.add(chess.polyglot.zobrist_hash(board))
         except (
             chess.IllegalMoveError,
             chess.InvalidMoveError,
             chess.AmbiguousMoveError,
         ):
             pass
-    return dict(move_counts), depth_positions, dest_hashes
+    return dict(move_counts), dest_hashes
 
 
 def build_book(
     file_iter,
-    depth: int,
     min_elo: int,
+    min_time: int,
     workers: int,
 ) -> tuple[dict[tuple[int, int, int, int], int], dict[tuple[int, int, int, int], int]]:
     """Count unique move sequences in workers, then replay each once."""
-    print(f"Building book at depth {depth}... ({workers} workers)")
+    print(f"Building book... ({workers} workers)")
 
     line_counts = Counter()
     all_sequences: dict[int, tuple[str, ...]] = {}
@@ -459,7 +364,9 @@ def build_book(
             boundaries = _find_boundaries(filepath, workers * 10)
             if not boundaries:
                 continue
-            args_list = [(filepath, s, e, depth, min_elo) for s, e in boundaries]
+            args_list = [
+                (filepath, s, e, min_elo, min_time) for s, e in boundaries
+            ]
             for data, matched, scanned, sequences in pool.imap_unordered(
                 _count_lines_worker, args_list
             ):
@@ -475,7 +382,7 @@ def build_book(
 
     print(
         f"  {total_scanned:,} games scanned,"
-        f" {total_matched:,} matched ELO filter,"
+        f" {total_matched:,} matched filters,"
         f" {len(line_counts):,} unique sequences"
     )
 
@@ -486,23 +393,21 @@ def build_book(
     num_batches = workers * 4
     chunk_size = max(1, len(items) // num_batches)
     batches = [
-        (items[i : i + chunk_size], depth) for i in range(0, len(items), chunk_size)
+        items[i : i + chunk_size] for i in range(0, len(items), chunk_size)
     ]
     del items
 
     move_counts: dict[tuple[int, int, int, int], int] = defaultdict(int)
     all_dest_hashes: dict[tuple[int, int, int, int], int] = {}
-    depth_positions: set[int] = set()
 
     with mp.Pool(workers) as pool:
-        for mc, dp, dh in tqdm(
+        for mc, dh in tqdm(
             pool.imap_unordered(_replay_worker, batches),
             total=len(batches),
             desc="  Replaying",
         ):
             for k, v in mc.items():
                 move_counts[k] += v
-            depth_positions.update(dp)
             for k, v in dh.items():
                 if k not in all_dest_hashes:
                     all_dest_hashes[k] = v
@@ -515,11 +420,19 @@ def write_book(
     move_counts: dict[tuple[int, int, int, int], int],
     dest_hashes: dict[tuple[int, int, int, int], int],
     output: Path,
-    depth: int = 0,
+    min_count: int = 1,
     min_weight_pct: float = 0.01,
 ) -> None:
     """Write the binary book file, pruning unreachable positions."""
     from collections import deque
+
+    # Filter by min_count before grouping
+    if min_count > 1:
+        before = len(move_counts)
+        move_counts = {k: v for k, v in move_counts.items() if v >= min_count}
+        print(
+            f"  Filtered {before:,} -> {len(move_counts):,} (min_count={min_count})"
+        )
 
     # Group by position and compute weights
     positions: dict[int, list[tuple[int, int, int, int, int]]] = defaultdict(list)
@@ -626,31 +539,19 @@ def main():
         "--output", "-o", type=Path, default=Path("book.bin"), help="Output file"
     )
     parser.add_argument(
-        "--lines", type=int, default=250000, help="Max lines for depth analysis"
+        "--min-elo", type=int, default=1600, help="Min player Elo filter"
     )
     parser.add_argument(
-        "--coverage",
-        type=float,
-        default=0.5,
-        help="Coverage threshold for depth analysis",
-    )
-    parser.add_argument(
-        "--max-depth", type=int, default=20, help="Max depth for depth analysis"
-    )
-    parser.add_argument(
-        "--min-elo", type=int, default=2200, help="Min player Elo filter"
-    )
-    parser.add_argument(
-        "--depth",
+        "--min-time",
         type=int,
-        default=0,
-        help="Opening depth in plies (default: auto-detect)",
+        default=180,
+        help="Min initial time in seconds (filters bullet; default: 180)",
     )
     parser.add_argument(
         "--min-count",
         type=int,
-        default=1,
-        help="Minimum times a position-move must appear (filters noise)",
+        default=10,
+        help="Minimum times a position-move must appear (default: 10)",
     )
     parser.add_argument(
         "--min-weight-pct",
@@ -671,37 +572,16 @@ def main():
         print(f"Error: {args.pgn} not found", file=sys.stderr)
         sys.exit(1)
 
-    if args.depth > 0:
-        depth = args.depth
-        print(f"Using fixed depth: {depth}")
-    else:
-        depth, _ = find_optimal_depth(
-            _iter_files(args.pgn),
-            args.lines,
-            args.coverage,
-            args.max_depth,
-            args.min_elo,
-            args.workers,
-        )
-        if depth == 0:
-            print("No suitable depth found.", file=sys.stderr)
-            sys.exit(1)
-
     move_counts, dest_hashes = build_book(
         _iter_files(args.pgn),
-        depth,
         args.min_elo,
+        args.min_time,
         args.workers,
     )
 
-    if args.min_count > 1:
-        before = len(move_counts)
-        move_counts = {k: v for k, v in move_counts.items() if v >= args.min_count}
-        print(
-            f"  Filtered {before:,} → {len(move_counts):,} (min_count={args.min_count})"
-        )
-
-    write_book(move_counts, dest_hashes, args.output, depth, args.min_weight_pct)
+    write_book(
+        move_counts, dest_hashes, args.output, args.min_count, args.min_weight_pct
+    )
 
 
 if __name__ == "__main__":

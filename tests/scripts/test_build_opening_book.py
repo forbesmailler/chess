@@ -8,10 +8,10 @@ import chess.polyglot
 
 from scripts.build_opening_book import (
     _check_elo,
+    _check_time_control,
     _extract_san_moves,
     _parse_game_bytes,
     build_book,
-    find_optimal_depth,
     write_book,
 )
 
@@ -108,23 +108,36 @@ class TestExtractSanMoves:
         assert moves == ["e4", "e5"]
 
 
-class TestFindOptimalDepth:
-    def test_basic(self, tmp_path):
-        pgn_path = _make_pgn(SAMPLE_PGN, tmp_path)
-        depth, total = find_optimal_depth([str(pgn_path)], 250000, 0.5, 30, 0, 1)
-        assert depth >= 1
-        assert total == 4
+class TestCheckTimeControl:
+    def test_rapid(self):
+        data = b'[TimeControl "600+0"]\n\n1. e4 1-0'
+        assert _check_time_control(data, 180) is True
 
-    def test_max_depth_limit(self, tmp_path):
-        pgn_path = _make_pgn(SAMPLE_PGN, tmp_path)
-        depth, total = find_optimal_depth([str(pgn_path)], 250000, 0.5, 2, 0, 1)
-        assert depth <= 2
+    def test_bullet(self):
+        data = b'[TimeControl "60+0"]\n\n1. e4 1-0'
+        assert _check_time_control(data, 180) is False
+
+    def test_blitz_boundary(self):
+        data = b'[TimeControl "180+0"]\n\n1. e4 1-0'
+        assert _check_time_control(data, 180) is True
+
+    def test_no_increment(self):
+        data = b'[TimeControl "300"]\n\n1. e4 1-0'
+        assert _check_time_control(data, 180) is True
+
+    def test_missing(self):
+        data = b'[Event "Test"]\n\n1. e4 1-0'
+        assert _check_time_control(data, 180) is False
+
+    def test_zero_min(self):
+        data = b'[TimeControl "60+0"]\n\n1. e4 1-0'
+        assert _check_time_control(data, 0) is True
 
 
 class TestBuildBook:
     def test_basic(self, tmp_path):
         pgn_path = _make_pgn(SAMPLE_PGN, tmp_path)
-        move_counts, dest_hashes = build_book([str(pgn_path)], 2, 0, 1)
+        move_counts, dest_hashes = build_book([str(pgn_path)], 0, 0, 1)
 
         # Starting position should have entries
         start_hash = chess.polyglot.zobrist_hash(chess.Board())
@@ -143,22 +156,23 @@ class TestBuildBook:
         board.push_uci("e2e4")
         assert dest_hashes[e4_key] == chess.polyglot.zobrist_hash(board)
 
-    def test_depth_1(self, tmp_path):
+    def test_all_plies_recorded(self, tmp_path):
+        """All plies from all games are recorded (depth-agnostic)."""
         pgn_path = _make_pgn(SAMPLE_PGN, tmp_path)
-        move_counts, _ = build_book([str(pgn_path)], 1, 0, 1)
-        # Only first ply: e4 (3 games) and d4 (1 game)
-        assert len(move_counts) == 2
-
-    def test_short_games_contribute(self, tmp_path):
-        """Games shorter than depth still contribute their plies."""
-        pgn_path = _make_pgn(SAMPLE_PGN, tmp_path)
-        # Depth 4: game 4 ("e4 c5") only has 2 plies but still contributes
-        move_counts, _ = build_book([str(pgn_path)], 4, 0, 1)
+        move_counts, _ = build_book([str(pgn_path)], 0, 0, 1)
 
         start_hash = chess.polyglot.zobrist_hash(chess.Board())
         e4_key = (start_hash, chess.E2, chess.E4, 0)
         # All 3 e4 games contribute (even "e4 c5" which is only 2 plies)
         assert move_counts[e4_key] == 3
+
+        # Bb5 from game 1 (depth 5) should also be recorded
+        board = chess.Board()
+        for uci in ["e2e4", "e7e5", "g1f3", "b8c6"]:
+            board.push_uci(uci)
+        h4 = chess.polyglot.zobrist_hash(board)
+        bb5_key = (h4, chess.F1, chess.B5, 0)
+        assert move_counts[bb5_key] == 1
 
 
 class TestWriteBook:
@@ -281,3 +295,21 @@ class TestWriteBook:
             # Orphan position should be pruned
             assert num_pos == 2
             assert num_moves == 2
+
+    def test_min_count_filters(self, tmp_path):
+        """Moves below min_count are filtered out before weight computation."""
+        start_hash = chess.polyglot.zobrist_hash(chess.Board())
+        move_counts = {
+            (start_hash, chess.E2, chess.E4, 0): 100,
+            (start_hash, chess.D2, chess.D4, 0): 5,  # below min_count=10
+        }
+        dest_hashes = self._dest_hashes_for(move_counts)
+
+        output = tmp_path / "test.bin"
+        write_book(move_counts, dest_hashes, output, min_count=10)
+
+        with open(output, "rb") as f:
+            f.read(4)  # magic
+            _, num_pos, num_moves = struct.unpack("<III", f.read(12))
+            assert num_pos == 1
+            assert num_moves == 1
