@@ -244,7 +244,7 @@ static constexpr int PROGRESS_LOG_INTERVAL = 10;
 }  // namespace self_play
 
 namespace compare {
-static constexpr int NUM_GAMES = 1000;
+static constexpr int NUM_GAMES = 100;
 }  // namespace compare
 
 }  // namespace config

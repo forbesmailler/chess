@@ -26,4 +26,4 @@ training:
   max_data_workers: 4
 
 compare:
-  num_games: 1000
+  num_games: 100

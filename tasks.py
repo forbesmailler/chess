@@ -80,6 +80,7 @@ def prepare(c):
         "train_only": "Skip self-play; just train, export, compare, and archive",
         "compare_only": "Skip self-play and training; just compare candidate vs current best",
         "candidate": "Candidate weights path (required with --compare-only)",
+        "freeze_baseline": "Don't update current best on accept",
     }
 )
 def train(
@@ -94,6 +95,7 @@ def train(
     train_only=False,
     compare_only=False,
     candidate=None,
+    freeze_baseline=False,
 ):
     """Prepare then run continuous RL loop (Ctrl+C to stop)."""
     prepare(c)
@@ -110,7 +112,46 @@ def train(
         cmd += " --compare-only"
     if candidate:
         cmd += f" --candidate {candidate}"
+    if freeze_baseline:
+        cmd += " --freeze-baseline"
     c.run(cmd)
+
+
+@task(
+    help={
+        "eval_weights": "Comma-separated eval weights to sweep (e.g., 0.5,0.6,0.75,0.9)",
+        "data": f"Training data path (default: {_sp['output_file']})",
+        "epochs": f"Training epochs (default: {_train_cfg['epochs']})",
+        "batch_size": f"Training batch size (default: {_train_cfg['batch_size']})",
+        "compare_games": f"Comparison games (default: {_cmp.get('num_games', 100)})",
+        "freeze_baseline": "Don't update current best on accept (default: true)",
+    }
+)
+def sweep(
+    c,
+    eval_weights,
+    data=_sp["output_file"],
+    epochs=_train_cfg["epochs"],
+    batch_size=_train_cfg["batch_size"],
+    compare_games=_cmp.get("num_games", 100),
+    freeze_baseline=True,
+):
+    """Train and compare one model per eval weight."""
+    prepare(c)
+    weights = [float(w.strip()) for w in eval_weights.split(",")]
+    for i, w in enumerate(weights, 1):
+        print(f"\n{'=' * 60}")
+        print(f"=== Sweep {i}/{len(weights)}: eval_weight={w} ===")
+        print(f"{'=' * 60}")
+        cmd = (
+            f"python -u scripts/train_loop.py --train-only"
+            f" --data {data}"
+            f" --epochs {epochs} --batch-size {batch_size}"
+            f" --eval-weight {w} --compare-games {compare_games}"
+        )
+        if freeze_baseline:
+            cmd += " --freeze-baseline"
+        c.run(cmd)
 
 
 @task(

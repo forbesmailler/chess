@@ -158,6 +158,11 @@ def main():
         default=0,
         help="Max iterations (0 = infinite, default: 0).",
     )
+    p.add_argument(
+        "--freeze-baseline",
+        action="store_true",
+        help="Don't update current best on accept (compare all against same baseline).",
+    )
     args = p.parse_args()
 
     if args.iterations == 0 and (args.compare_only or args.train_only):
@@ -257,7 +262,8 @@ def main():
         if improved:
             archive_path = accepted_dir / archive_name
             shutil.move(str(candidate_path), str(archive_path))
-            write_current_best(pointer_file, str(archive_path))
+            if not args.freeze_baseline:
+                write_current_best(pointer_file, str(archive_path))
             status = "ACCEPTED"
         else:
             archive_path = rejected_dir / archive_name
