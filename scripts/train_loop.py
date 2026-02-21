@@ -43,7 +43,8 @@ def cap_training_data(data_path: Path) -> None:
         return
     file_size = data_path.stat().st_size
     total_positions = file_size // POSITION_BYTES
-    max_positions = DATA_CAP_MULTIPLIER * compute_param_count()
+    val_split = _train_cfg["val_split"]
+    max_positions = int(DATA_CAP_MULTIPLIER * compute_param_count() / (1 - val_split))
     if total_positions <= max_positions:
         return
     trim_count = total_positions - max_positions
