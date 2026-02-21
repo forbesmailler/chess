@@ -274,19 +274,21 @@ def _phase1_worker(args):
     chunk = _read_chunk(filepath, start, end).replace(b"\r", b"")
     games = _split_chunk(chunk)
     depth_counters = [Counter() for _ in range(max_depth + 1)]
-    count = 0
+    matched = 0
+    scanned = 0
     seq_hash = _seq_hash
 
     for game_data in games:
         if len(game_data) < 20:
             continue
+        scanned += 1
         if min_elo > 0 and not _check_elo(game_data, min_elo):
             continue
         movetext = _get_movetext(game_data)
         san_moves = _extract_san_moves(movetext, max_depth)
         if not san_moves:
             continue
-        count += 1
+        matched += 1
         h = 0
         for d, san in enumerate(san_moves, 1):
             h = seq_hash(h, san)
@@ -297,10 +299,7 @@ def _phase1_worker(args):
     for d in range(1, max_depth + 1):
         for h, c in depth_counters[d].items():
             parts.append(pack(d, h, c))
-    return b"".join(parts), count
-
-
-_PHASE1_SAMPLE = 2_000_000
+    return b"".join(parts), matched, scanned
 
 
 def find_optimal_depth(
@@ -311,27 +310,26 @@ def find_optimal_depth(
     min_elo: int,
     workers: int,
 ) -> tuple[int, int]:
-    """Find the max depth where top N lines cover >coverage of games.
-
-    Samples up to ~2M games for depth analysis (statistically sufficient).
-    """
+    """Find the max depth where top N lines cover >coverage of games."""
     print(f"Phase 1: Analyzing opening depth... ({workers} workers)")
 
     depth_counters = [Counter() for _ in range(max_depth + 1)]
-    total_games = 0
+    total_matched = 0
+    total_scanned = 0
 
     with mp.Pool(workers) as pool:
         pbar = tqdm(desc="  Scanning", unit=" games", unit_scale=True)
         for filepath in file_iter:
-            if total_games >= _PHASE1_SAMPLE:
-                break
             boundaries = _find_boundaries(filepath, workers * 10)
             if not boundaries:
                 continue
             args_list = [(filepath, s, e, max_depth, min_elo) for s, e in boundaries]
-            for data, count in pool.imap_unordered(_phase1_worker, args_list):
-                total_games += count
-                pbar.update(count)
+            for data, matched, scanned in pool.imap_unordered(
+                _phase1_worker, args_list
+            ):
+                total_matched += matched
+                total_scanned += scanned
+                pbar.update(scanned)
                 for d, h, c in _P1_ENTRY.iter_unpack(data):
                     depth_counters[d][h] += c
         pbar.close()
@@ -340,11 +338,14 @@ def find_optimal_depth(
     if hasattr(file_iter, "close"):
         file_iter.close()
 
-    if total_games == 0:
+    if total_matched == 0:
         print("No games found!")
         return 0, 0
 
-    print(f"  Sampled {total_games:,} games for depth analysis")
+    print(
+        f"  {total_scanned:,} games scanned,"
+        f" {total_matched:,} matched ELO filter"
+    )
 
     optimal_depth = 1
     for depth in range(1, max_depth + 1):
@@ -353,7 +354,7 @@ def find_optimal_depth(
             break
         games_at_depth = sum(counter.values())
 
-        if games_at_depth < total_games * 0.5:
+        if games_at_depth < total_matched * 0.5:
             break
 
         top_lines = counter.most_common(max_lines)
@@ -372,7 +373,7 @@ def find_optimal_depth(
 
     del depth_counters
     print(f"  Optimal depth: {optimal_depth}")
-    return optimal_depth, total_games
+    return optimal_depth, total_matched
 
 
 _LC_ENTRY = struct.Struct("<II")  # hash_u32, count_u32
@@ -385,19 +386,21 @@ def _count_lines_worker(args):
     games = _split_chunk(chunk)
     line_counts = Counter()
     sequences = {}
-    count = 0
+    matched = 0
+    scanned = 0
     seq_hash = _seq_hash
 
     for game_data in games:
         if len(game_data) < 20:
             continue
+        scanned += 1
         if min_elo > 0 and not _check_elo(game_data, min_elo):
             continue
         movetext = _get_movetext(game_data)
         san_moves = _extract_san_moves(movetext, depth)
         if not san_moves:
             continue
-        count += 1
+        matched += 1
         h = 0
         for san in san_moves:
             h = seq_hash(h, san)
@@ -407,7 +410,7 @@ def _count_lines_worker(args):
 
     pack = _LC_ENTRY.pack
     data = b"".join(pack(h, c) for h, c in line_counts.items())
-    return data, count, sequences
+    return data, matched, scanned, sequences
 
 
 def build_book(
@@ -421,7 +424,8 @@ def build_book(
 
     line_counts = Counter()
     all_sequences: dict[int, tuple[str, ...]] = {}
-    total_games = 0
+    total_matched = 0
+    total_scanned = 0
 
     with mp.Pool(workers) as pool:
         pbar = tqdm(desc="  Scanning", unit=" games", unit_scale=True)
@@ -430,11 +434,12 @@ def build_book(
             if not boundaries:
                 continue
             args_list = [(filepath, s, e, depth, min_elo) for s, e in boundaries]
-            for data, count, sequences in pool.imap_unordered(
+            for data, matched, scanned, sequences in pool.imap_unordered(
                 _count_lines_worker, args_list
             ):
-                total_games += count
-                pbar.update(count)
+                total_matched += matched
+                total_scanned += scanned
+                pbar.update(scanned)
                 for h, c in _LC_ENTRY.iter_unpack(data):
                     line_counts[h] += c
                 for h, seq in sequences.items():
@@ -443,7 +448,9 @@ def build_book(
         pbar.close()
 
     print(
-        f"  {total_games:,} games, {len(line_counts):,} unique sequences"
+        f"  {total_scanned:,} games scanned,"
+        f" {total_matched:,} matched ELO filter,"
+        f" {len(line_counts):,} unique sequences"
     )
 
     # Replay each unique sequence once (board ops only here, not in workers)
