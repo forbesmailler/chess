@@ -410,6 +410,33 @@ def _count_lines_worker(args):
     return data, matched, scanned, sequences
 
 
+def _replay_worker(args):
+    """Replay unique opening sequences to extract position-move data."""
+    items, depth = args
+    move_counts = defaultdict(int)
+    depth_positions = set()
+    for h, weight, san_moves in items:
+        board = chess.Board()
+        try:
+            for san in san_moves:
+                pos_hash = chess.polyglot.zobrist_hash(board)
+                move = board.parse_san(san)
+                promo = move.promotion if move.promotion is not None else 0
+                move_counts[(pos_hash, move.from_square, move.to_square, promo)] += (
+                    weight
+                )
+                board.push(move)
+            if len(san_moves) == depth:
+                depth_positions.add(chess.polyglot.zobrist_hash(board))
+        except (
+            chess.IllegalMoveError,
+            chess.InvalidMoveError,
+            chess.AmbiguousMoveError,
+        ):
+            pass
+    return dict(move_counts), depth_positions
+
+
 def build_book(
     file_iter,
     depth: int,
@@ -450,30 +477,29 @@ def build_book(
         f" {len(line_counts):,} unique sequences"
     )
 
-    # Replay each unique sequence once (board ops only here, not in workers)
+    # Replay unique sequences in parallel (board ops are the bottleneck)
+    items = [(h, line_counts[h], all_sequences[h]) for h in line_counts]
+    del all_sequences
+
+    num_batches = workers * 4
+    chunk_size = max(1, len(items) // num_batches)
+    batches = [
+        (items[i : i + chunk_size], depth) for i in range(0, len(items), chunk_size)
+    ]
+    del items
+
     move_counts: dict[tuple[int, int, int, int], int] = defaultdict(int)
     depth_positions: set[int] = set()
 
-    for h, weight in line_counts.items():
-        san_moves = all_sequences[h]
-        board = chess.Board()
-        try:
-            for san in san_moves:
-                pos_hash = chess.polyglot.zobrist_hash(board)
-                move = board.parse_san(san)
-                promo = move.promotion if move.promotion is not None else 0
-                move_counts[(pos_hash, move.from_square, move.to_square, promo)] += (
-                    weight
-                )
-                board.push(move)
-            if len(san_moves) == depth:
-                depth_positions.add(chess.polyglot.zobrist_hash(board))
-        except (
-            chess.IllegalMoveError,
-            chess.InvalidMoveError,
-            chess.AmbiguousMoveError,
+    with mp.Pool(workers) as pool:
+        for mc, dp in tqdm(
+            pool.imap_unordered(_replay_worker, batches),
+            total=len(batches),
+            desc="  Replaying",
         ):
-            pass
+            for k, v in mc.items():
+                move_counts[k] += v
+            depth_positions.update(dp)
 
     print(
         f"  {len(depth_positions):,} unique positions at depth {depth},"
