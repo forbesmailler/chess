@@ -72,16 +72,14 @@ def _iter_zst_chunks(pgn_path, chunk_size=256 << 20):
             if not eof:
                 boundary = chunk.rfind(_GAME_SEP)
                 if boundary > 0:
-                    leftover = chunk[boundary + 1:]
+                    leftover = chunk[boundary + 1 :]
                     chunk = chunk[: boundary + 1]
                 else:
                     leftover = b""
             else:
                 leftover = b""
 
-            tmp = tempfile.NamedTemporaryFile(
-                delete=False, suffix=".pgn", mode="wb"
-            )
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pgn", mode="wb")
             tmp.write(chunk)
             tmp.close()
             tmp_path = tmp.name
@@ -256,43 +254,7 @@ def _phase1_worker(args):
     return b"".join(parts), count
 
 
-_P2_ENTRY = struct.Struct("<QBBBBI")  # hash_u64, from, to, promo, pad, count_u32
-
-
-def _phase2_worker(args):
-    """Read a file range and process for book building."""
-    filepath, start, end, depth, min_elo = args
-    chunk = _read_chunk(filepath, start, end).replace(b"\r", b"")
-    games = _split_chunk(chunk)
-    move_counts: dict[tuple[int, int, int, int], int] = defaultdict(int)
-    count = 0
-
-    for game_data in games:
-        if not game_data.strip():
-            continue
-        white_elo, black_elo, movetext = _parse_game_bytes(game_data)
-        if min_elo > 0 and (white_elo < min_elo or black_elo < min_elo):
-            continue
-        san_moves = _extract_san_moves(movetext, depth)
-        if not san_moves:
-            continue
-
-        board = chess.Board()
-        try:
-            for san in san_moves:
-                h = chess.polyglot.zobrist_hash(board)
-                move = board.parse_san(san)
-                promo = move.promotion if move.promotion is not None else 0
-                move_counts[(h, move.from_square, move.to_square, promo)] += 1
-                board.push(move)
-        except (chess.IllegalMoveError, chess.InvalidMoveError,
-                chess.AmbiguousMoveError):
-            pass
-        count += 1
-
-    pack = _P2_ENTRY.pack
-    data = b"".join(pack(h, f, t, p, 0, c) for (h, f, t, p), c in move_counts.items())
-    return data, count
+_PHASE1_SAMPLE = 2_000_000
 
 
 def find_optimal_depth(
@@ -303,7 +265,10 @@ def find_optimal_depth(
     min_elo: int,
     workers: int,
 ) -> tuple[int, int]:
-    """Find the max depth where top N lines cover >coverage of games."""
+    """Find the max depth where top N lines cover >coverage of games.
+
+    Samples up to ~2M games for depth analysis (statistically sufficient).
+    """
     print(f"Phase 1: Analyzing opening depth... ({workers} workers)")
 
     depth_counters = [Counter() for _ in range(max_depth + 1)]
@@ -312,12 +277,12 @@ def find_optimal_depth(
     with mp.Pool(workers) as pool:
         pbar = tqdm(desc="  Scanning", unit=" games", unit_scale=True)
         for filepath in file_iter:
+            if total_games >= _PHASE1_SAMPLE:
+                break
             boundaries = _find_boundaries(filepath, workers * 10)
             if not boundaries:
                 continue
-            args_list = [
-                (filepath, s, e, max_depth, min_elo) for s, e in boundaries
-            ]
+            args_list = [(filepath, s, e, max_depth, min_elo) for s, e in boundaries]
             for data, count in pool.imap_unordered(_phase1_worker, args_list):
                 total_games += count
                 pbar.update(count)
@@ -325,11 +290,15 @@ def find_optimal_depth(
                     depth_counters[d][h] += c
         pbar.close()
 
+    # Close generator to clean up any temp chunk file
+    if hasattr(file_iter, "close"):
+        file_iter.close()
+
     if total_games == 0:
         print("No games found!")
         return 0, 0
 
-    print(f"  Total games: {total_games:,}")
+    print(f"  Sampled {total_games:,} games for depth analysis")
 
     optimal_depth = 1
     for depth in range(1, max_depth + 1):
@@ -342,7 +311,7 @@ def find_optimal_depth(
             break
 
         top_lines = counter.most_common(max_lines)
-        top_coverage = sum(c for _, c in top_lines) / total_games
+        top_coverage = sum(c for _, c in top_lines) / games_at_depth
 
         print(
             f"  Depth {depth:2d}: {len(counter):>8,d} unique lines,"
@@ -360,37 +329,107 @@ def find_optimal_depth(
     return optimal_depth, total_games
 
 
+_LC_ENTRY = struct.Struct("<II")  # hash_u32, count_u32
+
+
+def _line_count_worker(args):
+    """Count opening line frequencies and capture one example per hash."""
+    filepath, start, end, depth, min_elo = args
+    chunk = _read_chunk(filepath, start, end).replace(b"\r", b"")
+    games = _split_chunk(chunk)
+    line_counts = Counter()
+    sequences = {}
+    count = 0
+    seq_hash = _seq_hash
+
+    for game_data in games:
+        if not game_data.strip():
+            continue
+        white_elo, black_elo, movetext = _parse_game_bytes(game_data)
+        if min_elo > 0 and (white_elo < min_elo or black_elo < min_elo):
+            continue
+        san_moves = _extract_san_moves(movetext, depth)
+        if len(san_moves) < depth:
+            continue
+        count += 1
+        h = 0
+        for san in san_moves:
+            h = seq_hash(h, san)
+        line_counts[h] += 1
+        if h not in sequences:
+            sequences[h] = tuple(san_moves)
+
+    pack = _LC_ENTRY.pack
+    data = b"".join(pack(h, c) for h, c in line_counts.items())
+    return data, count, sequences
+
+
 def build_book(
     file_iter,
     depth: int,
+    max_lines: int,
     min_elo: int,
     workers: int,
 ) -> dict[tuple[int, int, int, int], int]:
-    """Replay games to depth, collecting (hash, from, to, promo) → count."""
-    print(f"Phase 2: Building book at depth {depth}... ({workers} workers)")
+    """Single pass: count lines, find top N, replay to build book."""
+    print(
+        f"Building book at depth {depth}, top {max_lines:,} lines..."
+        f" ({workers} workers)"
+    )
 
-    move_counts: dict[tuple[int, int, int, int], int] = defaultdict(int)
-    game_count = 0
+    line_counts = Counter()
+    all_sequences: dict[int, tuple[str, ...]] = {}
+    total_games = 0
 
     with mp.Pool(workers) as pool:
-        pbar = tqdm(desc="  Building", unit=" games", unit_scale=True)
+        pbar = tqdm(desc="  Scanning", unit=" games", unit_scale=True)
         for filepath in file_iter:
             boundaries = _find_boundaries(filepath, workers * 10)
             if not boundaries:
                 continue
-            args_list = [
-                (filepath, s, e, depth, min_elo) for s, e in boundaries
-            ]
-            for data, count in pool.imap_unordered(_phase2_worker, args_list):
-                game_count += count
+            args_list = [(filepath, s, e, depth, min_elo) for s, e in boundaries]
+            for data, count, sequences in pool.imap_unordered(
+                _line_count_worker, args_list
+            ):
+                total_games += count
                 pbar.update(count)
-                for h, f, t, p, _, c in _P2_ENTRY.iter_unpack(data):
-                    move_counts[(h, f, t, p)] += c
+                for h, c in _LC_ENTRY.iter_unpack(data):
+                    line_counts[h] += c
+                for h, seq in sequences.items():
+                    if h not in all_sequences:
+                        all_sequences[h] = seq
         pbar.close()
 
+    top = line_counts.most_common(max_lines)
+    top_coverage = sum(c for _, c in top) / total_games if total_games else 0
+
     print(
-        f"  Processed {game_count:,} games, {len(move_counts):,} unique position-moves"
+        f"  {total_games:,} games, {len(line_counts):,} unique lines,"
+        f" top {len(top):,} cover {top_coverage:.1%}"
     )
+
+    # Replay top sequences to build position-move table
+    move_counts: dict[tuple[int, int, int, int], int] = defaultdict(int)
+    for h, weight in top:
+        san_moves = all_sequences[h]
+        board = chess.Board()
+        try:
+            for san in san_moves:
+                pos_hash = chess.polyglot.zobrist_hash(board)
+                move = board.parse_san(san)
+                promo = move.promotion if move.promotion is not None else 0
+                move_counts[(pos_hash, move.from_square, move.to_square, promo)] += (
+                    weight
+                )
+                board.push(move)
+        except (
+            chess.IllegalMoveError,
+            chess.InvalidMoveError,
+            chess.AmbiguousMoveError,
+        ):
+            pass
+
+    print(f"  {len(move_counts):,} unique position-moves in book")
     return dict(move_counts)
 
 
@@ -484,15 +523,23 @@ def main():
         print(f"Using fixed depth: {depth}")
     else:
         depth, _ = find_optimal_depth(
-            _iter_files(args.pgn), args.lines, args.coverage, args.max_depth,
-            args.min_elo, args.workers,
+            _iter_files(args.pgn),
+            args.lines,
+            args.coverage,
+            args.max_depth,
+            args.min_elo,
+            args.workers,
         )
         if depth == 0:
             print("No suitable depth found.", file=sys.stderr)
             sys.exit(1)
 
     move_counts = build_book(
-        _iter_files(args.pgn), depth, args.min_elo, args.workers,
+        _iter_files(args.pgn),
+        depth,
+        args.lines,
+        args.min_elo,
+        args.workers,
     )
 
     if args.min_count > 1:
