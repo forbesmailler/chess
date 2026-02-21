@@ -25,6 +25,7 @@ import sys
 import tempfile
 import zlib
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import chess
@@ -36,63 +37,73 @@ _GAME_PREFIX = b"[Event "
 
 
 def _iter_zst_chunks(pgn_path, chunk_size=256 << 20):
-    """Stream decompress .zst in ~256 MB chunks, yielding temp file paths.
+    """Stream decompress .zst with one-chunk-ahead prefetching.
 
-    Each temp file is deleted before the next is written, so peak disk usage
-    stays around chunk_size. The .zst file is re-decompressed for each phase.
+    Decompresses the next chunk in a background thread while the current
+    chunk is being processed, overlapping I/O with worker computation.
+    Peak temp disk usage: ~2 × chunk_size.
     """
     import zstandard
 
     fh = open(pgn_path, "rb")
     dctx = zstandard.ZstdDecompressor()
     reader = dctx.stream_reader(fh, read_size=1 << 22)
-    tmp_path = None
-    leftover = b""
+    leftover = [b""]
+    live_paths = []
+
+    def _decompress_next():
+        parts = [leftover[0]] if leftover[0] else []
+        total = len(leftover[0])
+        eof = False
+        while total < chunk_size:
+            data = reader.read(1 << 22)
+            if not data:
+                eof = True
+                break
+            clean = data.replace(b"\r", b"")
+            parts.append(clean)
+            total += len(clean)
+        if total == 0:
+            leftover[0] = b""
+            return None
+        chunk = b"".join(parts)
+        if not eof:
+            boundary = chunk.rfind(_GAME_SEP)
+            if boundary > 0:
+                leftover[0] = chunk[boundary + 1 :]
+                chunk = chunk[: boundary + 1]
+            else:
+                leftover[0] = b""
+        else:
+            leftover[0] = b""
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pgn", mode="wb")
+        tmp.write(chunk)
+        tmp.close()
+        live_paths.append(tmp.name)
+        return tmp.name
 
     try:
-        while True:
-            parts = [leftover] if leftover else []
-            total = len(leftover)
-            eof = False
-
-            while total < chunk_size:
-                data = reader.read(1 << 22)
-                if not data:
-                    eof = True
+        with ThreadPoolExecutor(max_workers=1) as tex:
+            future = tex.submit(_decompress_next)
+            while True:
+                path = future.result()
+                if path is None:
                     break
-                clean = data.replace(b"\r", b"")
-                parts.append(clean)
-                total += len(clean)
-
-            if total == 0:
-                break
-
-            chunk = b"".join(parts)
-
-            if not eof:
-                boundary = chunk.rfind(_GAME_SEP)
-                if boundary > 0:
-                    leftover = chunk[boundary + 1 :]
-                    chunk = chunk[: boundary + 1]
-                else:
-                    leftover = b""
-            else:
-                leftover = b""
-
-            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pgn", mode="wb")
-            tmp.write(chunk)
-            tmp.close()
-            tmp_path = tmp.name
-
-            yield tmp_path
-
-            os.unlink(tmp_path)
-            tmp_path = None
+                # Start next decompression while caller processes current
+                future = tex.submit(_decompress_next)
+                yield path
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
     finally:
-        if tmp_path and os.path.exists(tmp_path):
-            os.unlink(tmp_path)
         reader.close()
         fh.close()
+        for p in live_paths:
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
 
 
 def _iter_files(pgn_path):
