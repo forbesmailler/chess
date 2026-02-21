@@ -105,7 +105,7 @@ class TestFindOptimalDepth:
 class TestBuildBook:
     def test_basic(self, tmp_path):
         pgn_path = _make_pgn(SAMPLE_PGN, tmp_path)
-        move_counts = build_book([str(pgn_path)], 2, 250000, 0, 1)
+        move_counts = build_book([str(pgn_path)], 2, 0, 1)
 
         # Starting position should have entries
         start_hash = chess.polyglot.zobrist_hash(chess.Board())
@@ -120,21 +120,20 @@ class TestBuildBook:
 
     def test_depth_1(self, tmp_path):
         pgn_path = _make_pgn(SAMPLE_PGN, tmp_path)
-        move_counts = build_book([str(pgn_path)], 1, 250000, 0, 1)
+        move_counts = build_book([str(pgn_path)], 1, 0, 1)
         # Only first ply: e4 (3 games) and d4 (1 game)
         assert len(move_counts) == 2
 
-    def test_max_lines_limit(self, tmp_path):
+    def test_short_games_contribute(self, tmp_path):
+        """Games shorter than depth still contribute their plies."""
         pgn_path = _make_pgn(SAMPLE_PGN, tmp_path)
-        # At depth 2: 3 unique lines. Limit to top 2.
-        move_counts = build_book([str(pgn_path)], 2, 2, 0, 1)
+        # Depth 4: game 4 ("e4 c5") only has 2 plies but still contributes
+        move_counts = build_book([str(pgn_path)], 4, 0, 1)
 
         start_hash = chess.polyglot.zobrist_hash(chess.Board())
-        # Top 2 lines: "e4 e5" (2 games) and one of "d4 d5"/"e4 c5" (1 each)
-        # e4 is in top line "e4 e5", d4 or c5 depends on tiebreak
         e4_key = (start_hash, chess.E2, chess.E4, 0)
-        assert e4_key in move_counts
-        assert move_counts[e4_key] >= 2
+        # All 3 e4 games contribute (even "e4 c5" which is only 2 plies)
+        assert move_counts[e4_key] == 3
 
 
 class TestWriteBook:

@@ -117,11 +117,11 @@ def train(
     help={
         "pgn": "Path to PGN file (.pgn or .pgn.zst)",
         "output": "Output book file (default: book.bin)",
-        "lines": "Max opening lines (default: 250000)",
-        "coverage": "Min coverage threshold (default: 0.5)",
-        "max_depth": "Max search depth (default: 20)",
-        "min_elo": "Min player Elo filter (default: 0)",
-        "depth": "Skip depth analysis, use this depth directly",
+        "lines": "Max opening lines for depth analysis (default: 250000)",
+        "coverage": "Min coverage threshold for depth analysis (default: 0.5)",
+        "max_depth": "Max search depth for depth analysis (default: 20)",
+        "min_elo": "Min player Elo filter (default: 2200)",
+        "depth": "Opening depth in plies (default: auto-detect)",
     }
 )
 def build_book(
@@ -131,7 +131,7 @@ def build_book(
     lines=250000,
     coverage=0.5,
     max_depth=20,
-    min_elo=0,
+    min_elo=2200,
     depth=0,
     workers=0,
 ):
@@ -140,10 +140,8 @@ def build_book(
         f"python scripts/build_opening_book.py {pgn}"
         f" --output {output} --lines {lines}"
         f" --coverage {coverage} --max-depth {max_depth}"
-        f" --min-elo {min_elo}"
+        f" --min-elo {min_elo} --depth {depth}"
     )
-    if depth > 0:
-        cmd += f" --depth {depth}"
     if workers > 0:
         cmd += f" --workers {workers}"
     c.run(cmd)
