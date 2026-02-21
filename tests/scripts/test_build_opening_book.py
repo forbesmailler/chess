@@ -124,7 +124,7 @@ class TestFindOptimalDepth:
 class TestBuildBook:
     def test_basic(self, tmp_path):
         pgn_path = _make_pgn(SAMPLE_PGN, tmp_path)
-        move_counts = build_book([str(pgn_path)], 2, 0, 1)
+        move_counts, dest_hashes = build_book([str(pgn_path)], 2, 0, 1)
 
         # Starting position should have entries
         start_hash = chess.polyglot.zobrist_hash(chess.Board())
@@ -137,9 +137,15 @@ class TestBuildBook:
         assert move_counts[e4_key] == 3
         assert move_counts[d4_key] == 1
 
+        # dest_hashes should map moves to destination positions
+        assert e4_key in dest_hashes
+        board = chess.Board()
+        board.push_uci("e2e4")
+        assert dest_hashes[e4_key] == chess.polyglot.zobrist_hash(board)
+
     def test_depth_1(self, tmp_path):
         pgn_path = _make_pgn(SAMPLE_PGN, tmp_path)
-        move_counts = build_book([str(pgn_path)], 1, 0, 1)
+        move_counts, _ = build_book([str(pgn_path)], 1, 0, 1)
         # Only first ply: e4 (3 games) and d4 (1 game)
         assert len(move_counts) == 2
 
@@ -147,7 +153,7 @@ class TestBuildBook:
         """Games shorter than depth still contribute their plies."""
         pgn_path = _make_pgn(SAMPLE_PGN, tmp_path)
         # Depth 4: game 4 ("e4 c5") only has 2 plies but still contributes
-        move_counts = build_book([str(pgn_path)], 4, 0, 1)
+        move_counts, _ = build_book([str(pgn_path)], 4, 0, 1)
 
         start_hash = chess.polyglot.zobrist_hash(chess.Board())
         e4_key = (start_hash, chess.E2, chess.E4, 0)
@@ -156,15 +162,33 @@ class TestBuildBook:
 
 
 class TestWriteBook:
+    def _dest_hashes_for(self, move_counts):
+        """Build dest_hashes by replaying each move on a fresh board."""
+        dest_hashes = {}
+        for (h, from_sq, to_sq, promo), _ in move_counts.items():
+            board = chess.Board()
+            # Try to find a board state matching this hash
+            # For starting position moves, the board is already correct
+            if chess.polyglot.zobrist_hash(board) == h:
+                uci = chess.SQUARE_NAMES[from_sq] + chess.SQUARE_NAMES[to_sq]
+                if promo:
+                    uci += {2: "n", 3: "b", 4: "r", 5: "q"}[promo]
+                board.push_uci(uci)
+                dest_hashes[(h, from_sq, to_sq, promo)] = chess.polyglot.zobrist_hash(
+                    board
+                )
+        return dest_hashes
+
     def test_roundtrip(self, tmp_path):
         start_hash = chess.polyglot.zobrist_hash(chess.Board())
         move_counts = {
             (start_hash, chess.E2, chess.E4, 0): 100,
             (start_hash, chess.D2, chess.D4, 0): 50,
         }
+        dest_hashes = self._dest_hashes_for(move_counts)
 
         output = tmp_path / "test.bin"
-        write_book(move_counts, output)
+        write_book(move_counts, dest_hashes, output)
 
         with open(output, "rb") as f:
             magic = f.read(4)
@@ -206,9 +230,12 @@ class TestWriteBook:
             (h1, chess.E2, chess.E4, 0): 100,
             (h2, chess.E7, chess.E5, 0): 80,
         }
+        dest_hashes = {
+            (h1, chess.E2, chess.E4, 0): h2,
+        }
 
         output = tmp_path / "test.bin"
-        write_book(move_counts, output)
+        write_book(move_counts, dest_hashes, output)
 
         with open(output, "rb") as f:
             f.read(4)  # magic
@@ -223,3 +250,34 @@ class TestWriteBook:
                 f.read(8)  # offset + count + reserved
                 hashes.append(pos_hash)
             assert hashes == sorted(hashes)
+
+    def test_unreachable_positions_pruned(self, tmp_path):
+        """Positions not reachable from starting position are pruned."""
+        start_hash = chess.polyglot.zobrist_hash(chess.Board())
+
+        # Create a position reachable from start (after e4)
+        board_e4 = chess.Board()
+        board_e4.push_uci("e2e4")
+        h_e4 = chess.polyglot.zobrist_hash(board_e4)
+
+        # Create an unreachable position (random hash)
+        h_orphan = 0xDEADBEEF
+
+        move_counts = {
+            (start_hash, chess.E2, chess.E4, 0): 100,
+            (h_e4, chess.E7, chess.E5, 0): 80,
+            (h_orphan, chess.A2, chess.A3, 0): 50,
+        }
+        dest_hashes = {
+            (start_hash, chess.E2, chess.E4, 0): h_e4,
+        }
+
+        output = tmp_path / "test.bin"
+        write_book(move_counts, dest_hashes, output)
+
+        with open(output, "rb") as f:
+            f.read(4)  # magic
+            _, num_pos, num_moves = struct.unpack("<III", f.read(12))
+            # Orphan position should be pruned
+            assert num_pos == 2
+            assert num_moves == 2

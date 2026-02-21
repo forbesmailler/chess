@@ -414,6 +414,7 @@ def _replay_worker(args):
     """Replay unique opening sequences to extract position-move data."""
     items, depth = args
     move_counts = defaultdict(int)
+    dest_hashes = {}
     depth_positions = set()
     for h, weight, san_moves in items:
         board = chess.Board()
@@ -422,10 +423,11 @@ def _replay_worker(args):
                 pos_hash = chess.polyglot.zobrist_hash(board)
                 move = board.parse_san(san)
                 promo = move.promotion if move.promotion is not None else 0
-                move_counts[(pos_hash, move.from_square, move.to_square, promo)] += (
-                    weight
-                )
+                key = (pos_hash, move.from_square, move.to_square, promo)
+                move_counts[key] += weight
                 board.push(move)
+                if key not in dest_hashes:
+                    dest_hashes[key] = chess.polyglot.zobrist_hash(board)
             if len(san_moves) == depth:
                 depth_positions.add(chess.polyglot.zobrist_hash(board))
         except (
@@ -434,7 +436,7 @@ def _replay_worker(args):
             chess.AmbiguousMoveError,
         ):
             pass
-    return dict(move_counts), depth_positions
+    return dict(move_counts), depth_positions, dest_hashes
 
 
 def build_book(
@@ -442,7 +444,7 @@ def build_book(
     depth: int,
     min_elo: int,
     workers: int,
-) -> dict[tuple[int, int, int, int], int]:
+) -> tuple[dict[tuple[int, int, int, int], int], dict[tuple[int, int, int, int], int]]:
     """Count unique move sequences in workers, then replay each once."""
     print(f"Building book at depth {depth}... ({workers} workers)")
 
@@ -489,10 +491,11 @@ def build_book(
     del items
 
     move_counts: dict[tuple[int, int, int, int], int] = defaultdict(int)
+    all_dest_hashes: dict[tuple[int, int, int, int], int] = {}
     depth_positions: set[int] = set()
 
     with mp.Pool(workers) as pool:
-        for mc, dp in tqdm(
+        for mc, dp, dh in tqdm(
             pool.imap_unordered(_replay_worker, batches),
             total=len(batches),
             desc="  Replaying",
@@ -500,40 +503,104 @@ def build_book(
             for k, v in mc.items():
                 move_counts[k] += v
             depth_positions.update(dp)
+            for k, v in dh.items():
+                if k not in all_dest_hashes:
+                    all_dest_hashes[k] = v
 
-    print(
-        f"  {len(depth_positions):,} unique positions at depth {depth},"
-        f" {len(move_counts):,} position-moves in book"
-    )
-    return dict(move_counts)
+    print(f"  {len(move_counts):,} position-moves before pruning")
+    return dict(move_counts), all_dest_hashes
 
 
 def write_book(
     move_counts: dict[tuple[int, int, int, int], int],
+    dest_hashes: dict[tuple[int, int, int, int], int],
     output: Path,
+    depth: int = 0,
+    min_weight_pct: float = 0.01,
 ) -> None:
-    """Write the binary book file."""
-    positions: dict[int, list[tuple[int, int, int, int]]] = defaultdict(list)
+    """Write the binary book file, pruning unreachable positions."""
+    from collections import deque
+
+    # Group by position and compute weights
+    positions: dict[int, list[tuple[int, int, int, int, int]]] = defaultdict(list)
     for (h, from_sq, to_sq, promo), count in move_counts.items():
         positions[h].append((from_sq, to_sq, promo, count))
 
-    sorted_hashes = sorted(positions.keys())
+    # Compute weights, drop zero-weight and below-threshold moves
+    weighted: dict[int, list[tuple[int, int, int, int, tuple]]] = {}
+    for h, entries in positions.items():
+        max_count = max(c for _, _, _, c in entries)
+        moves = []
+        for from_sq, to_sq, promo, count in entries:
+            weight = round(count / max_count * 255)
+            if weight > 0:
+                key = (h, from_sq, to_sq, promo)
+                dest = dest_hashes.get(key)
+                moves.append((from_sq, to_sq, promo, weight, dest))
+        if moves:
+            total_weight = sum(w for _, _, _, w, _ in moves)
+            threshold = min_weight_pct * total_weight
+            moves = [m for m in moves if m[3] >= threshold]
+        if moves:
+            weighted[h] = moves
 
+    # BFS from starting position to prune unreachable positions
+    root = chess.polyglot.zobrist_hash(chess.Board())
+    reachable: dict[int, int] = {}  # hash → depth
+    queue = deque()
+    if root in weighted:
+        queue.append((root, 0))
+        reachable[root] = 0
+    while queue:
+        h, d = queue.popleft()
+        for _, _, _, _, dest in weighted[h]:
+            if dest is not None and dest in weighted and dest not in reachable:
+                reachable[dest] = d + 1
+                queue.append((dest, d + 1))
+
+    pruned = len(weighted) - len(reachable)
+    if pruned > 0:
+        print(f"  Pruned {pruned:,} unreachable positions")
+
+    total_moves = sum(len(weighted[h]) for h in reachable)
+    print(f"  {len(reachable):,} positions, {total_moves:,} moves after pruning")
+
+    # Count leaf positions: positions where at least one move leads outside the book
+    leaf_count = 0
+    for h in reachable:
+        for _, _, _, _, dest in weighted[h]:
+            if dest is None or dest not in reachable:
+                leaf_count += 1
+                break
+    print(f"  {leaf_count:,} leaf positions (at least one move exits book)")
+
+    # Build output tables from reachable positions only
+    sorted_hashes = sorted(reachable)
     pos_table = []
     moves_array = []
 
     for h in sorted_hashes:
-        entries = positions[h]
-        entries.sort(key=lambda x: x[3], reverse=True)
-
-        max_count = max(c for _, _, _, c in entries)
         offset = len(moves_array)
-
-        for from_sq, to_sq, promo, count in entries:
-            weight = max(1, round(count / max_count * 255))
+        moves = weighted[h]
+        moves.sort(key=lambda x: x[3], reverse=True)
+        for from_sq, to_sq, promo, weight, _ in moves:
             moves_array.append((from_sq, to_sq, promo, weight))
+        pos_table.append((h, offset, len(moves)))
 
-        pos_table.append((h, offset, len(entries)))
+    # Most common line: follow highest-weight move from starting position
+    line_prob = 1.0
+    cur = root
+    line_depth = 0
+    while cur in weighted and cur in reachable:
+        moves = weighted[cur]
+        total_weight = sum(w for _, _, _, w, _ in moves)
+        best = max(moves, key=lambda x: x[3])
+        line_prob *= best[3] / total_weight
+        cur = best[4]
+        line_depth += 1
+        if cur is None:
+            break
+    print(f"  Most common line ({line_depth} plies): {line_prob:.2%} of book games")
 
     with open(output, "wb") as f:
         f.write(b"BOOK")
@@ -586,6 +653,12 @@ def main():
         help="Minimum times a position-move must appear (filters noise)",
     )
     parser.add_argument(
+        "--min-weight-pct",
+        type=float,
+        default=0.01,
+        help="Drop moves below this fraction of total weight at their position (default: 0.01)",
+    )
+    parser.add_argument(
         "--workers",
         "-w",
         type=int,
@@ -614,7 +687,7 @@ def main():
             print("No suitable depth found.", file=sys.stderr)
             sys.exit(1)
 
-    move_counts = build_book(
+    move_counts, dest_hashes = build_book(
         _iter_files(args.pgn),
         depth,
         args.min_elo,
@@ -628,7 +701,7 @@ def main():
             f"  Filtered {before:,} → {len(move_counts):,} (min_count={args.min_count})"
         )
 
-    write_book(move_counts, args.output)
+    write_book(move_counts, dest_hashes, args.output, depth, args.min_weight_pct)
 
 
 if __name__ == "__main__":
