@@ -236,7 +236,7 @@ static constexpr float SIGMOID_SCALE = 400.0f;
 namespace self_play {
 static constexpr int NUM_GAMES = 10000;
 static constexpr int NUM_THREADS = 16;
-static constexpr int SEARCH_TIME_MS = 1000;
+static constexpr int SEARCH_TIME_MS = 500;
 static constexpr int RANDOM_PLIES = 0;
 static constexpr int SOFTMAX_PLIES = 0;
 static constexpr float SOFTMAX_TEMPERATURE = 0.0f;

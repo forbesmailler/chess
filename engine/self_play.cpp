@@ -255,9 +255,9 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
                 if (book_move) {
                     chosen_move =
                         ChessBoard::Move::from_uci(chess::uci::moveToUci(*book_move));
-                    stm_eval = engine->evaluate(board);
-                    if (!white_to_move) stm_eval = -stm_eval;
-                    move_found = true;
+                    board.make_move(chosen_move);
+                    ply++;
+                    continue;
                 }
             }
 
@@ -268,8 +268,6 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
                 std::uniform_int_distribution<int> move_dist(
                     0, static_cast<int>(legal_moves.size()) - 1);
                 chosen_move = legal_moves[move_dist(rng)];
-                stm_eval = engine->evaluate(board);
-                if (!white_to_move) stm_eval = -stm_eval;
             } else if (!move_found && ply < config.softmax_plies &&
                        config.softmax_temperature > 0.0f) {
                 auto legal_moves = board.get_legal_moves();
@@ -294,15 +292,21 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
                 for (auto& p : probs) p /= sum;
 
                 std::discrete_distribution<int> dist(probs.begin(), probs.end());
-                int idx = dist(rng);
-                chosen_move = legal_moves[idx];
-                stm_eval = scores[idx];
+                chosen_move = legal_moves[dist(rng)];
             } else if (!move_found) {
                 TimeControl tc{0, 0, 0};
                 engine->set_max_time(config.search_time_ms);
                 auto result = engine->get_best_move(board, tc);
-                stm_eval = result.score;
                 chosen_move = result.best_move;
+                stm_eval = result.score;
+                move_found = true;
+            }
+
+            // Search for eval label when move was chosen without search
+            if (!move_found) {
+                TimeControl tc{0, 0, 0};
+                engine->set_max_time(config.search_time_ms);
+                stm_eval = engine->get_best_move(board, tc).score;
             }
 
             positions.push_back(encode_position(board, stm_eval, 1, ply));
@@ -493,22 +497,20 @@ void ModelComparator::play_games(int num_games, int thread_id,
             bool new_to_move = (white_to_move == new_is_white);
             ChessEngine* active = new_to_move ? new_engine.get() : old_engine.get();
 
-            ChessBoard::Move chosen_move;
-            float stm_eval;
-            bool book_used = false;
-
             if (book_ && book_->is_loaded()) {
                 auto book_move = book_->probe(board.board);
                 if (book_move) {
-                    chosen_move =
+                    auto chosen =
                         ChessBoard::Move::from_uci(chess::uci::moveToUci(*book_move));
-                    stm_eval = active->evaluate(board);
-                    if (!white_to_move) stm_eval = -stm_eval;
-                    book_used = true;
+                    board.make_move(chosen);
+                    ply++;
+                    continue;
                 }
             }
 
-            if (!book_used) {
+            ChessBoard::Move chosen_move;
+            float stm_eval;
+            {
                 TimeControl tc{0, 0, 0};
                 active->set_max_time(config.search_time_ms);
                 auto result = active->get_best_move(board, tc);
