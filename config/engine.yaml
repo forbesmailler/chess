@@ -8,7 +8,7 @@ search:
   quiescence_max_depth: 8
   time_allocation_divisor: 40
   min_time_ms: 50
-  max_time_ms: 30000
+  max_time_ms: 1000
   aspiration_delta: 50.0
   aspiration_min_depth: 3
   mate_threshold_margin: 500

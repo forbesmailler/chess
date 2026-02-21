@@ -618,7 +618,9 @@ class TestDataCapping:
     def test_cap_trims_oldest(self, tmp_path):
         param_count = train_loop.compute_param_count()
         val_split = train_loop._train_cfg["val_split"]
-        max_positions = int(train_loop.DATA_CAP_MULTIPLIER * param_count / (1 - val_split))
+        max_positions = int(
+            train_loop.DATA_CAP_MULTIPLIER * param_count / (1 - val_split)
+        )
         total = max_positions + 100
         data = tmp_path / "data.bin"
         # Write identifiable data: each position is 42 bytes
@@ -639,7 +641,9 @@ class TestDataCapping:
     def test_cap_creates_backup(self, tmp_path):
         param_count = train_loop.compute_param_count()
         val_split = train_loop._train_cfg["val_split"]
-        max_positions = int(train_loop.DATA_CAP_MULTIPLIER * param_count / (1 - val_split))
+        max_positions = int(
+            train_loop.DATA_CAP_MULTIPLIER * param_count / (1 - val_split)
+        )
         total = max_positions + 10
         data = tmp_path / "training_data.bin"
         original = b"\x00" * (POSITION_BYTES * total)

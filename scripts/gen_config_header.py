@@ -391,9 +391,6 @@ def generate() -> str:
         f"    static constexpr float SOFTMAX_TEMPERATURE = {sp['softmax_temperature']:.1f}f;"
     )
     lines.append(
-        f"    static constexpr int DEFAULT_TIME_CONTROL_MS = {sp['default_time_control_ms']};"
-    )
-    lines.append(
         f"    static constexpr int PROGRESS_LOG_INTERVAL = {sp['progress_log_interval']};"
     )
     lines.append("}  // namespace self_play")

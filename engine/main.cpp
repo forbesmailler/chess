@@ -56,8 +56,7 @@ class LichessBot {
    public:
     enum class EngineType { NEGAMAX, MCTS };
 
-    LichessBot(const std::string& token, int max_time_ms = 1000,
-               EngineType engine_type = EngineType::NEGAMAX,
+    LichessBot(const std::string& token, EngineType engine_type = EngineType::NEGAMAX,
                EvalMode eval_mode = EvalMode::HANDCRAFTED,
                const std::string& nnue_weights_path = "",
                const std::string& book_path = "")
@@ -90,12 +89,12 @@ class LichessBot {
         }
 
         if (engine_type == EngineType::MCTS) {
-            engine =
-                std::make_unique<MCTSEngine>(max_time_ms, this->eval_mode, nnue_model);
+            engine = std::make_unique<MCTSEngine>(config::search::MAX_TIME_MS,
+                                                  this->eval_mode, nnue_model);
             Utils::log_info("Using MCTS engine");
         } else {
-            engine =
-                std::make_unique<ChessEngine>(max_time_ms, this->eval_mode, nnue_model);
+            engine = std::make_unique<ChessEngine>(config::search::MAX_TIME_MS,
+                                                   this->eval_mode, nnue_model);
             Utils::log_info("Using Negamax engine");
         }
 
@@ -109,7 +108,8 @@ class LichessBot {
 
         Utils::log_info("Bot started as user: " + account_info.username + " (" +
                         account_info.id + ")");
-        Utils::log_info("Max search time: " + std::to_string(max_time_ms) + "ms");
+        Utils::log_info(
+            "Max search time: " + std::to_string(config::search::MAX_TIME_MS) + "ms");
 
         if (account_info.is_bot) {
             Utils::log_info("Account is properly configured as a bot");
@@ -686,7 +686,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Piece count: " << board.piece_count() << std::endl;
         std::cout << "All tests passed!" << std::endl;
         std::cout << std::endl;
-        std::cout << "Usage: " << argv[0] << " [max_time_ms] [options]" << std::endl;
+        std::cout << "Usage: " << argv[0] << " [options]" << std::endl;
         std::cout
             << "       " << argv[0]
             << " --selfplay [num_games] [output_file] [num_threads] [nnue_weights]"
@@ -722,6 +722,11 @@ int main(int argc, char* argv[]) {
         if (argc > 4) config.num_threads = std::stoi(argv[4]);
         if (argc > 5) config.nnue_weights = argv[5];
 
+        {
+            std::ifstream book_test("book.bin", std::ios::binary);
+            if (book_test.good()) config.book_path = "book.bin";
+        }
+
         std::string eval_str = config.nnue_weights.empty()
                                    ? "handcrafted"
                                    : "NNUE (" + config.nnue_weights + ")";
@@ -730,6 +735,8 @@ int main(int argc, char* argv[]) {
         std::cout << "Output: " << config.output_file << std::endl;
         std::cout << "Threads: " << config.num_threads << std::endl;
         std::cout << "Eval: " << eval_str << std::endl;
+        if (!config.book_path.empty())
+            std::cout << "Book: " << config.book_path << std::endl;
 
         SelfPlayGenerator generator(config);
         generator.generate();
@@ -776,6 +783,11 @@ int main(int argc, char* argv[]) {
 
         if (old_weights == "handcrafted") old_weights = "";
 
+        {
+            std::ifstream book_test("book.bin", std::ios::binary);
+            if (book_test.good()) config.book_path = "book.bin";
+        }
+
         std::cout << "=== Model Comparison ===" << std::endl;
         std::cout << "Old: " << (old_weights.empty() ? "handcrafted" : old_weights)
                   << std::endl;
@@ -785,6 +797,8 @@ int main(int argc, char* argv[]) {
                   << (config.output_file.empty() ? "(none)" : config.output_file)
                   << std::endl;
         std::cout << "Threads: " << config.num_threads << std::endl;
+        if (!config.book_path.empty())
+            std::cout << "Book: " << config.book_path << std::endl;
 
         ModelComparator comparator(config, old_weights, new_weights);
         auto result = comparator.run();
@@ -832,12 +846,11 @@ int main(int argc, char* argv[]) {
     const char* token_env = std::getenv("LICHESS_TOKEN");
     if (!token_env || std::string(token_env).empty()) {
         std::cerr << "Error: LICHESS_TOKEN environment variable not set." << std::endl;
-        std::cerr << "Usage: " << argv[0] << " [max_time_ms] [options]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " [options]" << std::endl;
         return 1;
     }
 
     std::string token = token_env;
-    int max_time_ms = 1000;
     LichessBot::EngineType engine_type = LichessBot::EngineType::NEGAMAX;
     EvalMode eval_mode = EvalMode::HANDCRAFTED;
     std::string nnue_weights_path;
@@ -871,18 +884,7 @@ int main(int argc, char* argv[]) {
         } else if (arg.find("--book=") == 0) {
             book_path = arg.substr(7);
         } else {
-            try {
-                max_time_ms = std::stoi(arg);
-                if (max_time_ms < config::search::MIN_TIME_MS ||
-                    max_time_ms > config::search::MAX_TIME_MS) {
-                    std::cerr << "Warning: Max time should be between "
-                              << config::search::MIN_TIME_MS << "-"
-                              << config::search::MAX_TIME_MS << "ms. Using "
-                              << max_time_ms << "ms" << std::endl;
-                }
-            } catch (const std::exception& e) {
-                std::cerr << "Invalid parameter: " << arg << ", ignoring" << std::endl;
-            }
+            std::cerr << "Unknown parameter: " << arg << ", ignoring" << std::endl;
         }
     }
 
@@ -893,7 +895,8 @@ int main(int argc, char* argv[]) {
     std::cout << "=== Starting Lichess Bot ===" << std::endl;
     std::cout << "Engine: " << engine_name << std::endl;
     std::cout << "Eval: " << eval_name << std::endl;
-    std::cout << "Max search time: " << max_time_ms << "ms" << std::endl;
+    std::cout << "Max search time: " << config::search::MAX_TIME_MS << "ms"
+              << std::endl;
     std::cout << "Process ID: " << getpid() << std::endl;
     std::cout << std::endl;
     std::cout << "Press Ctrl+C to stop the bot gracefully" << std::endl;
@@ -901,8 +904,7 @@ int main(int argc, char* argv[]) {
 
     int exit_code = 0;
     try {
-        LichessBot bot(token, max_time_ms, engine_type, eval_mode, nnue_weights_path,
-                       book_path);
+        LichessBot bot(token, engine_type, eval_mode, nnue_weights_path, book_path);
         Utils::log_info("Bot initialized successfully, starting main loop...");
 
         bot.start();

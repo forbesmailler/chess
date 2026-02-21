@@ -27,7 +27,7 @@ static constexpr int MAX_DEPTH = 50;
 static constexpr int QUIESCENCE_MAX_DEPTH = 8;
 static constexpr int TIME_ALLOCATION_DIVISOR = 40;
 static constexpr int MIN_TIME_MS = 50;
-static constexpr int MAX_TIME_MS = 30000;
+static constexpr int MAX_TIME_MS = 1000;
 static constexpr float ASPIRATION_DELTA = 50.0f;
 static constexpr int ASPIRATION_MIN_DEPTH = 3;
 static constexpr int MATE_THRESHOLD_MARGIN = 500;
@@ -234,18 +234,17 @@ static constexpr float SIGMOID_SCALE = 400.0f;
 }  // namespace eval
 
 namespace self_play {
-static constexpr int NUM_GAMES = 20000;
+static constexpr int NUM_GAMES = 10000;
 static constexpr int NUM_THREADS = 16;
-static constexpr int SEARCH_TIME_MS = 500;
-static constexpr int RANDOM_PLIES = 4;
-static constexpr int SOFTMAX_PLIES = 20;
-static constexpr float SOFTMAX_TEMPERATURE = 300.0f;
-static constexpr int DEFAULT_TIME_CONTROL_MS = 60000;
+static constexpr int SEARCH_TIME_MS = 1000;
+static constexpr int RANDOM_PLIES = 0;
+static constexpr int SOFTMAX_PLIES = 0;
+static constexpr float SOFTMAX_TEMPERATURE = 0.0f;
 static constexpr int PROGRESS_LOG_INTERVAL = 10;
 }  // namespace self_play
 
 namespace compare {
-static constexpr int NUM_GAMES = 200;
+static constexpr int NUM_GAMES = 1000;
 }  // namespace compare
 
 }  // namespace config

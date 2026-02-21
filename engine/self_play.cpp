@@ -9,6 +9,7 @@
 
 #include "chess_engine.h"
 #include "nnue_model.h"
+#include "opening_book.h"
 
 SelfPlayGenerator::SelfPlayGenerator(const Config& config) : config(config) {}
 
@@ -170,6 +171,18 @@ void SelfPlayGenerator::generate() {
     games_completed.store(0);
     total_positions.store(0);
 
+    if (!config.book_path.empty()) {
+        book_ = std::make_shared<OpeningBook>();
+        if (book_->load(config.book_path)) {
+            std::cout << "Loaded opening book: " << config.book_path << " ("
+                      << book_->size() << " positions)" << std::endl;
+        } else {
+            std::cerr << "Failed to load opening book: " << config.book_path
+                      << std::endl;
+            book_.reset();
+        }
+    }
+
     int threads = std::max(1, config.num_threads);
     int games_per_thread = config.num_games / threads;
     int remainder = config.num_games % threads;
@@ -235,8 +248,20 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
             float stm_eval;
             ChessBoard::Move chosen_move;
             bool white_to_move = board.turn() == ChessBoard::WHITE;
+            bool move_found = false;
 
-            if (ply < config.random_plies) {
+            if (book_ && book_->is_loaded()) {
+                auto book_move = book_->probe(board.board);
+                if (book_move) {
+                    chosen_move =
+                        ChessBoard::Move::from_uci(chess::uci::moveToUci(*book_move));
+                    stm_eval = engine->evaluate(board);
+                    if (!white_to_move) stm_eval = -stm_eval;
+                    move_found = true;
+                }
+            }
+
+            if (!move_found && ply < config.random_plies) {
                 // Fully random moves for opening diversity
                 auto legal_moves = board.get_legal_moves();
                 if (legal_moves.empty()) break;
@@ -245,7 +270,8 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
                 chosen_move = legal_moves[move_dist(rng)];
                 stm_eval = engine->evaluate(board);
                 if (!white_to_move) stm_eval = -stm_eval;
-            } else if (ply < config.softmax_plies) {
+            } else if (!move_found && ply < config.softmax_plies &&
+                       config.softmax_temperature > 0.0f) {
                 auto legal_moves = board.get_legal_moves();
                 if (legal_moves.empty()) break;
 
@@ -271,8 +297,8 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
                 int idx = dist(rng);
                 chosen_move = legal_moves[idx];
                 stm_eval = scores[idx];
-            } else {
-                TimeControl tc{config::self_play::DEFAULT_TIME_CONTROL_MS, 0, 0};
+            } else if (!move_found) {
+                TimeControl tc{0, 0, 0};
                 engine->set_max_time(config.search_time_ms);
                 auto result = engine->get_best_move(board, tc);
                 stm_eval = result.score;
@@ -342,6 +368,18 @@ ModelComparator::Result ModelComparator::run() {
     old_wins.store(0);
     draws.store(0);
     total_positions.store(0);
+
+    if (!config.book_path.empty()) {
+        book_ = std::make_shared<OpeningBook>();
+        if (book_->load(config.book_path)) {
+            std::cout << "Loaded opening book: " << config.book_path << " ("
+                      << book_->size() << " positions)" << std::endl;
+        } else {
+            std::cerr << "Failed to load opening book: " << config.book_path
+                      << std::endl;
+            book_.reset();
+        }
+    }
 
     int threads = std::max(1, config.num_threads);
     int games_per_thread = config.num_games / threads;
@@ -455,17 +493,35 @@ void ModelComparator::play_games(int num_games, int thread_id,
             bool new_to_move = (white_to_move == new_is_white);
             ChessEngine* active = new_to_move ? new_engine.get() : old_engine.get();
 
-            TimeControl tc{config::self_play::DEFAULT_TIME_CONTROL_MS, 0, 0};
-            active->set_max_time(config.search_time_ms);
-            auto result = active->get_best_move(board, tc);
-            float stm_eval = result.score;
+            ChessBoard::Move chosen_move;
+            float stm_eval;
+            bool book_used = false;
+
+            if (book_ && book_->is_loaded()) {
+                auto book_move = book_->probe(board.board);
+                if (book_move) {
+                    chosen_move =
+                        ChessBoard::Move::from_uci(chess::uci::moveToUci(*book_move));
+                    stm_eval = active->evaluate(board);
+                    if (!white_to_move) stm_eval = -stm_eval;
+                    book_used = true;
+                }
+            }
+
+            if (!book_used) {
+                TimeControl tc{0, 0, 0};
+                active->set_max_time(config.search_time_ms);
+                auto result = active->get_best_move(board, tc);
+                stm_eval = result.score;
+                chosen_move = result.best_move;
+            }
 
             positions.push_back(
                 SelfPlayGenerator::encode_position(board, stm_eval, 1, ply));
             from_new_engine.push_back(new_to_move);
 
-            if (result.best_move.uci().empty()) break;
-            board.make_move(result.best_move);
+            if (chosen_move.uci().empty()) break;
+            board.make_move(chosen_move);
             ply++;
         }
 

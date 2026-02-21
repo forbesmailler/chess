@@ -27,7 +27,7 @@ struct SearchResult {
 
 class BaseEngine {
    public:
-    explicit BaseEngine(int max_time_ms = 1000,
+    explicit BaseEngine(int max_time_ms = config::search::MAX_TIME_MS,
                         EvalMode eval_mode = EvalMode::HANDCRAFTED,
                         std::shared_ptr<NNUEModel> nnue_model = nullptr)
         : nnue_model(std::move(nnue_model)),

@@ -192,13 +192,14 @@ class TestGenerate:
 
     def test_self_play_constants(self):
         result = generate()
+        sp = load("training")["self_play"]
         assert "namespace self_play {" in result
-        assert "NUM_GAMES = 20000" in result
-        assert "NUM_THREADS = 16" in result
-        assert "SEARCH_TIME_MS = 500" in result
-        assert "RANDOM_PLIES = 4" in result
-        assert "SOFTMAX_PLIES = 20" in result
-        assert "SOFTMAX_TEMPERATURE = 300.0f" in result
+        assert f"NUM_GAMES = {sp['num_games']}" in result
+        assert f"NUM_THREADS = {sp['num_threads']}" in result
+        assert f"SEARCH_TIME_MS = {sp['search_time_ms']}" in result
+        assert f"RANDOM_PLIES = {sp['random_plies']}" in result
+        assert f"SOFTMAX_PLIES = {sp['softmax_plies']}" in result
+        assert f"SOFTMAX_TEMPERATURE = {sp['softmax_temperature']:.1f}f" in result
 
     def test_no_resign(self):
         result = generate()

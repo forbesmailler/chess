@@ -342,10 +342,7 @@ def find_optimal_depth(
         print("No games found!")
         return 0, 0
 
-    print(
-        f"  {total_scanned:,} games scanned,"
-        f" {total_matched:,} matched ELO filter"
-    )
+    print(f"  {total_scanned:,} games scanned, {total_matched:,} matched ELO filter")
 
     optimal_depth = 1
     for depth in range(1, max_depth + 1):
@@ -539,7 +536,10 @@ def main():
         "--lines", type=int, default=250000, help="Max lines for depth analysis"
     )
     parser.add_argument(
-        "--coverage", type=float, default=0.5, help="Coverage threshold for depth analysis"
+        "--coverage",
+        type=float,
+        default=0.5,
+        help="Coverage threshold for depth analysis",
     )
     parser.add_argument(
         "--max-depth", type=int, default=20, help="Max depth for depth analysis"

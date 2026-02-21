@@ -13,6 +13,7 @@
 #include "generated_config.h"
 
 class NNUEModel;
+class OpeningBook;
 
 #pragma pack(push, 1)
 struct TrainingPosition {
@@ -41,6 +42,7 @@ class SelfPlayGenerator {
         int softmax_plies = config::self_play::SOFTMAX_PLIES;
         float softmax_temperature = config::self_play::SOFTMAX_TEMPERATURE;
         std::string nnue_weights;
+        std::string book_path;
     };
 
     explicit SelfPlayGenerator(const Config& config);
@@ -56,6 +58,7 @@ class SelfPlayGenerator {
 
    private:
     Config config;
+    std::shared_ptr<OpeningBook> book_;
     std::mutex file_mutex;
     std::atomic<int> games_completed{0};
     std::atomic<int> total_positions{0};
@@ -79,6 +82,7 @@ class ModelComparator {
         std::string output_file;
         int max_game_ply = 400;
         int search_time_ms = config::self_play::SEARCH_TIME_MS;
+        std::string book_path;
     };
 
     struct Result {
@@ -96,6 +100,7 @@ class ModelComparator {
 
    private:
     Config config;
+    std::shared_ptr<OpeningBook> book_;
     std::string old_weights_path;
     std::string new_weights_path;
     std::shared_ptr<NNUEModel> preloaded_old_model;
