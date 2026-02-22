@@ -261,14 +261,14 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
                 }
             }
 
-            if (!move_found && ply < config.random_plies) {
+            if (ply < config.random_plies) {
                 // Fully random moves for opening diversity
                 auto legal_moves = board.get_legal_moves();
                 if (legal_moves.empty()) break;
                 std::uniform_int_distribution<int> move_dist(
                     0, static_cast<int>(legal_moves.size()) - 1);
                 chosen_move = legal_moves[move_dist(rng)];
-            } else if (!move_found && ply < config.softmax_plies &&
+            } else if (ply < config.softmax_plies &&
                        config.softmax_temperature > 0.0f) {
                 auto legal_moves = board.get_legal_moves();
                 if (legal_moves.empty()) break;
@@ -293,7 +293,7 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
 
                 std::discrete_distribution<int> dist(probs.begin(), probs.end());
                 chosen_move = legal_moves[dist(rng)];
-            } else if (!move_found) {
+            } else {
                 TimeControl tc{0, 0, 0};
                 engine->set_max_time(config.search_time_ms);
                 auto result = engine->get_best_move(board, tc);

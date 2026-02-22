@@ -68,13 +68,10 @@ float handcrafted_evaluate(const ChessBoard& board) {
 
             bool passed = true;
             for (int af = std::max(0, f - 1); af <= std::min(7, f + 1); ++af) {
-                if (pawn_files[enemy][af] > 0) {
-                    if (color == 0) {
-                        if (pawn_rank_max[enemy][af] > r) passed = false;
-                    } else {
-                        if (pawn_rank_min[enemy][af] < r) passed = false;
-                    }
-                }
+                if (pawn_files[enemy][af] > 0 &&
+                    (color == 0 ? pawn_rank_max[enemy][af] > r
+                                : pawn_rank_min[enemy][af] < r))
+                    passed = false;
             }
             if (passed) {
                 int dist = color == 0 ? r : (7 - r);
@@ -125,12 +122,7 @@ float handcrafted_evaluate(const ChessBoard& board) {
                 eg_score += sign * config::eval::PST_EG[pt][pst_sq];
                 phase += config::eval::PHASE_WEIGHT[pt];
 
-                if (pt == 2) {
-                    if (color == 0)
-                        white_bishops++;
-                    else
-                        black_bishops++;
-                }
+                if (pt == 2) (color == 0 ? white_bishops : black_bishops)++;
 
                 if (pt == 3) {
                     int f = file_of(sq);

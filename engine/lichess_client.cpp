@@ -80,11 +80,8 @@ bool LichessClient::test_connectivity() {
     CURL* curl = curl_easy_init();
     if (!curl) return false;
 
-    std::string response_data;
     std::string connectivity_url(config::bot::CONNECTIVITY_TEST_URL);
     curl_easy_setopt(curl, CURLOPT_URL, connectivity_url.c_str());
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_data);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, config::curl::CONNECTIVITY_TIMEOUT);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT,
                      config::curl::CONNECTIVITY_CONNECT_TIMEOUT);
