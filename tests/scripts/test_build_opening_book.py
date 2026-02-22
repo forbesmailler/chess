@@ -5,13 +5,27 @@ from pathlib import Path
 
 import chess
 import chess.polyglot
+import numpy as np
+import pytest
 
 from scripts.build_opening_book import (
+    _REPLAY_DTYPE,
+    _SEQ_HEADER,
     _check_elo,
     _check_time_control,
+    _count_lines_worker,
     _extract_san_moves,
+    _find_boundaries,
+    _get_movetext,
+    _iter_replay_batches,
+    _numpy_aggregate,
     _parse_game_bytes,
+    _read_chunk,
+    _replay_worker,
+    _seq_hash,
+    _split_chunk,
     build_book,
+    main,
     write_book,
 )
 
@@ -314,3 +328,332 @@ class TestWriteBook:
             _, num_pos, num_moves = struct.unpack("<III", f.read(12))
             assert num_pos == 1
             assert num_moves == 1
+
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+
+
+class TestFindBoundaries:
+    def test_empty_file_returns_empty_list(self, tmp_path):
+        p = tmp_path / "empty.pgn"
+        p.write_bytes(b"")
+        result = _find_boundaries(str(p), 4)
+        assert result == []
+
+    def test_single_chunk_covers_full_file(self, tmp_path):
+        data = b'[Event "Test"]\n\n1. e4 1-0\n'
+        p = tmp_path / "test.pgn"
+        p.write_bytes(data)
+        result = _find_boundaries(str(p), 1)
+        assert result == [(0, len(data))]
+
+
+class TestReadChunk:
+    def test_full_read(self, tmp_path):
+        data = b"hello world test data"
+        p = tmp_path / "test.bin"
+        p.write_bytes(data)
+        assert _read_chunk(str(p), 0, len(data)) == data
+
+    def test_partial_read(self, tmp_path):
+        data = b"hello world"
+        p = tmp_path / "test.bin"
+        p.write_bytes(data)
+        assert _read_chunk(str(p), 6, 11) == b"world"
+
+
+class TestSplitChunk:
+    def test_single_game(self):
+        chunk = b'[Event "Test"]\n\n1. e4 1-0'
+        result = _split_chunk(chunk)
+        assert len(result) == 1
+        assert result[0] == chunk
+
+    def test_multiple_games(self):
+        # Separator is b"\n[Event " — the leading \n is consumed, so result[0] has no trailing \n.
+        chunk = b'[Event "A"]\n\n1. e4 1-0\n[Event "B"]\n\n1. d4 1-0'
+        result = _split_chunk(chunk)
+        assert len(result) == 2
+        assert result[0] == b'[Event "A"]\n\n1. e4 1-0'
+        assert result[1] == b'[Event "B"]\n\n1. d4 1-0'
+
+
+class TestSeqHash:
+    def test_deterministic(self):
+        assert _seq_hash(0, "e4") == _seq_hash(0, "e4")
+
+    def test_different_moves_differ(self):
+        assert _seq_hash(0, "e4") != _seq_hash(0, "d4")
+
+    def test_chaining_order_matters(self):
+        h = _seq_hash(0, "e4")
+        assert _seq_hash(h, "e5") != _seq_hash(h, "c5")
+
+
+class TestCheckEloEdgeCases:
+    def test_white_elo_missing_closing_quote(self):
+        data = b'[WhiteElo "2000'  # no closing quote
+        assert _check_elo(data, 1800) is False
+
+    def test_white_elo_invalid_value(self):
+        data = b'[WhiteElo "abc"]\n[BlackElo "2000"]\n\n1. e4 1-0'
+        assert _check_elo(data, 1800) is False
+
+    def test_black_elo_missing_header(self):
+        data = b'[WhiteElo "2000"]\n\n1. e4 1-0'
+        assert _check_elo(data, 1800) is False
+
+    def test_black_elo_missing_closing_quote(self):
+        data = b'[WhiteElo "2000"]\n[BlackElo "2000'  # no closing quote for black
+        assert _check_elo(data, 1800) is False
+
+    def test_black_elo_invalid_value(self):
+        data = b'[WhiteElo "2000"]\n[BlackElo "abc"]\n\n1. e4 1-0'
+        assert _check_elo(data, 1800) is False
+
+
+class TestCheckTimeControlEdgeCases:
+    def test_missing_closing_quote(self):
+        data = b'[TimeControl "600'  # no closing quote
+        assert _check_time_control(data, 180) is False
+
+    def test_invalid_base_with_increment(self):
+        data = b'[TimeControl "abc+0"]\n\n1. e4 1-0'
+        assert _check_time_control(data, 180) is False
+
+    def test_invalid_base_no_increment(self):
+        data = b'[TimeControl "abc"]\n\n1. e4 1-0'
+        assert _check_time_control(data, 180) is False
+
+
+class TestGetMovetext:
+    def test_no_double_newline_returns_empty(self):
+        data = b'[Event "Test"][Result "1-0"]'
+        assert _get_movetext(data) == ""
+
+    def test_with_movetext(self):
+        data = b'[Event "Test"]\n\n1. e4 e5 1-0'
+        assert _get_movetext(data) == "1. e4 e5 1-0"
+
+
+class TestParseGameBytesEdgeCases:
+    def test_white_elo_invalid_value(self):
+        data = b'[WhiteElo "abc"]\n[BlackElo "1600"]\n\n1. e4 1-0'
+        we, be, _ = _parse_game_bytes(data)
+        assert we == 0
+        assert be == 1600
+
+    def test_black_elo_invalid_value(self):
+        data = b'[WhiteElo "1500"]\n[BlackElo "xyz"]\n\n1. e4 1-0'
+        we, be, _ = _parse_game_bytes(data)
+        assert we == 1500
+        assert be == 0
+
+
+class TestExtractSanMovesEdgeCases:
+    def test_parenthesized_variation(self):
+        moves = _extract_san_moves("1. e4 (1. d4 d5) e5 1-0", 10)
+        assert moves == ["e4", "e5"]
+
+    def test_nested_parentheses(self):
+        moves = _extract_san_moves("1. e4 (1. d4 (1. c4 c5)) e5 1-0", 10)
+        assert moves == ["e4", "e5"]
+
+    def test_spurious_close_brace_produces_empty_token(self):
+        # A stray "}" is not caught by the "{" or "(" handlers;
+        # the token-extraction loop exits immediately → empty token → skipped.
+        moves = _extract_san_moves("1. e4 } e5 1-0", 10)
+        assert moves == ["e4", "e5"]
+
+    def test_spurious_close_paren_produces_empty_token(self):
+        moves = _extract_san_moves("1. e4 ) e5 1-0", 10)
+        assert moves == ["e4", "e5"]
+
+
+class TestNumpyAggregate:
+    def test_empty_array_returned_unchanged(self):
+        arr = np.empty(0, dtype=_REPLAY_DTYPE)
+        result = _numpy_aggregate(arr)
+        assert len(result) == 0
+
+    def test_single_entry_preserved(self):
+        arr = np.zeros(1, dtype=_REPLAY_DTYPE)
+        arr[0]["pos_hash"] = 12345
+        arr[0]["from_sq"] = 8
+        arr[0]["to_sq"] = 16
+        arr[0]["promo"] = 0
+        arr[0]["count"] = 5
+        result = _numpy_aggregate(arr)
+        assert len(result) == 1
+        assert int(result[0]["count"]) == 5
+
+    def test_duplicate_entries_summed(self):
+        arr = np.zeros(2, dtype=_REPLAY_DTYPE)
+        for i in range(2):
+            arr[i]["pos_hash"] = 100
+            arr[i]["from_sq"] = 8
+            arr[i]["to_sq"] = 16
+            arr[i]["promo"] = 0
+            arr[i]["count"] = 3
+        result = _numpy_aggregate(arr)
+        assert len(result) == 1
+        assert int(result[0]["count"]) == 6
+
+
+class TestIterReplayBatches:
+    def _write_seq_file(self, path, entries):
+        """Write (seq_hash, san_str) pairs to a seq temp file."""
+        data = b""
+        for h, san in entries:
+            san_bytes = san.encode()
+            data += _SEQ_HEADER.pack(h, len(san_bytes)) + san_bytes
+        Path(path).write_bytes(data)
+
+    def test_batch_fills_and_flushes(self, tmp_path):
+        seq_file = tmp_path / "test.seq"
+        survivors = {1: 10, 2: 20, 3: 30}
+        self._write_seq_file(seq_file, [(1, "e4 e5"), (2, "d4 d5"), (3, "c4 c5")])
+        batches = list(_iter_replay_batches(str(seq_file), survivors, batch_size=2))
+        # 3 survivors, batch_size=2 → first batch of 2, then batch of 1
+        assert len(batches) == 2
+        assert len(batches[0]) == 2
+        assert len(batches[1]) == 1
+
+    def test_skips_non_survivors(self, tmp_path):
+        seq_file = tmp_path / "test.seq"
+        self._write_seq_file(seq_file, [(1, "e4"), (2, "d4"), (3, "c4")])
+        survivors = {2: 5}  # only seq 2 survives
+        batches = list(_iter_replay_batches(str(seq_file), survivors))
+        assert len(batches) == 1
+        assert len(batches[0]) == 1
+        assert batches[0][0][0] == 2
+
+
+class TestReplayWorker:
+    def test_basic_two_moves(self):
+        result = _replay_worker([(0, 1, "e4 e5")])
+        # 2 distinct position-move pairs → 2 entries × 16 bytes
+        assert len(result) == 2 * 16
+
+    def test_illegal_move_skipped(self):
+        result = _replay_worker([(0, 1, "invalid_move_xyz")])
+        assert len(result) == 0
+
+    def test_weight_accumulation(self):
+        # Same board, same move from two separate items → counts add
+        result = _replay_worker([(0, 3, "e4"), (1, 3, "e4")])
+        # Both start from chess.Board() → same pos_hash, same move → 1 unique entry
+        assert len(result) == 1 * 16
+
+
+class TestCountLinesWorker:
+    def test_basic_game_counted(self, tmp_path):
+        pgn = (
+            b'[Event "A"]\n[WhiteElo "2000"]\n'
+            b'[BlackElo "2100"]\n\n1. e4 e5 2. Nf3 1-0\n'
+        )
+        p = tmp_path / "test.pgn"
+        p.write_bytes(pgn)
+        data, matched, scanned, sequences, fh_data = _count_lines_worker(
+            (str(p), 0, len(pgn), 0, 0)
+        )
+        assert scanned == 1
+        assert matched == 1
+        assert len(sequences) == 1
+
+    def test_elo_filter_rejects_low_elo(self, tmp_path):
+        pgn = b'[Event "A"]\n[WhiteElo "1500"]\n[BlackElo "1500"]\n\n1. e4 1-0\n'
+        p = tmp_path / "test.pgn"
+        p.write_bytes(pgn)
+        _, matched, scanned, _, _ = _count_lines_worker((str(p), 0, len(pgn), 2000, 0))
+        assert scanned == 1
+        assert matched == 0
+
+    def test_short_game_data_skipped(self, tmp_path):
+        pgn = b'[Event "X"]\n'  # < 20 bytes → skipped before scanned increment
+        p = tmp_path / "test.pgn"
+        p.write_bytes(pgn)
+        _, matched, scanned, _, _ = _count_lines_worker((str(p), 0, len(pgn), 0, 0))
+        assert scanned == 0
+        assert matched == 0
+
+
+class TestWriteBookPromotion:
+    def test_promotion_uci_constructed(self, tmp_path):
+        """Illegal promotion move hits UCI construction (line 641) then exception handler."""
+        start_hash = chess.polyglot.zobrist_hash(chess.Board())
+        move_counts = {
+            (start_hash, chess.E2, chess.E4, 0): 100,
+            (start_hash, chess.E2, chess.E8, 5): 200,  # illegal queen promo from start
+        }
+        output = tmp_path / "book.bin"
+        write_book(move_counts, output)
+        with open(output, "rb") as f:
+            assert f.read(4) == b"BOOK"
+            _, num_pos, num_moves = struct.unpack("<III", f.read(12))
+        assert num_pos == 1
+        assert num_moves == 2  # both moves kept in pos_table despite illegal dest
+
+    def test_most_common_line_exits_book(self, tmp_path):
+        """When best move dest is not in dest_map, the line-tracing loop breaks (line 697)."""
+        start_hash = chess.polyglot.zobrist_hash(chess.Board())
+        # Illegal move has higher count → higher weight → picked as "best" in line trace
+        move_counts = {
+            (start_hash, chess.E2, chess.E8, 5): 200,  # illegal, weight=255
+            (start_hash, chess.E2, chess.E4, 0): 100,  # legal, weight=128
+        }
+        output = tmp_path / "book.bin"
+        write_book(move_counts, output)  # must not raise
+        assert output.exists()
+
+
+class TestBuildBookEdgeCases:
+    def test_empty_pgn_file_returns_empty_book(self, tmp_path):
+        p = tmp_path / "empty.pgn"
+        p.write_bytes(b"")
+        move_counts = build_book([str(p)], 0, 0, 1, 1)
+        assert move_counts == {}
+
+    def test_all_duplicate_games_filtered(self, tmp_path):
+        """All games share identical sequence → same final pos → all filtered out."""
+        pgn = """\
+[Event "Test"]
+[Result "1-0"]
+
+1. e4 e5 1-0
+
+[Event "Test"]
+[Result "1-0"]
+
+1. e4 e5 1-0
+
+"""
+        p = _make_pgn(pgn, tmp_path)
+        move_counts = build_book([str(p)], 0, 0, 1, 1)
+        assert move_counts == {}
+
+
+class TestMain:
+    def test_main_creates_book_file(self, tmp_path, monkeypatch):
+        pgn_path = _make_pgn(SAMPLE_PGN, tmp_path)
+        out_path = tmp_path / "book.bin"
+        monkeypatch.setattr(
+            "sys.argv",
+            ["build_opening_book.py", str(pgn_path), "-o", str(out_path)],
+        )
+        main()
+        assert out_path.exists()
+        assert out_path.read_bytes()[:4] == b"BOOK"
+
+    def test_main_missing_file_exits_with_error(self, tmp_path, monkeypatch):
+        missing = tmp_path / "nonexistent.pgn"
+        out_path = tmp_path / "book.bin"
+        monkeypatch.setattr(
+            "sys.argv",
+            ["build_opening_book.py", str(missing), "-o", str(out_path)],
+        )
+        with pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 1

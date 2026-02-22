@@ -746,3 +746,62 @@ def test_train_game_level_split(tmp_path, capsys):
     output = capsys.readouterr().out
     assert "Game-level split" in output
     assert "10 games" in output
+
+
+def test_dataset_ep_active_sets_feature_772():
+    """_extract_sparse covers the EP-active branch when en_passant_file != 255."""
+    pos = _make_synthetic_position(en_passant_file=4)  # e-file
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+        f.write(pos)
+        tmp_path = f.name
+    try:
+        ds = SelfPlayDataset(tmp_path, eval_weight=1.0)
+        features, _ = ds.get_dense(0)
+        assert features[772] == 1.0
+    finally:
+        Path(tmp_path).unlink()
+
+
+def test_dataset_getitem_returns_indices_counts_target():
+    """SelfPlayDataset.__getitem__ returns (indices, counts, target) tuple."""
+    pos = _make_synthetic_position(game_result=2, search_eval=1.0)
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+        f.write(pos)
+        tmp_path = f.name
+    try:
+        ds = SelfPlayDataset(tmp_path)
+        indices, counts, target = ds[0]
+        assert indices.shape == (37,)  # MAX_ACTIVE
+        assert counts.shape == ()
+        assert target.shape == ()
+    finally:
+        Path(tmp_path).unlink()
+
+
+def test_train_single_game_uses_position_level_split(tmp_path, capsys):
+    """With one game (monotonically increasing plies), train falls back to position split."""
+    data_file = tmp_path / "train.bin"
+    with open(data_file, "wb") as f:
+        for i in range(10):
+            f.write(_make_synthetic_position(ply=i))  # strictly increasing → 1 game
+
+    train(_train_args(data_file, epochs=2))
+
+    output = capsys.readouterr().out
+    # game-level split only prints when num_games >= 2
+    assert "Game-level split" not in output
+
+
+def test_train_writes_log_file(tmp_path):
+    """When args.log is set, train() writes a markdown training log."""
+    data_file = tmp_path / "train.bin"
+    _make_training_data(data_file, num_positions=20)
+    log_file = tmp_path / "logs" / "training.md"
+
+    train(_train_args(data_file, epochs=2, log=str(log_file)))
+
+    assert log_file.exists()
+    content = log_file.read_text()
+    assert "# Training Log" in content
+    assert "Best val loss" in content
+    assert "| Epoch |" in content

@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 import torch
 
 # export_nnue.py uses `from train_nnue import ...` (sibling import),
@@ -14,6 +15,7 @@ _train_dir = str(Path(__file__).resolve().parent.parent.parent / "engine" / "tra
 if _train_dir not in sys.path:
     sys.path.insert(0, _train_dir)
 
+import export_nnue as _export_nnue_mod  # noqa: E402
 from export_nnue import VERSION, export_model, export_state_dict, main  # noqa: E402
 
 from engine.train.train_nnue import (  # noqa: E402
@@ -240,3 +242,22 @@ def test_forward_pass_roundtrip():
         atol=1e-5,
         err_msg=f"C++ forward pass ({cpp_out}) != PyTorch ({pytorch_out})",
     )
+
+
+def test_export_model_cleans_up_output_on_error(tmp_path, monkeypatch):
+    """If export_state_dict raises, export_model deletes the partial output file."""
+    model = NNUE()
+    pt_path = tmp_path / "model.pt"
+    torch.save(model.state_dict(), pt_path)
+    out_path = tmp_path / "nnue.bin"
+
+    def _raise(state_dict, output):
+        output.write(b"NNUE")  # partial write before failure
+        raise RuntimeError("simulated export failure")
+
+    monkeypatch.setattr(_export_nnue_mod, "export_state_dict", _raise)
+
+    with pytest.raises(RuntimeError, match="simulated export failure"):
+        _export_nnue_mod.export_model(str(pt_path), str(out_path))
+
+    assert not out_path.exists()
