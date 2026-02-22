@@ -330,8 +330,9 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
         {
             std::lock_guard<std::mutex> lock(file_mutex);
             std::ofstream out(output_file, std::ios::binary | std::ios::app);
-            for (const auto& pos : positions) {
-                write_position(out, pos);
+            if (!positions.empty()) {
+                out.write(reinterpret_cast<const char*>(positions.data()),
+                          positions.size() * sizeof(TrainingPosition));
             }
         }
 

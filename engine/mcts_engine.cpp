@@ -129,7 +129,8 @@ void MCTSEngine::expand(MCTSNode* node) {
     node->children.reserve(legal_moves.size());
     for (const auto& move : legal_moves) {
         auto child = std::make_unique<MCTSNode>();
-        child->board = node->board;
+        child->board.board =
+            node->board.board;  // copy chess::Board only, skip move_history
         child->move = move;
         child->parent = node;
 
@@ -155,7 +156,8 @@ void MCTSEngine::expand(MCTSNode* node) {
 }
 
 float MCTSEngine::simulate(const ChessBoard& board) {
-    ChessBoard sim_board = board;
+    ChessBoard sim_board;
+    sim_board.board = board.board;  // copy chess::Board only, skip move_history
     int depth = 0;
 
     while (depth < max_simulation_depth) {

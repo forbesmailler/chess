@@ -275,6 +275,7 @@ def _extract_san_moves(movetext, max_depth):
         token = movetext[i:j]
         i = j
         if not token:
+            i += 1
             continue
         fc = token[0]
         if fc.isdigit():
@@ -449,31 +450,37 @@ def build_book(
     seq_file = os.fdopen(seq_fd, "wb")
     seq_pack = _SEQ_HEADER.pack
 
-    with mp.Pool(workers) as pool:
-        pbar = tqdm(desc="  Scanning", unit=" games", unit_scale=True)
-        for filepath in file_iter:
-            boundaries = _find_boundaries(filepath, workers * 10)
-            if not boundaries:
-                continue
-            args_list = [(filepath, s, e, min_elo, min_time) for s, e in boundaries]
-            for data, matched, scanned, sequences, fh_data in pool.imap_unordered(
-                _count_lines_worker, args_list
-            ):
-                total_matched += matched
-                total_scanned += scanned
-                pbar.update(scanned)
-                for h, c in _LC_ENTRY.iter_unpack(data):
-                    line_counts[h] += c
-                for h, seq in sequences.items():
-                    if h not in seen_seqs:
-                        seen_seqs.add(h)
-                        san_bytes = seq.encode("utf-8")
-                        seq_file.write(seq_pack(h, len(san_bytes)))
-                        seq_file.write(san_bytes)
-                for h, fh in _FH_ENTRY.iter_unpack(fh_data):
-                    if h not in all_final_hashes:
-                        all_final_hashes[h] = fh
-        pbar.close()
+    pbar = tqdm(desc="  Scanning", unit=" games", unit_scale=True)
+    for filepath in file_iter:
+        n_chunks = 10 if workers <= 1 else workers * 10
+        boundaries = _find_boundaries(filepath, n_chunks)
+        if not boundaries:
+            continue
+        args_list = [(filepath, s, e, min_elo, min_time) for s, e in boundaries]
+        if workers <= 1:
+            results_iter = map(_count_lines_worker, args_list)
+        else:
+            pool = mp.Pool(workers)
+            results_iter = pool.imap_unordered(_count_lines_worker, args_list)
+        for data, matched, scanned, sequences, fh_data in results_iter:
+            total_matched += matched
+            total_scanned += scanned
+            pbar.update(scanned)
+            for h, c in _LC_ENTRY.iter_unpack(data):
+                line_counts[h] += c
+            for h, seq in sequences.items():
+                if h not in seen_seqs:
+                    seen_seqs.add(h)
+                    san_bytes = seq.encode("utf-8")
+                    seq_file.write(seq_pack(h, len(san_bytes)))
+                    seq_file.write(san_bytes)
+            for h, fh in _FH_ENTRY.iter_unpack(fh_data):
+                if h not in all_final_hashes:
+                    all_final_hashes[h] = fh
+        if workers > 1:
+            pool.close()
+            pool.join()
+    pbar.close()
     seq_file.close()
     del seen_seqs
 
@@ -504,16 +511,22 @@ def build_book(
     replay_fd, replay_path = tempfile.mkstemp(suffix=".bin")
     replay_file = os.fdopen(replay_fd, "wb")
 
-    with mp.Pool(workers) as pool:
+    replay_batches = _iter_replay_batches(seq_path, survivors)
+    if workers <= 1:
         for data in tqdm(
-            pool.imap_unordered(
-                _replay_worker,
-                _iter_replay_batches(seq_path, survivors),
-            ),
+            map(_replay_worker, replay_batches),
             total=total_batches,
             desc="  Replaying",
         ):
             replay_file.write(data)
+    else:
+        with mp.Pool(workers) as pool:
+            for data in tqdm(
+                pool.imap_unordered(_replay_worker, replay_batches),
+                total=total_batches,
+                desc="  Replaying",
+            ):
+                replay_file.write(data)
     replay_file.close()
     os.unlink(seq_path)
     del survivors
