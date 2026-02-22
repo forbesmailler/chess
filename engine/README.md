@@ -11,7 +11,7 @@ Set `LICHESS_TOKEN` environment variable, then:
 ./lichess_bot [max_time_ms] [--engine=negamax|mcts] [--eval=handcrafted|nnue] [--nnue-weights=path]
 
 # Self-play data generation
-./lichess_bot --selfplay [num_games] [search_depth] [output_file] [num_threads]
+./lichess_bot --selfplay [num_games] [output_file] [num_threads] [nnue_weights]
 
 # Compare two models
 ./lichess_bot --compare <old_weights|handcrafted> <new_weights> [num_games] [output_file] [threads]

@@ -37,7 +37,7 @@ Set the `LICHESS_TOKEN` environment variable, then:
 ./lichess_bot [max_time_ms] [--engine=negamax|mcts] [--eval=handcrafted|nnue] [--nnue-weights=path]
 
 # Generate self-play training data
-./lichess_bot --selfplay [num_games] [search_depth] [output_file] [num_threads]
+./lichess_bot --selfplay [num_games] [output_file] [num_threads] [nnue_weights]
 
 # Compare two models
 ./lichess_bot --compare <old_weights|handcrafted> <new_weights> [num_games] [output_file] [threads]
@@ -54,7 +54,7 @@ pytest                                  # Python tests
 
 ```bash
 # 1. Generate self-play data
-./lichess_bot --selfplay 1000 6 training_data.bin 8
+./lichess_bot --selfplay 1000 training_data.bin 8
 
 # 2. Train NNUE model
 cd engine/train
@@ -70,7 +70,7 @@ python export_nnue.py --model nnue_weights.pt --output nnue.bin
 Or use the all-in-one invoke task:
 
 ```bash
-invoke train --games=1000 --depth=6 --threads=8 --epochs=100
+invoke train --games=1000 --threads=8 --epochs=100
 ```
 
 ## Development
