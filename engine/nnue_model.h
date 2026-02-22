@@ -66,8 +66,8 @@ class NNUEModel {
     static constexpr int MAX_ACTIVE_FEATURES = 37;  // 32 pieces + 4 castling + 1 ep
 
     // Quantization scales
-    static constexpr int Q1_SCALE = 512;  // Layer 1 weights/accumulators
-    static constexpr int Q2_SCALE = 512;  // Layer 2 weights
+    static constexpr int Q1_SCALE = config::nnue::Q1_SCALE;
+    static constexpr int Q2_SCALE = config::nnue::Q2_SCALE;
 
     struct AlignedDeleter {
         void operator()(void* p) const;
@@ -98,7 +98,7 @@ class NNUEModel {
     int h1_padded_ = H1_PADDED;
     int hidden2_size_ = HIDDEN2_SIZE;
 
-    static constexpr int ACC_STACK_SIZE = 128;
+    static constexpr int ACC_STACK_SIZE = config::nnue::ACC_STACK_SIZE;
     mutable Accumulator acc_stack[ACC_STACK_SIZE];
     mutable int acc_ply = -1;
 

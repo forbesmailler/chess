@@ -24,7 +24,7 @@ _cmp = _trn.get("compare", {})
 POSITION_BYTES = 42
 
 _WLD_RE = re.compile(r"New wins:\s*(\d+),\s*Old wins:\s*(\d+),\s*Draws:\s*(\d+)")
-DATA_CAP_MULTIPLIER = 100
+DATA_CAP_MULTIPLIER = _train_cfg["data_cap_multiplier"]
 
 
 def compute_param_count() -> int:

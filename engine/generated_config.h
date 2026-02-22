@@ -15,6 +15,9 @@ static constexpr int MAX_HIDDEN1_SIZE = 512;
 static constexpr int HIDDEN2_SIZE = 32;
 static constexpr int MAX_HIDDEN2_SIZE = 32;
 static constexpr int OUTPUT_SIZE = 1;
+static constexpr int Q1_SCALE = 512;
+static constexpr int Q2_SCALE = 512;
+static constexpr int ACC_STACK_SIZE = 128;
 }  // namespace nnue
 
 namespace search {

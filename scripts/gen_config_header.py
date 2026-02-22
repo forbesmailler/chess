@@ -58,6 +58,9 @@ def generate() -> str:
         "hidden2_size",
         "max_hidden2_size",
         "output_size",
+        "q1_scale",
+        "q2_scale",
+        "acc_stack_size",
     ):
         name = k.upper()
         lines.append(f"    static constexpr int {name} = {trn['nnue'][k]};")
