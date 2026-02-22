@@ -137,7 +137,7 @@ class TestCheckTimeControl:
 class TestBuildBook:
     def test_basic(self, tmp_path):
         pgn_path = _make_pgn(SAMPLE_PGN, tmp_path)
-        move_counts, dest_hashes = build_book([str(pgn_path)], 0, 0, 1)
+        move_counts = build_book([str(pgn_path)], 0, 0, 1, 1)
 
         # Starting position should have entries
         start_hash = chess.polyglot.zobrist_hash(chess.Board())
@@ -150,16 +150,10 @@ class TestBuildBook:
         assert move_counts[e4_key] == 3
         assert move_counts[d4_key] == 1
 
-        # dest_hashes should map moves to destination positions
-        assert e4_key in dest_hashes
-        board = chess.Board()
-        board.push_uci("e2e4")
-        assert dest_hashes[e4_key] == chess.polyglot.zobrist_hash(board)
-
     def test_all_plies_recorded(self, tmp_path):
         """All plies from all games are recorded (depth-agnostic)."""
         pgn_path = _make_pgn(SAMPLE_PGN, tmp_path)
-        move_counts, _ = build_book([str(pgn_path)], 0, 0, 1)
+        move_counts = build_book([str(pgn_path)], 0, 0, 1, 1)
 
         start_hash = chess.polyglot.zobrist_hash(chess.Board())
         e4_key = (start_hash, chess.E2, chess.E4, 0)
@@ -174,35 +168,49 @@ class TestBuildBook:
         bb5_key = (h4, chess.F1, chess.B5, 0)
         assert move_counts[bb5_key] == 1
 
+    def test_non_unique_final_position_filtered(self, tmp_path):
+        """Any game whose final position appears in another game is removed."""
+        # Two identical games (same final position) + one unique game
+        pgn = """\
+[Event "Test"]
+[Result "1-0"]
+
+1. e4 e5 2. Nf3 Nc6 1-0
+
+[Event "Test"]
+[Result "1-0"]
+
+1. e4 e5 2. Nf3 Nc6 1-0
+
+[Event "Test"]
+[Result "0-1"]
+
+1. d4 d5 0-1
+
+"""
+        pgn_path = _make_pgn(pgn, tmp_path)
+        move_counts = build_book([str(pgn_path)], 0, 0, 1, 1)
+
+        # The two identical e4 games share a final position -> both removed
+        # Only d4 d5 game survives
+        start_hash = chess.polyglot.zobrist_hash(chess.Board())
+        d4_key = (start_hash, chess.D2, chess.D4, 0)
+        assert d4_key in move_counts
+
+        e4_key = (start_hash, chess.E2, chess.E4, 0)
+        assert e4_key not in move_counts
+
 
 class TestWriteBook:
-    def _dest_hashes_for(self, move_counts):
-        """Build dest_hashes by replaying each move on a fresh board."""
-        dest_hashes = {}
-        for (h, from_sq, to_sq, promo), _ in move_counts.items():
-            board = chess.Board()
-            # Try to find a board state matching this hash
-            # For starting position moves, the board is already correct
-            if chess.polyglot.zobrist_hash(board) == h:
-                uci = chess.SQUARE_NAMES[from_sq] + chess.SQUARE_NAMES[to_sq]
-                if promo:
-                    uci += {2: "n", 3: "b", 4: "r", 5: "q"}[promo]
-                board.push_uci(uci)
-                dest_hashes[(h, from_sq, to_sq, promo)] = chess.polyglot.zobrist_hash(
-                    board
-                )
-        return dest_hashes
-
     def test_roundtrip(self, tmp_path):
         start_hash = chess.polyglot.zobrist_hash(chess.Board())
         move_counts = {
             (start_hash, chess.E2, chess.E4, 0): 100,
             (start_hash, chess.D2, chess.D4, 0): 50,
         }
-        dest_hashes = self._dest_hashes_for(move_counts)
 
         output = tmp_path / "test.bin"
-        write_book(move_counts, dest_hashes, output)
+        write_book(move_counts, output)
 
         with open(output, "rb") as f:
             magic = f.read(4)
@@ -244,12 +252,9 @@ class TestWriteBook:
             (h1, chess.E2, chess.E4, 0): 100,
             (h2, chess.E7, chess.E5, 0): 80,
         }
-        dest_hashes = {
-            (h1, chess.E2, chess.E4, 0): h2,
-        }
 
         output = tmp_path / "test.bin"
-        write_book(move_counts, dest_hashes, output)
+        write_book(move_counts, output)
 
         with open(output, "rb") as f:
             f.read(4)  # magic
@@ -282,12 +287,9 @@ class TestWriteBook:
             (h_e4, chess.E7, chess.E5, 0): 80,
             (h_orphan, chess.A2, chess.A3, 0): 50,
         }
-        dest_hashes = {
-            (start_hash, chess.E2, chess.E4, 0): h_e4,
-        }
 
         output = tmp_path / "test.bin"
-        write_book(move_counts, dest_hashes, output)
+        write_book(move_counts, output)
 
         with open(output, "rb") as f:
             f.read(4)  # magic
@@ -303,10 +305,9 @@ class TestWriteBook:
             (start_hash, chess.E2, chess.E4, 0): 100,
             (start_hash, chess.D2, chess.D4, 0): 5,  # below min_count=10
         }
-        dest_hashes = self._dest_hashes_for(move_counts)
 
         output = tmp_path / "test.bin"
-        write_book(move_counts, dest_hashes, output, min_count=10)
+        write_book(move_counts, output, min_count=10)
 
         with open(output, "rb") as f:
             f.read(4)  # magic

@@ -168,7 +168,7 @@ def build_book(
     c,
     pgn,
     output="book.bin",
-    min_elo=1600,
+    min_elo=1800,
     min_time=180,
     min_count=10,
     min_weight_pct=0.01,

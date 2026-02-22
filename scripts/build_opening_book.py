@@ -28,6 +28,7 @@ from pathlib import Path
 
 import chess
 import chess.polyglot
+import numpy as np
 from tqdm import tqdm
 
 _GAME_SEP = b"\n[Event "
@@ -50,8 +51,12 @@ def _iter_zst_chunks(pgn_path, chunk_size=256 << 20):
     live_paths = []
 
     def _decompress_next():
-        parts = [leftover[0]] if leftover[0] else []
-        total = len(leftover[0])
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pgn", mode="wb")
+        total = 0
+        if leftover[0]:
+            tmp.write(leftover[0])
+            total += len(leftover[0])
+            leftover[0] = b""
         eof = False
         while total < chunk_size:
             data = reader.read(1 << 22)
@@ -59,24 +64,28 @@ def _iter_zst_chunks(pgn_path, chunk_size=256 << 20):
                 eof = True
                 break
             clean = data.replace(b"\r", b"")
-            parts.append(clean)
+            tmp.write(clean)
             total += len(clean)
         if total == 0:
-            leftover[0] = b""
+            tmp.close()
+            os.unlink(tmp.name)
             return None
-        chunk = b"".join(parts)
-        if not eof:
-            boundary = chunk.rfind(_GAME_SEP)
-            if boundary > 0:
-                leftover[0] = chunk[boundary + 1 :]
-                chunk = chunk[: boundary + 1]
-            else:
-                leftover[0] = b""
-        else:
-            leftover[0] = b""
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pgn", mode="wb")
-        tmp.write(chunk)
         tmp.close()
+        if not eof:
+            # Read tail of file to find last game boundary
+            tail_size = min(total, 1 << 20)  # 1 MB tail search
+            with open(tmp.name, "rb") as f:
+                f.seek(total - tail_size)
+                tail = f.read()
+            boundary = tail.rfind(_GAME_SEP)
+            if boundary > 0:
+                split_pos = (total - tail_size) + boundary + 1
+                with open(tmp.name, "rb") as f:
+                    f.seek(split_pos)
+                    leftover[0] = f.read()
+                # Truncate file at boundary
+                with open(tmp.name, "r+b") as f:
+                    f.truncate(split_pos)
         live_paths.append(tmp.name)
         return tmp.name
 
@@ -283,13 +292,17 @@ def _extract_san_moves(movetext, max_depth):
 _LC_ENTRY = struct.Struct("<II")  # hash_u32, count_u32
 
 
+_FH_ENTRY = struct.Struct("<IQ")  # seq_hash_u32, final_pos_hash_u64
+
+
 def _count_lines_worker(args):
-    """Count opening line frequencies and capture one example per hash."""
+    """Count opening line frequencies, capture one example + final hash per seq."""
     filepath, start, end, min_elo, min_time = args
     chunk = _read_chunk(filepath, start, end).replace(b"\r", b"")
     games = _split_chunk(chunk)
     line_counts = Counter()
     sequences = {}
+    final_hashes = {}
     matched = 0
     scanned = 0
     seq_hash = _seq_hash
@@ -312,51 +325,129 @@ def _count_lines_worker(args):
             h = seq_hash(h, san)
         line_counts[h] += 1
         if h not in sequences:
-            sequences[h] = tuple(san_moves)
+            sequences[h] = " ".join(san_moves)
+            board = chess.Board()
+            try:
+                for san in san_moves:
+                    board.push(board.parse_san(san))
+                final_hashes[h] = chess.polyglot.zobrist_hash(board)
+            except (
+                chess.IllegalMoveError,
+                chess.InvalidMoveError,
+                chess.AmbiguousMoveError,
+            ):
+                pass
 
-    pack = _LC_ENTRY.pack
-    data = b"".join(pack(h, c) for h, c in line_counts.items())
-    return data, matched, scanned, sequences
+    lc_pack = _LC_ENTRY.pack
+    data = b"".join(lc_pack(h, c) for h, c in line_counts.items())
+    fh_pack = _FH_ENTRY.pack
+    fh_data = b"".join(fh_pack(h, fh) for h, fh in final_hashes.items())
+    return data, matched, scanned, sequences, fh_data
+
+
+_REPLAY_ENTRY = struct.Struct("<QBBBxI")  # 16 bytes per entry
+
+_SEQ_HEADER = struct.Struct("<IH")  # seq_hash_u32, san_len_u16
+
+_REPLAY_DTYPE = np.dtype(
+    [
+        ("pos_hash", "<u8"),
+        ("from_sq", "u1"),
+        ("to_sq", "u1"),
+        ("promo", "u1"),
+        ("_pad", "u1"),
+        ("count", "<u4"),
+    ]
+)
+
+
+def _numpy_aggregate(arr):
+    """Sort structured array by key fields and sum counts for duplicates."""
+    if len(arr) == 0:
+        return arr
+    arr.sort(order=["pos_hash", "from_sq", "to_sq", "promo"])
+    n = len(arr)
+    diff_mask = np.empty(n, dtype=bool)
+    diff_mask[0] = True
+    diff_mask[1:] = (
+        (arr["pos_hash"][1:] != arr["pos_hash"][:-1])
+        | (arr["from_sq"][1:] != arr["from_sq"][:-1])
+        | (arr["to_sq"][1:] != arr["to_sq"][:-1])
+        | (arr["promo"][1:] != arr["promo"][:-1])
+    )
+    boundaries = np.nonzero(diff_mask)[0]
+    summed = np.add.reduceat(arr["count"], boundaries)
+    result = arr[boundaries].copy()
+    result["count"] = summed
+    return result
+
+
+def _iter_replay_batches(seq_path, survivors, batch_size=5000):
+    """Yield batches of (seq_hash, count, san_str) from sequence temp file."""
+    header_size = _SEQ_HEADER.size
+    unpack = _SEQ_HEADER.unpack
+    batch = []
+    with open(seq_path, "rb") as f:
+        while True:
+            hdr = f.read(header_size)
+            if len(hdr) < header_size:
+                break
+            seq_hash, san_len = unpack(hdr)
+            san_bytes = f.read(san_len)
+            if seq_hash in survivors:
+                batch.append((seq_hash, survivors[seq_hash], san_bytes.decode("utf-8")))
+                if len(batch) >= batch_size:
+                    yield batch
+                    batch = []
+    if batch:
+        yield batch
 
 
 def _replay_worker(items):
-    """Replay unique opening sequences to extract position-move data."""
+    """Replay unique opening sequences, return packed binary data."""
     move_counts = defaultdict(int)
-    dest_hashes = {}
-    for h, weight, san_moves in items:
+    for h, weight, san_str in items:
         board = chess.Board()
         try:
-            for san in san_moves:
+            for san in san_str.split():
                 pos_hash = chess.polyglot.zobrist_hash(board)
                 move = board.parse_san(san)
                 promo = move.promotion if move.promotion is not None else 0
                 key = (pos_hash, move.from_square, move.to_square, promo)
                 move_counts[key] += weight
                 board.push(move)
-                if key not in dest_hashes:
-                    dest_hashes[key] = chess.polyglot.zobrist_hash(board)
         except (
             chess.IllegalMoveError,
             chess.InvalidMoveError,
             chess.AmbiguousMoveError,
         ):
             pass
-    return dict(move_counts), dest_hashes
+    pack = _REPLAY_ENTRY.pack
+    return b"".join(
+        pack(ph, fs, ts, pr, c) for (ph, fs, ts, pr), c in move_counts.items()
+    )
 
 
 def build_book(
     file_iter,
     min_elo: int,
     min_time: int,
+    min_count: int,
     workers: int,
-) -> tuple[dict[tuple[int, int, int, int], int], dict[tuple[int, int, int, int], int]]:
+) -> dict[tuple[int, int, int, int], int]:
     """Count unique move sequences in workers, then replay each once."""
     print(f"Building book... ({workers} workers)")
 
     line_counts = Counter()
-    all_sequences: dict[int, tuple[str, ...]] = {}
+    all_final_hashes: dict[int, int] = {}
+    seen_seqs: set[int] = set()
     total_matched = 0
     total_scanned = 0
+
+    # Write unique sequences to temp file (avoids ~8GB dict in memory)
+    seq_fd, seq_path = tempfile.mkstemp(suffix=".seq")
+    seq_file = os.fdopen(seq_fd, "wb")
+    seq_pack = _SEQ_HEADER.pack
 
     with mp.Pool(workers) as pool:
         pbar = tqdm(desc="  Scanning", unit=" games", unit_scale=True)
@@ -364,10 +455,8 @@ def build_book(
             boundaries = _find_boundaries(filepath, workers * 10)
             if not boundaries:
                 continue
-            args_list = [
-                (filepath, s, e, min_elo, min_time) for s, e in boundaries
-            ]
-            for data, matched, scanned, sequences in pool.imap_unordered(
+            args_list = [(filepath, s, e, min_elo, min_time) for s, e in boundaries]
+            for data, matched, scanned, sequences, fh_data in pool.imap_unordered(
                 _count_lines_worker, args_list
             ):
                 total_matched += matched
@@ -376,9 +465,17 @@ def build_book(
                 for h, c in _LC_ENTRY.iter_unpack(data):
                     line_counts[h] += c
                 for h, seq in sequences.items():
-                    if h not in all_sequences:
-                        all_sequences[h] = seq
+                    if h not in seen_seqs:
+                        seen_seqs.add(h)
+                        san_bytes = seq.encode("utf-8")
+                        seq_file.write(seq_pack(h, len(san_bytes)))
+                        seq_file.write(san_bytes)
+                for h, fh in _FH_ENTRY.iter_unpack(fh_data):
+                    if h not in all_final_hashes:
+                        all_final_hashes[h] = fh
         pbar.close()
+    seq_file.close()
+    del seen_seqs
 
     print(
         f"  {total_scanned:,} games scanned,"
@@ -386,39 +483,110 @@ def build_book(
         f" {len(line_counts):,} unique sequences"
     )
 
-    # Replay unique sequences in parallel (board ops are the bottleneck)
-    items = [(h, line_counts[h], all_sequences[h]) for h in line_counts]
-    del all_sequences
+    # Filter non-unique game endings
+    final_pos_game_count: Counter = Counter()
+    for seq_hash, final_hash in all_final_hashes.items():
+        if seq_hash in line_counts:
+            final_pos_game_count[final_hash] += line_counts[seq_hash]
 
-    num_batches = workers * 4
-    chunk_size = max(1, len(items) // num_batches)
-    batches = [
-        items[i : i + chunk_size] for i in range(0, len(items), chunk_size)
-    ]
-    del items
+    before_seqs = len(line_counts)
+    survivors = {
+        h: c
+        for h, c in line_counts.items()
+        if h in all_final_hashes and final_pos_game_count[all_final_hashes[h]] == 1
+    }
+    print(f"  Unique final positions: {before_seqs:,} -> {len(survivors):,} sequences")
+    del line_counts, all_final_hashes, final_pos_game_count
 
-    move_counts: dict[tuple[int, int, int, int], int] = defaultdict(int)
-    all_dest_hashes: dict[tuple[int, int, int, int], int] = {}
+    # Replay: stream batches from seq file, write results to replay temp file
+    n_survivors = len(survivors)
+    total_batches = (n_survivors + 4999) // 5000
+    replay_fd, replay_path = tempfile.mkstemp(suffix=".bin")
+    replay_file = os.fdopen(replay_fd, "wb")
 
     with mp.Pool(workers) as pool:
-        for mc, dh in tqdm(
-            pool.imap_unordered(_replay_worker, batches),
-            total=len(batches),
+        for data in tqdm(
+            pool.imap_unordered(
+                _replay_worker,
+                _iter_replay_batches(seq_path, survivors),
+            ),
+            total=total_batches,
             desc="  Replaying",
         ):
-            for k, v in mc.items():
-                move_counts[k] += v
-            for k, v in dh.items():
-                if k not in all_dest_hashes:
-                    all_dest_hashes[k] = v
+            replay_file.write(data)
+    replay_file.close()
+    os.unlink(seq_path)
+    del survivors
 
-    print(f"  {len(move_counts):,} position-moves before pruning")
-    return dict(move_counts), all_dest_hashes
+    # Bucket-based aggregation: distribute by pos_hash prefix, sort each bucket
+    file_size = os.path.getsize(replay_path)
+    entry_size = _REPLAY_ENTRY.size
+    n_entries = file_size // entry_size
+    print(f"  {n_entries:,} raw position-move entries, aggregating...")
+
+    N_BUCKETS = 64
+    BUCKET_SHIFT = 64 - 6  # top 6 bits -> 64 buckets
+    bucket_paths = []
+    bucket_files = []
+    for _ in range(N_BUCKETS):
+        fd, path = tempfile.mkstemp(suffix=".bkt")
+        bucket_files.append(os.fdopen(fd, "wb"))
+        bucket_paths.append(path)
+
+    # Distribute entries into buckets
+    read_n = 10_000_000  # 10M entries per read = 160MB
+    with open(replay_path, "rb") as f:
+        for _ in tqdm(
+            range(0, max(1, n_entries), read_n),
+            desc="  Distributing",
+            total=(n_entries + read_n - 1) // max(1, read_n),
+        ):
+            buf = f.read(read_n * entry_size)
+            if not buf:
+                break
+            arr = np.frombuffer(buf, dtype=_REPLAY_DTYPE)
+            bids = (arr["pos_hash"] >> BUCKET_SHIFT).astype(np.uint8)
+            order = bids.argsort(kind="stable")
+            sorted_arr = arr[order]
+            sorted_bids = bids[order]
+            bounds = np.searchsorted(sorted_bids, np.arange(N_BUCKETS + 1))
+            for b in range(N_BUCKETS):
+                s, e = int(bounds[b]), int(bounds[b + 1])
+                if s < e:
+                    bucket_files[b].write(sorted_arr[s:e].tobytes())
+
+    for bf in bucket_files:
+        bf.close()
+    os.unlink(replay_path)
+
+    # Sort + aggregate each bucket independently
+    move_counts: dict[tuple[int, int, int, int], int] = {}
+    for b in tqdm(range(N_BUCKETS), desc="  Aggregating"):
+        bsize = os.path.getsize(bucket_paths[b])
+        if bsize == 0:
+            os.unlink(bucket_paths[b])
+            continue
+        arr = np.fromfile(bucket_paths[b], dtype=_REPLAY_DTYPE)
+        os.unlink(bucket_paths[b])
+        arr = _numpy_aggregate(arr)
+        mask = arr["count"] >= min_count
+        arr = arr[mask]
+        if len(arr) > 0:
+            ph = arr["pos_hash"].tolist()
+            fs = arr["from_sq"].tolist()
+            ts = arr["to_sq"].tolist()
+            pr = arr["promo"].tolist()
+            ct = arr["count"].tolist()
+            for i in range(len(arr)):
+                move_counts[(ph[i], fs[i], ts[i], pr[i])] = ct[i]
+        del arr
+
+    print(f"  {len(move_counts):,} position-moves after min_count={min_count}")
+    return move_counts
 
 
 def write_book(
     move_counts: dict[tuple[int, int, int, int], int],
-    dest_hashes: dict[tuple[int, int, int, int], int],
     output: Path,
     min_count: int = 1,
     min_weight_pct: float = 0.01,
@@ -430,46 +598,59 @@ def write_book(
     if min_count > 1:
         before = len(move_counts)
         move_counts = {k: v for k, v in move_counts.items() if v >= min_count}
-        print(
-            f"  Filtered {before:,} -> {len(move_counts):,} (min_count={min_count})"
-        )
+        print(f"  Filtered {before:,} -> {len(move_counts):,} (min_count={min_count})")
 
     # Group by position and compute weights
-    positions: dict[int, list[tuple[int, int, int, int, int]]] = defaultdict(list)
+    positions: dict[int, list] = defaultdict(list)
     for (h, from_sq, to_sq, promo), count in move_counts.items():
         positions[h].append((from_sq, to_sq, promo, count))
 
     # Compute weights, drop zero-weight and below-threshold moves
-    weighted: dict[int, list[tuple[int, int, int, int, tuple]]] = {}
+    weighted: dict[int, list] = {}
     for h, entries in positions.items():
         max_count = max(c for _, _, _, c in entries)
         moves = []
         for from_sq, to_sq, promo, count in entries:
             weight = round(count / max_count * 255)
             if weight > 0:
-                key = (h, from_sq, to_sq, promo)
-                dest = dest_hashes.get(key)
-                moves.append((from_sq, to_sq, promo, weight, dest))
+                moves.append((from_sq, to_sq, promo, weight))
         if moves:
-            total_weight = sum(w for _, _, _, w, _ in moves)
+            total_weight = sum(w for _, _, _, w in moves)
             threshold = min_weight_pct * total_weight
             moves = [m for m in moves if m[3] >= threshold]
         if moves:
             weighted[h] = moves
 
-    # BFS from starting position to prune unreachable positions
-    root = chess.polyglot.zobrist_hash(chess.Board())
-    reachable: dict[int, int] = {}  # hash → depth
+    # BFS from starting position; compute dest hashes on the fly
+    root_board = chess.Board()
+    root = chess.polyglot.zobrist_hash(root_board)
+    reachable: dict[int, int] = {}
+    boards: dict[int, chess.Board] = {}
+    dest_map: dict[tuple[int, int, int, int], int] = {}
     queue = deque()
     if root in weighted:
         queue.append((root, 0))
         reachable[root] = 0
+        boards[root] = root_board
     while queue:
         h, d = queue.popleft()
-        for _, _, _, _, dest in weighted[h]:
-            if dest is not None and dest in weighted and dest not in reachable:
-                reachable[dest] = d + 1
-                queue.append((dest, d + 1))
+        board = boards[h]
+        for from_sq, to_sq, promo, _ in weighted[h]:
+            uci = chess.SQUARE_NAMES[from_sq] + chess.SQUARE_NAMES[to_sq]
+            if promo:
+                uci += {2: "n", 3: "b", 4: "r", 5: "q"}[promo]
+            try:
+                b = board.copy()
+                b.push_uci(uci)
+                dest = chess.polyglot.zobrist_hash(b)
+                dest_map[(h, from_sq, to_sq, promo)] = dest
+                if dest in weighted and dest not in reachable:
+                    reachable[dest] = d + 1
+                    boards[dest] = b
+                    queue.append((dest, d + 1))
+            except (ValueError, chess.IllegalMoveError):
+                pass
+        del boards[h]
 
     pruned = len(weighted) - len(reachable)
     if pruned > 0:
@@ -478,10 +659,11 @@ def write_book(
     total_moves = sum(len(weighted[h]) for h in reachable)
     print(f"  {len(reachable):,} positions, {total_moves:,} moves after pruning")
 
-    # Count leaf positions: positions where at least one move leads outside the book
+    # Count leaf positions
     leaf_count = 0
     for h in reachable:
-        for _, _, _, _, dest in weighted[h]:
+        for from_sq, to_sq, promo, _ in weighted[h]:
+            dest = dest_map.get((h, from_sq, to_sq, promo))
             if dest is None or dest not in reachable:
                 leaf_count += 1
                 break
@@ -496,7 +678,7 @@ def write_book(
         offset = len(moves_array)
         moves = weighted[h]
         moves.sort(key=lambda x: x[3], reverse=True)
-        for from_sq, to_sq, promo, weight, _ in moves:
+        for from_sq, to_sq, promo, weight in moves:
             moves_array.append((from_sq, to_sq, promo, weight))
         pos_table.append((h, offset, len(moves)))
 
@@ -506,10 +688,10 @@ def write_book(
     line_depth = 0
     while cur in weighted and cur in reachable:
         moves = weighted[cur]
-        total_weight = sum(w for _, _, _, w, _ in moves)
+        total_weight = sum(w for _, _, _, w in moves)
         best = max(moves, key=lambda x: x[3])
         line_prob *= best[3] / total_weight
-        cur = best[4]
+        cur = dest_map.get((cur, best[0], best[1], best[2]))
         line_depth += 1
         if cur is None:
             break
@@ -539,7 +721,7 @@ def main():
         "--output", "-o", type=Path, default=Path("book.bin"), help="Output file"
     )
     parser.add_argument(
-        "--min-elo", type=int, default=1600, help="Min player Elo filter"
+        "--min-elo", type=int, default=1800, help="Min player Elo filter"
     )
     parser.add_argument(
         "--min-time",
@@ -572,16 +754,15 @@ def main():
         print(f"Error: {args.pgn} not found", file=sys.stderr)
         sys.exit(1)
 
-    move_counts, dest_hashes = build_book(
+    move_counts = build_book(
         _iter_files(args.pgn),
         args.min_elo,
         args.min_time,
+        args.min_count,
         args.workers,
     )
 
-    write_book(
-        move_counts, dest_hashes, args.output, args.min_count, args.min_weight_pct
-    )
+    write_book(move_counts, args.output, args.min_count, args.min_weight_pct)
 
 
 if __name__ == "__main__":
