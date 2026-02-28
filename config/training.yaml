@@ -11,7 +11,7 @@ nnue:
 
 self_play:
   num_games: 10000
-  num_threads: 15
+  num_threads: 8
   output_file: "training_data.bin"
   search_time_ms: 500
   random_plies: 0
@@ -30,4 +30,4 @@ training:
   data_cap_multiplier: 100
 
 compare:
-  num_games: 100
+  num_games: 1000
