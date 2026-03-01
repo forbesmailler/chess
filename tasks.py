@@ -231,6 +231,7 @@ def deploy(c, weights=None):
     test_cpp(c)
 
     print("=== Step 4/5: Install ===")
+    c.run("sudo -v", pty=True)
     c.run(f"sudo systemctl stop {service}", warn=True)
     c.run(f"sudo mkdir -p {install_dir}")
     c.run(f"sudo cp {repo_dir}/engine/build/lichess_bot {install_dir}/")
