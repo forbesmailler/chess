@@ -231,23 +231,23 @@ def deploy(c, weights=None):
     test_cpp(c)
 
     print("=== Step 4/5: Install ===")
-    c.run(f"systemctl stop {service}", warn=True)
-    c.run(f"mkdir -p {install_dir}")
-    c.run(f"cp {repo_dir}/engine/build/lichess_bot {install_dir}/")
+    c.run(f"sudo systemctl stop {service}", warn=True)
+    c.run(f"sudo mkdir -p {install_dir}")
+    c.run(f"sudo cp {repo_dir}/engine/build/lichess_bot {install_dir}/")
     if weights:
-        c.run(f"cp {weights} {install_dir}/nnue.bin")
+        c.run(f"sudo cp {weights} {install_dir}/nnue.bin")
     else:
         c.run(
             f"test -f {pointer}"
-            f' && cp "{repo_dir}/$(cat {pointer})" {install_dir}/nnue.bin',
+            f' && sudo cp "{repo_dir}/$(cat {pointer})" {install_dir}/nnue.bin',
             warn=True,
         )
     book_src = f"{repo_dir}/book.bin"
-    c.run(f"test -f {book_src} && cp {book_src} {install_dir}/", warn=True)
-    c.run(f"cp {repo_dir}/{_vps['service_file']} {_vps['systemd_path']}")
+    c.run(f"test -f {book_src} && sudo cp {book_src} {install_dir}/", warn=True)
+    c.run(f"sudo cp {repo_dir}/{_vps['service_file']} {_vps['systemd_path']}")
 
     print("=== Step 5/5: Restart service ===")
-    c.run("systemctl daemon-reload")
-    c.run(f"systemctl enable {service}")
-    c.run(f"systemctl restart {service}")
+    c.run("sudo systemctl daemon-reload")
+    c.run(f"sudo systemctl enable {service}")
+    c.run(f"sudo systemctl restart {service}")
     c.run(f"systemctl status {service}")
