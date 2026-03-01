@@ -228,13 +228,12 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
     for (int g = 0; g < num_games; ++g) {
         engine->clear_caches();
         std::vector<TrainingPosition> positions;
-        positions.reserve(config.max_game_ply);
 
         ChessBoard board;
         uint16_t ply = 0;
         int white_result = 1;
 
-        while (ply < config.max_game_ply) {
+        while (true) {
             auto [reason, result] = board.board.isGameOver();
             if (result != chess::GameResult::NONE) {
                 if (reason == chess::GameResultReason::CHECKMATE) {
@@ -474,8 +473,6 @@ void ModelComparator::play_games(int num_games, int thread_id,
         old_engine->clear_caches();
         std::vector<TrainingPosition> positions;
         std::vector<bool> from_new_engine;
-        positions.reserve(config.max_game_ply);
-        from_new_engine.reserve(config.max_game_ply);
 
         bool new_is_white = (thread_id + g) % 2 == 0;
 
@@ -483,7 +480,7 @@ void ModelComparator::play_games(int num_games, int thread_id,
         uint16_t ply = 0;
         int white_result = 1;
 
-        while (ply < config.max_game_ply) {
+        while (true) {
             auto [go_reason, go_result] = board.board.isGameOver();
             if (go_result != chess::GameResult::NONE) {
                 if (go_reason == chess::GameResultReason::CHECKMATE) {

@@ -22,7 +22,6 @@ SelfPlayGenerator::Config make_test_config(const std::string& output_file,
     config.num_threads = num_threads;
     config.output_file = output_file;
     config.search_time_ms = 50;
-    config.max_game_ply = 50;
     return config;
 }
 
@@ -242,7 +241,6 @@ TEST(ModelComparator, ComparisonProducesResults) {
     config.num_games = 2;
     config.num_threads = 1;
     config.output_file = output_file;
-    config.max_game_ply = 50;
     config.search_time_ms = 50;
 
     ModelComparator comparator(config, old_model, new_model);

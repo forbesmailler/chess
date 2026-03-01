@@ -36,7 +36,6 @@ class SelfPlayGenerator {
         int num_games = config::self_play::NUM_GAMES;
         int num_threads = config::self_play::NUM_THREADS;
         std::string output_file = "training_data.bin";
-        int max_game_ply = 400;
         int search_time_ms = config::self_play::SEARCH_TIME_MS;
         int random_plies = config::self_play::RANDOM_PLIES;
         int softmax_plies = config::self_play::SOFTMAX_PLIES;
@@ -80,7 +79,6 @@ class ModelComparator {
         int num_games = config::compare::NUM_GAMES;
         int num_threads = config::self_play::NUM_THREADS;
         std::string output_file;
-        int max_game_ply = 400;
         int search_time_ms = config::self_play::SEARCH_TIME_MS;
         std::string book_path;
     };
