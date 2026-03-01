@@ -237,7 +237,7 @@ static constexpr float SIGMOID_SCALE = 400.0f;
 }  // namespace eval
 
 namespace self_play {
-static constexpr int NUM_GAMES = 10000;
+static constexpr int NUM_GAMES = 5000;
 static constexpr int NUM_THREADS = 8;
 static constexpr int SEARCH_TIME_MS = 500;
 static constexpr int RANDOM_PLIES = 0;
@@ -247,7 +247,7 @@ static constexpr int PROGRESS_LOG_INTERVAL = 10;
 }  // namespace self_play
 
 namespace compare {
-static constexpr int NUM_GAMES = 100;
+static constexpr int NUM_GAMES = 500;
 }  // namespace compare
 
 }  // namespace config

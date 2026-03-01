@@ -137,21 +137,39 @@ def sweep(
     freeze_baseline=True,
 ):
     """Train and compare one model per eval weight."""
+    import tempfile
+
     prepare(c)
-    weights = [float(w.strip()) for w in eval_weights.split(",")]
-    for i, w in enumerate(weights, 1):
-        print(f"\n{'=' * 60}")
-        print(f"=== Sweep {i}/{len(weights)}: eval_weight={w} ===")
-        print(f"{'=' * 60}")
-        cmd = (
-            f"python -u scripts/train_loop.py --train-only"
-            f" --data {data}"
-            f" --epochs {epochs} --batch-size {batch_size}"
-            f" --eval-weight {w} --compare-games {compare_games}"
-        )
-        if freeze_baseline:
-            cmd += " --freeze-baseline"
-        c.run(cmd)
+    tmp = tempfile.NamedTemporaryFile(suffix=".bin", delete=False)
+    tmp.close()
+    tmp_path = tmp.name
+    try:
+        weights = [float(w.strip()) for w in eval_weights.split(",")]
+        for i, w in enumerate(weights, 1):
+            print(f"\n{'=' * 60}")
+            print(f"=== Sweep {i}/{len(weights)}: eval_weight={w} ===")
+            print(f"{'=' * 60}")
+            cmd = (
+                f"python -u scripts/train_loop.py --train-only"
+                f" --data {data}"
+                f" --epochs {epochs} --batch-size {batch_size}"
+                f" --eval-weight {w} --compare-games {compare_games}"
+                f" --compare-data {tmp_path}"
+            )
+            if freeze_baseline:
+                cmd += " --freeze-baseline"
+            c.run(cmd)
+
+        # Append comparison positions to training data
+        tmp_file = Path(tmp_path)
+        if tmp_file.exists() and tmp_file.stat().st_size > 0:
+            with open(data, "ab") as dst, open(tmp_path, "rb") as src:
+                while chunk := src.read(1 << 20):
+                    dst.write(chunk)
+            positions = tmp_file.stat().st_size // 42
+            print(f"\nAppended {positions} comparison positions to {data}")
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
 
 
 @task(

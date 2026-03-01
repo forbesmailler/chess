@@ -163,7 +163,14 @@ def main():
         action="store_true",
         help="Don't update current best on accept (compare all against same baseline).",
     )
+    p.add_argument(
+        "--compare-data",
+        help="Write comparison game positions to this file instead of --data (default: --data).",
+    )
     args = p.parse_args()
+
+    if args.compare_data is None:
+        args.compare_data = args.data
 
     if args.iterations == 0 and (args.compare_only or args.train_only):
         args.iterations = 1
@@ -250,9 +257,10 @@ def main():
         print(
             f"\n--- Compare: {candidate_name} vs {old_name} ({args.compare_games} games) ---"
         )
+        compare_data = Path(args.compare_data)
         wld = run_compare(
             f"{BOT_EXE} --compare {old_arg} {candidate_path}"
-            f" {args.compare_games} {data_path} {args.threads}"
+            f" {args.compare_games} {compare_data} {args.threads}"
         )
         improved = wld["improved"]
 
