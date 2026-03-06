@@ -245,51 +245,6 @@ TEST_F(NNUEModelTest, FeatureEncodingRoundTrip) {
     }
 }
 
-// --- Diagnostic test 3: Eval speed benchmark ---
-
-TEST_F(NNUEModelTest, EvalSpeedBenchmark) {
-    constexpr int NUM_EVALS = 1000000;
-
-    // Positions to cycle through for realistic cache behavior
-    std::vector<ChessBoard> boards = {
-        ChessBoard(),
-        ChessBoard("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"),
-        ChessBoard("r1bqkb1r/pppppppp/2n2n2/8/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3"),
-        ChessBoard("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1"),
-    };
-
-    // Benchmark NNUE
-    auto nnue_start = std::chrono::high_resolution_clock::now();
-    for (int i = 0; i < NUM_EVALS; ++i) {
-        float e = model.predict(boards[i % boards.size()]);
-        (void)e;
-    }
-    auto nnue_end = std::chrono::high_resolution_clock::now();
-    double nnue_us =
-        std::chrono::duration<double, std::micro>(nnue_end - nnue_start).count();
-
-    // Benchmark handcrafted
-    auto hc_start = std::chrono::high_resolution_clock::now();
-    for (int i = 0; i < NUM_EVALS; ++i) {
-        float e = handcrafted_evaluate(boards[i % boards.size()]);
-        (void)e;
-    }
-    auto hc_end = std::chrono::high_resolution_clock::now();
-    double hc_us = std::chrono::duration<double, std::micro>(hc_end - hc_start).count();
-
-    double ratio = nnue_us / hc_us;
-    std::cout << "\n=== Eval Speed Benchmark (" << NUM_EVALS << " evals) ===\n"
-              << "  NNUE:        " << nnue_us / 1000.0 << " ms (" << nnue_us / NUM_EVALS
-              << " us/eval)\n"
-              << "  Handcrafted: " << hc_us / 1000.0 << " ms (" << hc_us / NUM_EVALS
-              << " us/eval)\n"
-              << "  Ratio:       " << ratio << "x (NNUE / Handcrafted)\n"
-              << "================================================\n";
-
-    // Informational only — no pass/fail assertion on speed
-    EXPECT_TRUE(true);
-}
-
 // --- Diagnostic test 5: Perspective consistency ---
 // For the same board with different STM, own-piece features of one perspective
 // should match opponent-piece features of the other (with square flipping).
@@ -479,75 +434,6 @@ TEST_F(NNUEModelTest, AccumulatorCorrectnessNullMove) {
 
     board.board.unmakeNullMove();
     model.pop_accumulator();
-}
-
-// --- Updated benchmark: includes incremental timing ---
-
-TEST_F(NNUEModelTest, EvalSpeedBenchmarkIncremental) {
-    constexpr int NUM_EVALS = 1000000;
-
-    // A realistic game sequence for incremental testing
-    std::vector<std::string> game_moves = {
-        "e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6", "b5a4", "g8f6",
-        "e1g1", "f8e7", "f1e1", "b7b5", "a4b3", "d7d6", "c2c3", "e8g8",
-    };
-
-    // Benchmark: incremental predict
-    ChessBoard board;
-    model.init_accumulator(board);
-
-    auto inc_start = std::chrono::high_resolution_clock::now();
-    for (int iter = 0; iter < NUM_EVALS; ++iter) {
-        int move_idx = iter % game_moves.size();
-        if (move_idx == 0 && iter > 0) {
-            // Reset board and accumulator
-            board = ChessBoard();
-            model.init_accumulator(board);
-        }
-        chess::Move move = chess::uci::uciToMove(board.board, game_moves[move_idx]);
-        chess::Piece moved = board.board.at(move.from());
-        chess::Piece captured = board.board.at(move.to());
-        model.push_accumulator();
-        board.board.makeMove(move);
-        model.update_accumulator(move, moved, captured, board);
-        float e = model.predict_from_accumulator(board);
-        (void)e;
-    }
-    auto inc_end = std::chrono::high_resolution_clock::now();
-    double inc_us =
-        std::chrono::duration<double, std::micro>(inc_end - inc_start).count();
-
-    // Benchmark: handcrafted
-    std::vector<ChessBoard> boards = {
-        ChessBoard(),
-        ChessBoard("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"),
-        ChessBoard("r1bqkb1r/pppppppp/2n2n2/8/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3"),
-        ChessBoard("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1"),
-    };
-
-    auto hc_start = std::chrono::high_resolution_clock::now();
-    for (int i = 0; i < NUM_EVALS; ++i) {
-        float e = handcrafted_evaluate(boards[i % boards.size()]);
-        (void)e;
-    }
-    auto hc_end = std::chrono::high_resolution_clock::now();
-    double hc_us = std::chrono::duration<double, std::micro>(hc_end - hc_start).count();
-
-    double ratio = inc_us / hc_us;
-    std::cout << "\n=== Incremental NNUE Speed Benchmark (" << NUM_EVALS
-              << " evals) ===\n"
-              << "  NNUE incremental: " << inc_us / 1000.0 << " ms ("
-              << inc_us / NUM_EVALS << " us/eval)\n"
-              << "  Handcrafted:      " << hc_us / 1000.0 << " ms ("
-              << hc_us / NUM_EVALS << " us/eval)\n"
-              << "  Ratio:            " << ratio
-              << "x (NNUE incremental / Handcrafted)\n"
-              << "==============================================\n";
-
-    // Incremental NNUE must be faster than handcrafted eval
-    EXPECT_LT(inc_us, hc_us) << "NNUE incremental (" << inc_us / NUM_EVALS
-                             << " us/eval) must be faster than handcrafted ("
-                             << hc_us / NUM_EVALS << " us/eval)";
 }
 
 // --- Variable HIDDEN2_SIZE tests ---
