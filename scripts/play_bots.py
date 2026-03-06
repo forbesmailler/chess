@@ -147,46 +147,39 @@ def main():
             continue
 
         # Pick a random bot and time control
-        random.shuffle(candidates)
+        bot = random.choice(candidates)
+        bot_name = bot["username"]
+        challenged.add(bot["id"])
         clock_limit, clock_increment = random.choice(TIME_CONTROLS)
         tc_str = f"{clock_limit // 60}+{clock_increment}"
 
-        for bot in candidates:
-            bot_name = bot["username"]
-            challenged.add(bot["id"])
-            print(f"Challenging {bot_name} ({tc_str})...")
+        print(f"Challenging {bot_name} ({tc_str})...")
+        challenge_id = challenge_bot(bot["id"], clock_limit, clock_increment)
+        if not challenge_id:
+            time.sleep(2)
+            continue
 
-            challenge_id = challenge_bot(bot["id"], clock_limit, clock_increment)
-            if not challenge_id:
-                time.sleep(2)
-                continue
+        # Wait for acceptance
+        accepted = False
+        for _ in range(CHALLENGE_TIMEOUT // 3):
+            time.sleep(3)
+            ongoing = get_ongoing_games()
+            if any(g["gameId"] == challenge_id for g in ongoing):
+                accepted = True
+                break
 
-            # Wait for acceptance
-            accepted = False
-            for _ in range(CHALLENGE_TIMEOUT // 3):
-                time.sleep(3)
-                ongoing = get_ongoing_games()
-                if any(g["gameId"] == challenge_id for g in ongoing):
-                    accepted = True
-                    break
+        if not accepted:
+            print(f"  {bot_name} did not accept, cancelling.")
+            cancel_challenge(challenge_id)
+            time.sleep(2)
+            continue
 
-            if not accepted:
-                print(f"  {bot_name} did not accept, cancelling...")
-                cancel_challenge(challenge_id)
-                time.sleep(2)
-                continue
-
-            # Game started
-            print(f"  Game started: {challenge_id}")
-            print(f"  https://lichess.org/{challenge_id}")
-            wait_for_game_finish(challenge_id)
-            games_played += 1
-            print(f"  Game finished. Total games played: {games_played}")
-            time.sleep(5)
-            break
-        else:
-            print("No bot accepted, waiting before next round...")
-            time.sleep(30)
+        # Game started — wait for it to finish
+        print(f"  Game started: https://lichess.org/{challenge_id}")
+        wait_for_game_finish(challenge_id)
+        games_played += 1
+        print(f"  Game finished. Total games played: {games_played}")
+        time.sleep(5)
 
 
 if __name__ == "__main__":
