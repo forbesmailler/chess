@@ -298,7 +298,7 @@ void LichessClient::stream_lines(const std::string& url,
     struct curl_slist* headers = nullptr;
     std::string auth_header = "Authorization: Bearer " + token;
     headers = curl_slist_append(headers, auth_header.c_str());
-    headers = curl_slist_append(headers, "Accept: text/plain");
+    headers = curl_slist_append(headers, "Accept: application/x-ndjson");
     headers = curl_slist_append(headers, "Cache-Control: no-cache");
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
