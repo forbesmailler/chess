@@ -1,5 +1,5 @@
 paths:
-  bot_exe: "engine/build/Release/lichess_bot.exe"
+  bot_exe: "engine/build/lichess_bot"
   accepted_models_dir: "models/accepted"
   rejected_models_dir: "models/rejected"
   current_best_file: "models/current_best.txt"

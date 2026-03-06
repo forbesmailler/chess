@@ -1,5 +1,6 @@
 """Load YAML config files with caching."""
 
+import platform
 from functools import lru_cache
 from pathlib import Path
 
@@ -29,4 +30,9 @@ def training() -> dict:
 
 
 def deploy() -> dict:
-    return load("deploy")
+    cfg = load("deploy")
+    exe = Path(cfg["paths"]["bot_exe"])
+    if platform.system() == "Windows":
+        exe = exe.parent / "Release" / (exe.name + ".exe")
+    cfg["paths"]["bot_exe"] = str(exe)
+    return cfg

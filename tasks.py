@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from invoke import task
@@ -224,6 +225,15 @@ def challenge(c, username, time=300, increment=0, casual=False):
         if weights and Path(weights).exists():
             nnue_arg = f" --eval=nnue --nnue-weights={weights}"
     book_arg = " --book=book.bin" if Path("book.bin").exists() else ""
+
+    # Load .env file if present
+    env_file = Path(".env")
+    if env_file.exists():
+        for line in env_file.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, _, val = line.partition("=")
+                os.environ.setdefault(key.strip(), val.strip())
 
     # Start bot in background
     bot_cmd = f"{BOT_EXE}{nnue_arg}{book_arg}"
