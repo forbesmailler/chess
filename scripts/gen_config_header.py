@@ -217,6 +217,9 @@ def generate() -> str:
     # bot
     b = eng["bot"]
     lines.append("namespace bot {")
+    lines.append(
+        f"    static constexpr int MAX_CONCURRENT_GAMES = {b['max_concurrent_games']};"
+    )
     lines.append(f"    static constexpr int MAX_RETRIES = {b['max_retries']};")
     lines.append(f"    static constexpr int RETRY_DELAY_MS = {b['retry_delay_ms']};")
     lines.append(

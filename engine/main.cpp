@@ -317,6 +317,14 @@ class LichessBot {
                 }
                 Utils::log_info("Received challenge: " + event.challenge_id);
 
+                if (active_game_count.load() >= config::bot::MAX_CONCURRENT_GAMES) {
+                    Utils::log_info("Declining challenge " + event.challenge_id +
+                                    ": already playing " +
+                                    std::to_string(active_game_count.load()) + " games");
+                    client.decline_challenge(event.challenge_id, "later");
+                    return;
+                }
+
                 if (!accept_challenge_with_retry(event.challenge_id)) {
                     Utils::log_error("Failed to accept challenge after retries: " +
                                      event.challenge_id);

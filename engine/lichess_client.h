@@ -32,6 +32,8 @@ class LichessClient {
 
     bool get_account_info(AccountInfo& info);
     bool accept_challenge(const std::string& challenge_id);
+    bool decline_challenge(const std::string& challenge_id,
+                           const std::string& reason = "generic");
     bool create_challenge(const std::string& username, int clock_limit,
                           int clock_increment, bool rated = true);
     bool make_move(const std::string& game_id, const std::string& uci_move);

@@ -54,6 +54,14 @@ bool LichessClient::accept_challenge(const std::string& challenge_id) {
     return response.status_code == 200;
 }
 
+bool LichessClient::decline_challenge(const std::string& challenge_id,
+                                      const std::string& reason) {
+    auto response = make_request(
+        base_url + "/challenge/" + challenge_id + "/decline", "POST",
+        "reason=" + reason);
+    return response.status_code == 200;
+}
+
 bool LichessClient::create_challenge(const std::string& username, int clock_limit,
                                      int clock_increment, bool rated) {
     std::string data = "rated=" + std::string(rated ? "true" : "false") +
