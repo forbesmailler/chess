@@ -8,6 +8,9 @@ import time
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from config.load_config import engine as load_engine
+
 # Load .env
 env_file = Path(__file__).resolve().parent.parent / ".env"
 if env_file.exists():
@@ -42,6 +45,7 @@ TIME_CONTROLS = [
 CHALLENGE_TIMEOUT = 30  # seconds to wait for challenge acceptance
 GAME_POLL_INTERVAL = 10  # seconds between game status checks
 MAX_GAME_WAIT = 3600  # max seconds to wait for a single game
+MAX_CONCURRENT = load_engine()["bot"]["max_concurrent_games"]
 
 
 def api_request(path, method="GET", data=None):
@@ -121,19 +125,22 @@ def main():
 
     challenged = set()  # track recently challenged bots to avoid spamming
     games_played = 0
+    tracked_games = set()  # game IDs we know about
 
     while True:
-        # Wait for any ongoing games to finish first
         ongoing = get_ongoing_games()
-        if ongoing:
-            game = ongoing[0]
-            print(
-                f"Game in progress: {game['gameId']} vs {game['opponent']['username']}"
-            )
-            wait_for_game_finish(game["gameId"])
+        ongoing_ids = {g["gameId"] for g in ongoing}
+
+        # Detect finished games
+        finished = tracked_games - ongoing_ids
+        for gid in finished:
             games_played += 1
-            print(f"Game finished. Total games played: {games_played}")
-            time.sleep(3)
+            print(f"Game {gid} finished. Total games played: {games_played}")
+        tracked_games -= finished
+
+        # At capacity — wait and check again
+        if len(ongoing) >= MAX_CONCURRENT:
+            time.sleep(GAME_POLL_INTERVAL)
             continue
 
         # Get online bots
@@ -141,9 +148,10 @@ def main():
         candidates = [b for b in bots if b["id"] != my_id and b["id"] not in challenged]
 
         if not candidates:
-            print("No new bots available, resetting challenge history...")
-            challenged.clear()
-            time.sleep(30)
+            if not ongoing:
+                print("No new bots available, resetting challenge history...")
+                challenged.clear()
+            time.sleep(30 if not ongoing else GAME_POLL_INTERVAL)
             continue
 
         # Pick a random bot and time control
@@ -174,12 +182,10 @@ def main():
             time.sleep(2)
             continue
 
-        # Game started — wait for it to finish
+        # Game started
         print(f"  Game started: https://lichess.org/{challenge_id}")
-        wait_for_game_finish(challenge_id)
-        games_played += 1
-        print(f"  Game finished. Total games played: {games_played}")
-        time.sleep(5)
+        tracked_games.add(challenge_id)
+        time.sleep(2)
 
 
 if __name__ == "__main__":
