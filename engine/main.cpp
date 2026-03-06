@@ -320,7 +320,8 @@ class LichessBot {
                 if (active_game_count.load() >= config::bot::MAX_CONCURRENT_GAMES) {
                     Utils::log_info("Declining challenge " + event.challenge_id +
                                     ": already playing " +
-                                    std::to_string(active_game_count.load()) + " games");
+                                    std::to_string(active_game_count.load()) +
+                                    " games");
                     client.decline_challenge(event.challenge_id, "later");
                     return;
                 }

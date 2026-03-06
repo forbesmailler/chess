@@ -56,9 +56,8 @@ bool LichessClient::accept_challenge(const std::string& challenge_id) {
 
 bool LichessClient::decline_challenge(const std::string& challenge_id,
                                       const std::string& reason) {
-    auto response = make_request(
-        base_url + "/challenge/" + challenge_id + "/decline", "POST",
-        "reason=" + reason);
+    auto response = make_request(base_url + "/challenge/" + challenge_id + "/decline",
+                                 "POST", "reason=" + reason);
     return response.status_code == 200;
 }
 

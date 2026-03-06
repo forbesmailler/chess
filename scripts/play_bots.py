@@ -28,11 +28,15 @@ HEADERS = {"Authorization": f"Bearer {TOKEN}", "Accept": "application/json"}
 TIME_CONTROLS = [
     (60, 0),  # 1+0 bullet
     (60, 1),  # 1+1 bullet
+    (120, 1),  # 2+1 bullet
     (180, 0),  # 3+0 blitz
     (180, 2),  # 3+2 blitz
     (300, 0),  # 5+0 blitz
     (300, 3),  # 5+3 blitz
     (600, 0),  # 10+0 rapid
+    (900, 10),  # 15+10 rapid
+    (1800, 0),  # 30+0 classical
+    (1800, 20),  # 30+20 classical
 ]
 
 CHALLENGE_TIMEOUT = 30  # seconds to wait for challenge acceptance
