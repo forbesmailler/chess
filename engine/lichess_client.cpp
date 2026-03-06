@@ -286,9 +286,6 @@ void LichessClient::stream_lines(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 0L);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT,
                      config::curl::STREAM_CONNECT_TIMEOUT);
-    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT,
-                     config::curl::STREAM_LOW_SPEED_LIMIT);
-    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, config::curl::STREAM_LOW_SPEED_TIME);
 
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPIDLE, config::curl::STREAM_KEEPALIVE_IDLE);
@@ -304,7 +301,11 @@ void LichessClient::stream_lines(const std::string& url,
 
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
 
-    curl_easy_perform(curl);
+    CURLcode res = curl_easy_perform(curl);
+    if (res != CURLE_OK) {
+        std::cerr << "[STREAM] curl error for " << url << ": "
+                  << curl_easy_strerror(res) << std::endl;
+    }
 
     if (!stream_data.buffer.empty()) {
         if (stream_data.buffer.back() == '\r') {
