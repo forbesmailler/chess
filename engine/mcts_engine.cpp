@@ -3,10 +3,8 @@
 #include <cmath>
 #include <limits>
 
-MCTSEngine::MCTSEngine(int max_time_ms, EvalMode eval_mode,
-                       std::shared_ptr<NNUEModel> nnue_model)
-    : BaseEngine(max_time_ms, eval_mode, std::move(nnue_model)),
-      rng(std::random_device{}()) {
+MCTSEngine::MCTSEngine(EvalMode eval_mode, std::shared_ptr<NNUEModel> nnue_model)
+    : BaseEngine(eval_mode, std::move(nnue_model)), rng(std::random_device{}()) {
     eval_cache.resize(EVAL_CACHE_SIZE);
 }
 

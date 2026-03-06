@@ -62,55 +62,45 @@ class TestableEngine : public ChessEngine {
 
 // --- BaseEngine: calculate_search_time exact values ---
 
-TEST(BaseEngineEdge, CalculateSearchTimeZeroReturnsMax) {
-    TestableEngine engine(200);
+TEST(BaseEngineEdge, CalculateSearchTimeCorrespondence) {
+    TestableEngine engine;
+    // No clock, no increment = correspondence, use max (60s)
     TimeControl tc{0, 0, 0};
-    EXPECT_EQ(engine.test_calculate_time(tc), 200);
+    EXPECT_EQ(engine.test_calculate_time(tc), 60000);
 }
 
-TEST(BaseEngineEdge, CalculateSearchTimeNegativeReturnsMax) {
-    TestableEngine engine(200);
+TEST(BaseEngineEdge, CalculateSearchTimeNegativeCorrespondence) {
+    TestableEngine engine;
     TimeControl tc{-100, 0, 0};
-    EXPECT_EQ(engine.test_calculate_time(tc), 200);
+    EXPECT_EQ(engine.test_calculate_time(tc), 60000);
 }
 
-TEST(BaseEngineEdge, CalculateSearchTimeCappedByMax) {
-    TestableEngine engine(500);
-    // allocated = 1000 + 4000/40 = 1100, capped at 500
-    TimeControl tc{4000, 1000, 0};
-    EXPECT_EQ(engine.test_calculate_time(tc), 500);
+TEST(BaseEngineEdge, CalculateSearchTimeCappedAt60s) {
+    TestableEngine engine;
+    // allocated = 0 + 10000000/50 = 200000, capped at 60000
+    TimeControl tc{10000000, 0, 0};
+    EXPECT_EQ(engine.test_calculate_time(tc), 60000);
 }
 
-TEST(BaseEngineEdge, CalculateSearchTimeUncapped) {
-    TestableEngine engine(5000);
-    // allocated = 1000 + 4000/40 = 1100, uncapped (< 5000)
-    TimeControl tc{4000, 1000, 0};
+TEST(BaseEngineEdge, CalculateSearchTimeWithIncrement) {
+    TestableEngine engine;
+    // allocated = 1000 + 5000/50 = 1100
+    TimeControl tc{5000, 1000, 0};
     EXPECT_EQ(engine.test_calculate_time(tc), 1100);
 }
 
 TEST(BaseEngineEdge, CalculateSearchTimeNoIncrement) {
-    TestableEngine engine(5000);
-    // allocated = 0 + 40000/40 = 1000
-    TimeControl tc{40000, 0, 0};
+    TestableEngine engine;
+    // allocated = 0 + 50000/50 = 1000
+    TimeControl tc{50000, 0, 0};
     EXPECT_EQ(engine.test_calculate_time(tc), 1000);
 }
 
 TEST(BaseEngineEdge, CalculateSearchTimeOnlyIncrement) {
-    TestableEngine engine(5000);
-    // allocated = 3000 + 1/40 = 3000 (integer division 1/40 = 0)
+    TestableEngine engine;
+    // allocated = 3000 + 1/50 = 3000 (integer division 1/50 = 0)
     TimeControl tc{1, 3000, 0};
     EXPECT_EQ(engine.test_calculate_time(tc), 3000);
-}
-
-TEST(BaseEngineEdge, SetGetMaxTime) {
-    ChessEngine engine(500);
-    EXPECT_EQ(engine.get_max_time(), 500);
-
-    engine.set_max_time(1000);
-    EXPECT_EQ(engine.get_max_time(), 1000);
-
-    engine.set_max_time(0);
-    EXPECT_EQ(engine.get_max_time(), 0);
 }
 
 TEST(BaseEngineEdge, EvalModeDefault) {
@@ -119,12 +109,12 @@ TEST(BaseEngineEdge, EvalModeDefault) {
 }
 
 TEST(BaseEngineEdge, EvalModeNNUE) {
-    ChessEngine engine(1000, EvalMode::NNUE, nullptr);
+    ChessEngine engine(EvalMode::NNUE, nullptr);
     EXPECT_EQ(engine.get_eval_mode(), EvalMode::NNUE);
 }
 
 TEST(BaseEngineEdge, StopSearchPreventsLongSearch) {
-    ChessEngine engine(5000);
+    ChessEngine engine;
     ChessBoard board;
 
     // Stop immediately — the search should still produce a result
@@ -138,7 +128,7 @@ TEST(BaseEngineEdge, StopSearchPreventsLongSearch) {
 // --- BaseEngine: raw_evaluate via ChessEngine::evaluate ---
 
 TEST(BaseEngineEdge, EvaluateStalemateReturnsZero) {
-    ChessEngine engine(100);
+    ChessEngine engine;
     ChessBoard board("k7/2Q5/1K6/8/8/8/8/8 b - - 0 1");
     float eval = engine.evaluate(board);
     EXPECT_FLOAT_EQ(eval, 0.0f);
@@ -146,7 +136,7 @@ TEST(BaseEngineEdge, EvaluateStalemateReturnsZero) {
 
 TEST(BaseEngineEdge, EvaluateNNUEFallbackToHandcrafted) {
     // NNUE mode with nullptr model should fall back to handcrafted
-    ChessEngine engine(100, EvalMode::NNUE, nullptr);
+    ChessEngine engine(EvalMode::NNUE, nullptr);
     ChessBoard board;
     float eval = engine.evaluate(board);
     EXPECT_TRUE(std::isfinite(eval));
@@ -155,7 +145,7 @@ TEST(BaseEngineEdge, EvaluateNNUEFallbackToHandcrafted) {
 // --- BaseEngine: time allocation with zero/negative time left ---
 
 TEST(BaseEngineEdge, SearchWithZeroTimeLeft) {
-    ChessEngine engine(100);
+    ChessEngine engine;
     ChessBoard board;
     TimeControl tc{0, 0, 0};  // zero time left
     auto result = engine.get_best_move(board, tc);
@@ -163,7 +153,7 @@ TEST(BaseEngineEdge, SearchWithZeroTimeLeft) {
 }
 
 TEST(BaseEngineEdge, SearchWithNegativeTimeLeft) {
-    ChessEngine engine(100);
+    ChessEngine engine;
     ChessBoard board;
     TimeControl tc{-1000, 0, 0};  // negative time
     auto result = engine.get_best_move(board, tc);
@@ -171,7 +161,7 @@ TEST(BaseEngineEdge, SearchWithNegativeTimeLeft) {
 }
 
 TEST(BaseEngineEdge, SearchWithIncrement) {
-    ChessEngine engine(500);
+    ChessEngine engine;
     ChessBoard board;
     TimeControl tc{10000, 5000, 0};  // 10s + 5s increment
     auto result = engine.get_best_move(board, tc);
@@ -182,7 +172,7 @@ TEST(BaseEngineEdge, SearchWithIncrement) {
 // --- ChessEngine: clear_caches ---
 
 TEST(ChessEngineEdge, ClearCachesDoesNotCrash) {
-    ChessEngine engine(100);
+    ChessEngine engine;
     ChessBoard board;
 
     // Run a search to populate caches
@@ -197,7 +187,7 @@ TEST(ChessEngineEdge, ClearCachesDoesNotCrash) {
 }
 
 TEST(ChessEngineEdge, ClearCachesBeforeSearch) {
-    ChessEngine engine(100);
+    ChessEngine engine;
     engine.clear_caches();
 
     ChessBoard board;
@@ -520,7 +510,7 @@ TEST(NNUEModelEdge, PredictUnloadedMultiplePositions) {
 
 TEST(ChessEngineEdge, GetBestMoveCheckmate) {
     // White is checkmated — no legal moves, in check
-    ChessEngine engine(100);
+    ChessEngine engine;
     ChessBoard board("rnb1kbnr/pppp1ppp/4p3/8/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3");
     TimeControl tc{60000, 0, 0};
     auto result = engine.get_best_move(board, tc);
@@ -532,7 +522,7 @@ TEST(ChessEngineEdge, GetBestMoveCheckmate) {
 
 TEST(ChessEngineEdge, GetBestMoveStalemate) {
     // Black is stalemated — no legal moves, NOT in check
-    ChessEngine engine(100);
+    ChessEngine engine;
     ChessBoard board("k7/2Q5/1K6/8/8/8/8/8 b - - 0 1");
     TimeControl tc{60000, 0, 0};
     auto result = engine.get_best_move(board, tc);
@@ -548,7 +538,7 @@ TEST(ChessEngineEdge, GetBestMoveSingleLegalMove) {
     // check Kh8 with Qf7 doesn't give check. Let's try a known single-move position.
     // Black king on a8, white queen on b6 — only Ka7 might be possible.
     // Better: use a discovered check position. Just verify the branch works.
-    ChessEngine engine(100);
+    ChessEngine engine;
     // Black Kh8, White Qg7 is checkmate, not stalemate. Let's try:
     // Black Kh1, White Qg3 — Kh1 only legal move Kg1 or Kh2 (if available).
     // Simpler approach: use a position with one known legal move.
@@ -567,7 +557,7 @@ TEST(ChessEngineEdge, GetBestMoveSingleLegalMove) {
 // --- ChessEngine: eval cache ---
 
 TEST(ChessEngineEdge, EvalCacheHit) {
-    ChessEngine engine(100);
+    ChessEngine engine;
     ChessBoard board;
     float eval1 = engine.evaluate(board);
     float eval2 = engine.evaluate(board);
@@ -575,7 +565,7 @@ TEST(ChessEngineEdge, EvalCacheHit) {
 }
 
 TEST(ChessEngineEdge, EvalCacheDifferentPositions) {
-    ChessEngine engine(100);
+    ChessEngine engine;
     ChessBoard board1;
     ChessBoard board2("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1");
     float eval1 = engine.evaluate(board1);
@@ -586,7 +576,7 @@ TEST(ChessEngineEdge, EvalCacheDifferentPositions) {
 // --- MCTS edge cases ---
 
 TEST(MCTSEdge, MCTSGetBestMoveCheckmate) {
-    MCTSEngine engine(100);
+    MCTSEngine engine;
     ChessBoard board("rnb1kbnr/pppp1ppp/4p3/8/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3");
     TimeControl tc{60000, 0, 0};
     auto result = engine.get_best_move(board, tc);
@@ -596,7 +586,7 @@ TEST(MCTSEdge, MCTSGetBestMoveCheckmate) {
 }
 
 TEST(MCTSEdge, MCTSGetBestMoveStalemate) {
-    MCTSEngine engine(100);
+    MCTSEngine engine;
     ChessBoard board("k7/2Q5/1K6/8/8/8/8/8 b - - 0 1");
     TimeControl tc{60000, 0, 0};
     auto result = engine.get_best_move(board, tc);
@@ -605,7 +595,7 @@ TEST(MCTSEdge, MCTSGetBestMoveStalemate) {
 }
 
 TEST(MCTSEdge, MCTSGetBestMoveSingleLegalMove) {
-    MCTSEngine engine(100);
+    MCTSEngine engine;
     // Position where few legal moves exist
     ChessBoard board("8/8/8/8/8/1K6/2R5/k7 b - - 0 1");
     TimeControl tc{60000, 0, 0};
@@ -614,14 +604,14 @@ TEST(MCTSEdge, MCTSGetBestMoveSingleLegalMove) {
 }
 
 TEST(MCTSEdge, MCTSEvaluateCheckmate) {
-    MCTSEngine engine(100);
+    MCTSEngine engine;
     ChessBoard board("rnb1kbnr/pppp1ppp/4p3/8/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3");
     float eval = engine.evaluate(board);
     EXPECT_LT(eval, -100.0f);  // White is mated
 }
 
 TEST(MCTSEdge, MCTSSearchFromEndgame) {
-    MCTSEngine engine(200);
+    MCTSEngine engine;
     // Near-endgame position
     ChessBoard board("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1");
     TimeControl tc{60000, 0, 0};
@@ -631,7 +621,7 @@ TEST(MCTSEdge, MCTSSearchFromEndgame) {
 }
 
 TEST(MCTSEdge, MCTSEvaluateStalemate) {
-    MCTSEngine engine(100);
+    MCTSEngine engine;
     ChessBoard board("k7/2Q5/1K6/8/8/8/8/8 b - - 0 1");
     float eval = engine.evaluate(board);
     EXPECT_FLOAT_EQ(eval, 0.0f);
@@ -639,7 +629,7 @@ TEST(MCTSEdge, MCTSEvaluateStalemate) {
 
 TEST(MCTSEdge, MCTSFindsMateInOne) {
     // White can play Qf7# (scholar's mate setup)
-    MCTSEngine engine(500);
+    MCTSEngine engine;
     ChessBoard board(
         "r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4");
     TimeControl tc{60000, 0, 0};
@@ -650,7 +640,7 @@ TEST(MCTSEdge, MCTSFindsMateInOne) {
 // --- BaseEngine: raw_evaluate for black-checkmated position ---
 
 TEST(BaseEngineEdge, EvaluateBlackCheckmated) {
-    ChessEngine engine(100);
+    ChessEngine engine;
     // Back rank mate: black Kd8 is mated by Rd1#
     // Actually let's use a clear position: Kh8, white Qg7 is Qg7#? No.
     // Use: black Ka8, white Qb7 is checkmate (a-file trapped, b7 covers a8/a7/b8)
@@ -670,7 +660,7 @@ TEST(BaseEngineEdge, EvaluateWithLoadedNNUE) {
     auto nnue = load_nnue_from_buffer();
     ASSERT_TRUE(nnue->is_loaded());
 
-    ChessEngine engine(100, EvalMode::NNUE, nnue);
+    ChessEngine engine(EvalMode::NNUE, nnue);
     ChessBoard board;
     float eval = engine.evaluate(board);
     EXPECT_TRUE(std::isfinite(eval));
@@ -681,7 +671,7 @@ TEST(BaseEngineEdge, EvaluateNNUECheckmatePosition) {
     auto nnue = load_nnue_from_buffer();
     ASSERT_TRUE(nnue->is_loaded());
 
-    ChessEngine engine(100, EvalMode::NNUE, nnue);
+    ChessEngine engine(EvalMode::NNUE, nnue);
     // White is checkmated (fool's mate) — raw_evaluate detects game over
     // Turn is white, white is mated => returns -MATE_VALUE
     ChessBoard mate("rnb1kbnr/pppp1ppp/4p3/8/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3");
@@ -761,7 +751,7 @@ TEST(ModelComparatorEdge, ImprovedMinimal) {
 // --- BaseEngine: draw positions return 0 in raw_evaluate ---
 
 TEST(BaseEngineEdge, EvaluateDrawByInsufficientMaterial) {
-    ChessEngine engine(100);
+    ChessEngine engine;
     ChessBoard board("4k3/8/8/8/8/8/8/4K3 w - - 0 1");
     float eval = engine.evaluate(board);
     EXPECT_FLOAT_EQ(eval, 0.0f);
@@ -770,7 +760,7 @@ TEST(BaseEngineEdge, EvaluateDrawByInsufficientMaterial) {
 TEST(BaseEngineEdge, EvaluateDrawByInsufficientMaterialNNUE) {
     // NNUE mode should also return 0 for drawn positions (raw_evaluate checks
     // game_over before calling NNUE)
-    ChessEngine engine(100, EvalMode::NNUE, nullptr);
+    ChessEngine engine(EvalMode::NNUE, nullptr);
     ChessBoard board("4k3/8/8/8/8/8/8/4K3 w - - 0 1");
     float eval = engine.evaluate(board);
     EXPECT_FLOAT_EQ(eval, 0.0f);

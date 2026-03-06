@@ -6,9 +6,8 @@ search:
   time_check_interval: 2048
   max_depth: 50
   quiescence_max_depth: 8
-  time_allocation_divisor: 40
-  min_time_ms: 50
-  max_time_ms: 5000
+  max_think_ms: 60000
+  time_allocation_divisor: 50
   aspiration_delta: 50.0
   aspiration_min_depth: 3
   mate_threshold_margin: 500

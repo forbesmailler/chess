@@ -222,8 +222,7 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
         }
     }
 
-    auto engine =
-        std::make_unique<ChessEngine>(config.search_time_ms, eval_mode, model);
+    auto engine = std::make_unique<ChessEngine>(eval_mode, model);
 
     for (int g = 0; g < num_games; ++g) {
         engine->clear_caches();
@@ -293,8 +292,7 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
                 std::discrete_distribution<int> dist(probs.begin(), probs.end());
                 chosen_move = legal_moves[dist(rng)];
             } else {
-                TimeControl tc{0, 0, 0};
-                engine->set_max_time(config.search_time_ms);
+                TimeControl tc{0, config.search_time_ms, 0};
                 auto result = engine->get_best_move(board, tc);
                 chosen_move = result.best_move;
                 stm_eval = result.score;
@@ -303,8 +301,7 @@ void SelfPlayGenerator::play_games(int num_games, const std::string& output_file
 
             // Search for eval label when move was chosen without search
             if (!move_found) {
-                TimeControl tc{0, 0, 0};
-                engine->set_max_time(config.search_time_ms);
+                TimeControl tc{0, config.search_time_ms, 0};
                 stm_eval = engine->get_best_move(board, tc).score;
             }
 
@@ -458,14 +455,12 @@ void ModelComparator::play_games(int num_games, int thread_id,
         }
     }
 
-    auto new_engine =
-        std::make_unique<ChessEngine>(config.search_time_ms, EvalMode::NNUE, new_model);
+    auto new_engine = std::make_unique<ChessEngine>(EvalMode::NNUE, new_model);
     std::unique_ptr<ChessEngine> old_engine;
     if (old_is_handcrafted) {
-        old_engine = std::make_unique<ChessEngine>(config.search_time_ms);
+        old_engine = std::make_unique<ChessEngine>();
     } else {
-        old_engine = std::make_unique<ChessEngine>(config.search_time_ms,
-                                                   EvalMode::NNUE, old_model);
+        old_engine = std::make_unique<ChessEngine>(EvalMode::NNUE, old_model);
     }
 
     for (int g = 0; g < num_games; ++g) {
@@ -509,8 +504,7 @@ void ModelComparator::play_games(int num_games, int thread_id,
             ChessBoard::Move chosen_move;
             float stm_eval;
             {
-                TimeControl tc{0, 0, 0};
-                active->set_max_time(config.search_time_ms);
+                TimeControl tc{0, config.search_time_ms, 0};
                 auto result = active->get_best_move(board, tc);
                 stm_eval = result.score;
                 chosen_move = result.best_move;

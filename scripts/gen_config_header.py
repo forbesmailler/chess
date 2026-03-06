@@ -83,11 +83,10 @@ def generate() -> str:
     lines.append(
         f"    static constexpr int QUIESCENCE_MAX_DEPTH = {s['quiescence_max_depth']};"
     )
+    lines.append(f"    static constexpr int MAX_THINK_MS = {s['max_think_ms']};")
     lines.append(
         f"    static constexpr int TIME_ALLOCATION_DIVISOR = {s['time_allocation_divisor']};"
     )
-    lines.append(f"    static constexpr int MIN_TIME_MS = {s['min_time_ms']};")
-    lines.append(f"    static constexpr int MAX_TIME_MS = {s['max_time_ms']};")
     lines.append(
         f"    static constexpr float ASPIRATION_DELTA = {s['aspiration_delta']:.1f}f;"
     )

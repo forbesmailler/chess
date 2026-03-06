@@ -5,9 +5,8 @@
 #include <cstring>
 #include <limits>
 
-ChessEngine::ChessEngine(int max_time_ms, EvalMode eval_mode,
-                         std::shared_ptr<NNUEModel> nnue_model)
-    : BaseEngine(max_time_ms, eval_mode, std::move(nnue_model)) {
+ChessEngine::ChessEngine(EvalMode eval_mode, std::shared_ptr<NNUEModel> nnue_model)
+    : BaseEngine(eval_mode, std::move(nnue_model)) {
     eval_cache.resize(EVAL_CACHE_SIZE);
     transposition_table.resize(TT_SIZE);
     std::memset(killers, 0, sizeof(killers));

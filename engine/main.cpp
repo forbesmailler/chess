@@ -90,12 +90,10 @@ class LichessBot {
         }
 
         if (engine_type == EngineType::MCTS) {
-            engine = std::make_unique<MCTSEngine>(config::search::MAX_TIME_MS,
-                                                  this->eval_mode, nnue_model);
+            engine = std::make_unique<MCTSEngine>(this->eval_mode, nnue_model);
             Utils::log_info("Using MCTS engine");
         } else {
-            engine = std::make_unique<ChessEngine>(config::search::MAX_TIME_MS,
-                                                   this->eval_mode, nnue_model);
+            engine = std::make_unique<ChessEngine>(this->eval_mode, nnue_model);
             Utils::log_info("Using Negamax engine");
         }
 
@@ -109,8 +107,6 @@ class LichessBot {
 
         Utils::log_info("Bot started as user: " + account_info.username + " (" +
                         account_info.id + ")");
-        Utils::log_info(
-            "Max search time: " + std::to_string(config::search::MAX_TIME_MS) + "ms");
 
         if (account_info.is_bot) {
             Utils::log_info("Account is properly configured as a bot");
@@ -355,11 +351,11 @@ class LichessBot {
 
                 try {
                     if (engine_type == EngineType::MCTS) {
-                        game_state->engine = std::make_unique<MCTSEngine>(
-                            engine->get_max_time(), eval_mode, nnue_model);
+                        game_state->engine =
+                            std::make_unique<MCTSEngine>(eval_mode, nnue_model);
                     } else {
-                        game_state->engine = std::make_unique<ChessEngine>(
-                            engine->get_max_time(), eval_mode, nnue_model);
+                        game_state->engine =
+                            std::make_unique<ChessEngine>(eval_mode, nnue_model);
                     }
                     game_state->last_move_time = std::chrono::steady_clock::now();
                     game_state->is_active.store(true);
@@ -936,8 +932,7 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        auto engine = std::make_unique<ChessEngine>(config::search::MAX_TIME_MS,
-                                                    eval_mode, nnue_model);
+        auto engine = std::make_unique<ChessEngine>(eval_mode, nnue_model);
         UCIHandler uci(engine.get(), book);
         uci.run();
         return 0;
@@ -995,8 +990,6 @@ int main(int argc, char* argv[]) {
     std::cout << "=== Starting Lichess Bot ===" << std::endl;
     std::cout << "Engine: " << engine_name << std::endl;
     std::cout << "Eval: " << eval_name << std::endl;
-    std::cout << "Max search time: " << config::search::MAX_TIME_MS << "ms"
-              << std::endl;
     std::cout << "Process ID: " << getpid() << std::endl;
     std::cout << std::endl;
     std::cout << "Press Ctrl+C to stop the bot gracefully" << std::endl;

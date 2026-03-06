@@ -27,12 +27,9 @@ struct SearchResult {
 
 class BaseEngine {
    public:
-    explicit BaseEngine(int max_time_ms = config::search::MAX_TIME_MS,
-                        EvalMode eval_mode = EvalMode::HANDCRAFTED,
+    explicit BaseEngine(EvalMode eval_mode = EvalMode::HANDCRAFTED,
                         std::shared_ptr<NNUEModel> nnue_model = nullptr)
-        : nnue_model(std::move(nnue_model)),
-          max_search_time_ms(max_time_ms),
-          eval_mode(eval_mode) {}
+        : nnue_model(std::move(nnue_model)), eval_mode(eval_mode) {}
 
     virtual ~BaseEngine() = default;
 
@@ -40,8 +37,6 @@ class BaseEngine {
     virtual SearchResult get_best_move(const ChessBoard& board,
                                        const TimeControl& time_control) = 0;
 
-    virtual void set_max_time(int max_time_ms) { max_search_time_ms = max_time_ms; }
-    virtual int get_max_time() const { return max_search_time_ms; }
     virtual void stop_search() { should_stop.store(true); }
     EvalMode get_eval_mode() const { return eval_mode; }
 
@@ -49,7 +44,6 @@ class BaseEngine {
     static constexpr float MATE_VALUE = config::MATE_VALUE;
 
     std::shared_ptr<NNUEModel> nnue_model;
-    int max_search_time_ms;
     EvalMode eval_mode;
     mutable std::atomic<bool> should_stop{false};
     mutable std::atomic<int> nodes_searched{0};

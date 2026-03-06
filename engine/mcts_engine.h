@@ -7,8 +7,7 @@
 
 class MCTSEngine : public BaseEngine {
    public:
-    explicit MCTSEngine(int max_time_ms = 30000,
-                        EvalMode eval_mode = EvalMode::HANDCRAFTED,
+    explicit MCTSEngine(EvalMode eval_mode = EvalMode::HANDCRAFTED,
                         std::shared_ptr<NNUEModel> nnue_model = nullptr);
 
     SearchResult get_best_move(const ChessBoard& board,

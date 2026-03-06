@@ -5,12 +5,16 @@
 #include "handcrafted_eval.h"
 
 int BaseEngine::calculate_search_time(const TimeControl& time_control) {
-    if (time_control.time_left_ms <= 0) return max_search_time_ms;
+    static constexpr int MAX_THINK_MS = config::search::MAX_THINK_MS;
+
+    // Correspondence or no clock: use the max
+    if (time_control.time_left_ms <= 0 && time_control.increment_ms <= 0)
+        return MAX_THINK_MS;
 
     int allocated_time =
         time_control.increment_ms +
         (time_control.time_left_ms / config::search::TIME_ALLOCATION_DIVISOR);
-    return std::max(1, std::min(allocated_time, max_search_time_ms));
+    return std::clamp(allocated_time, 1, MAX_THINK_MS);
 }
 
 float BaseEngine::raw_evaluate(const ChessBoard& board) {
