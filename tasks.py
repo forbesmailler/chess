@@ -228,6 +228,12 @@ def challenge(c, username, time=300, increment=0, casual=False):
     c.run(f"{BOT_EXE} --challenge {username} {time} {increment} {rated}")
 
 
+@task
+def play(c):
+    """Continuously challenge online Lichess bots (Ctrl+C to stop)."""
+    c.run("python -u scripts/play_bots.py")
+
+
 _vps = _dep["vps"]
 _pointer_file = _dep["paths"]["current_best_file"]
 
