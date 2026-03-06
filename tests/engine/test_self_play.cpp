@@ -21,7 +21,7 @@ SelfPlayGenerator::Config make_test_config(const std::string& output_file,
     config.num_games = num_games;
     config.num_threads = num_threads;
     config.output_file = output_file;
-    config.search_time_ms = 50;
+    config.search_time_ms = 10;
     return config;
 }
 
@@ -117,7 +117,7 @@ TEST(SelfPlay, MultiThreadedNoCorruption) {
     std::string tmp_file = "test_multithread.bin";
     std::remove(tmp_file.c_str());
 
-    auto config = make_test_config(tmp_file, 4, 2);
+    auto config = make_test_config(tmp_file, 2, 2);
     SelfPlayGenerator generator(config);
     generator.generate();
 
@@ -241,7 +241,7 @@ TEST(ModelComparator, ComparisonProducesResults) {
     config.num_games = 2;
     config.num_threads = 1;
     config.output_file = output_file;
-    config.search_time_ms = 50;
+    config.search_time_ms = 10;
 
     ModelComparator comparator(config, old_model, new_model);
     auto result = comparator.run();

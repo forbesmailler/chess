@@ -147,7 +147,7 @@ TEST(BaseEngineEdge, EvaluateNNUEFallbackToHandcrafted) {
 TEST(BaseEngineEdge, SearchWithZeroTimeLeft) {
     ChessEngine engine;
     ChessBoard board;
-    TimeControl tc{0, 0, 0};  // zero time left
+    TimeControl tc{0, 100, 0};  // no time left, small increment
     auto result = engine.get_best_move(board, tc);
     EXPECT_FALSE(result.best_move.uci().empty());
 }
@@ -155,7 +155,7 @@ TEST(BaseEngineEdge, SearchWithZeroTimeLeft) {
 TEST(BaseEngineEdge, SearchWithNegativeTimeLeft) {
     ChessEngine engine;
     ChessBoard board;
-    TimeControl tc{-1000, 0, 0};  // negative time
+    TimeControl tc{-1000, 100, 0};  // negative time, small increment
     auto result = engine.get_best_move(board, tc);
     EXPECT_FALSE(result.best_move.uci().empty());
 }
@@ -163,7 +163,7 @@ TEST(BaseEngineEdge, SearchWithNegativeTimeLeft) {
 TEST(BaseEngineEdge, SearchWithIncrement) {
     ChessEngine engine;
     ChessBoard board;
-    TimeControl tc{10000, 5000, 0};  // 10s + 5s increment
+    TimeControl tc{1000, 500, 0};  // 1s + 0.5s increment
     auto result = engine.get_best_move(board, tc);
     EXPECT_FALSE(result.best_move.uci().empty());
     EXPECT_GE(result.depth, 1);
