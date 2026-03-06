@@ -255,6 +255,8 @@ def deploy(c, weights=None):
         c.run("git pull")
 
     print("=== Step 2/5: Build ===")
+    gen_config(c)
+    format(c)
     build(c)
 
     print("=== Step 3/5: Test ===")
