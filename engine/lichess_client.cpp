@@ -130,6 +130,9 @@ void LichessClient::stream_events(std::function<void(const GameEvent&)> callback
                 if (j["challenge"].contains("challenger")) {
                     event.challenger_id = j["challenge"]["challenger"].value("id", "");
                 }
+                if (j["challenge"].contains("variant")) {
+                    event.variant = j["challenge"]["variant"].value("key", "standard");
+                }
             } else if (event.type == "gameStart") {
                 event.game_id = j["game"]["id"];
             }

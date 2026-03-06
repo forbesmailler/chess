@@ -317,6 +317,13 @@ class LichessBot {
                 }
                 Utils::log_info("Received challenge: " + event.challenge_id);
 
+                if (!event.variant.empty() && event.variant != "standard") {
+                    Utils::log_info("Declining challenge " + event.challenge_id +
+                                    ": unsupported variant " + event.variant);
+                    client.decline_challenge(event.challenge_id, "variant");
+                    return;
+                }
+
                 if (active_game_count.load() >= config::bot::MAX_CONCURRENT_GAMES) {
                     Utils::log_info("Declining challenge " + event.challenge_id +
                                     ": already playing " +

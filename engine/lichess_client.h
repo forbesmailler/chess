@@ -19,6 +19,7 @@ class LichessClient {
         std::string game_id;
         std::string challenge_id;
         std::string challenger_id;
+        std::string variant;
         std::string moves;
         std::string status;
         bool draw_offer = false;
