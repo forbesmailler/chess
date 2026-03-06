@@ -54,6 +54,19 @@ bool LichessClient::accept_challenge(const std::string& challenge_id) {
     return response.status_code == 200;
 }
 
+bool LichessClient::create_challenge(const std::string& username, int clock_limit,
+                                     int clock_increment, bool rated) {
+    std::string data = "rated=" + std::string(rated ? "true" : "false") +
+                       "&clock.limit=" + std::to_string(clock_limit) +
+                       "&clock.increment=" + std::to_string(clock_increment);
+    auto response = make_request(base_url + "/challenge/" + username, "POST", data);
+    if (response.status_code != 200) {
+        std::cout << "Challenge creation failed with status " << response.status_code
+                  << ": " << response.data << std::endl;
+    }
+    return response.status_code == 200;
+}
+
 bool LichessClient::make_move(const std::string& game_id, const std::string& uci_move) {
     auto response =
         make_request(base_url + "/bot/game/" + game_id + "/move/" + uci_move, "POST");
@@ -107,6 +120,9 @@ void LichessClient::stream_events(std::function<void(const GameEvent&)> callback
 
             if (event.type == "challenge") {
                 event.challenge_id = j["challenge"]["id"];
+                if (j["challenge"].contains("challenger")) {
+                    event.challenger_id = j["challenge"]["challenger"].value("id", "");
+                }
             } else if (event.type == "gameStart") {
                 event.game_id = j["game"]["id"];
             }
@@ -227,7 +243,6 @@ LichessClient::HttpResponse LichessClient::make_request(const std::string& url,
     if (method == "POST") {
         curl_easy_setopt(curl, CURLOPT_POST, 1L);
         if (!data.empty()) {
-            headers = curl_slist_append(headers, "Content-Type: application/json");
             curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data.c_str());
         } else {
             curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "");

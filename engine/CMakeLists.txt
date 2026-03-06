@@ -125,6 +125,7 @@ add_library(chess_engine_lib STATIC
     nnue_model.cpp
     opening_book.cpp
     self_play.cpp
+    uci.cpp
     utils.cpp
 )
 

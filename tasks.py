@@ -204,6 +204,51 @@ def build_book(
     c.run(cmd)
 
 
+@task(
+    help={
+        "username": "Lichess bot username to challenge",
+        "time": "Clock time in seconds (default: 300)",
+        "increment": "Clock increment in seconds (default: 0)",
+        "casual": "Make it a casual (unrated) game",
+    }
+)
+def challenge(c, username, time=300, increment=0, casual=False):
+    """Start the bot, then challenge a Lichess bot."""
+    import atexit
+    import subprocess
+
+    best_file = Path(_dep["paths"]["current_best_file"])
+    nnue_arg = ""
+    if best_file.exists():
+        weights = best_file.read_text().strip()
+        if weights and Path(weights).exists():
+            nnue_arg = f" --eval=nnue --nnue-weights={weights}"
+    book_arg = " --book=book.bin" if Path("book.bin").exists() else ""
+
+    # Start bot in background
+    bot_cmd = f"{BOT_EXE}{nnue_arg}{book_arg}"
+    print(f"Starting bot: {bot_cmd}")
+    bot_proc = subprocess.Popen(bot_cmd, shell=True)
+    atexit.register(bot_proc.terminate)
+
+    # Wait for bot to connect to Lichess
+    import time as _time
+
+    _time.sleep(3)
+
+    # Send challenge
+    rated = "casual" if casual else "rated"
+    c.run(f"{BOT_EXE} --challenge {username} {time} {increment} {rated}")
+
+    # Wait for bot to finish (Ctrl+C to stop)
+    try:
+        bot_proc.wait()
+    except KeyboardInterrupt:
+        print("\nStopping bot...")
+        bot_proc.terminate()
+        bot_proc.wait()
+
+
 _vps = _dep["vps"]
 _pointer_file = _dep["paths"]["current_best_file"]
 

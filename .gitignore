@@ -18,3 +18,5 @@ large_book.bin
 *.bak
 *.pt
 nul
+elo_test/
+tools/

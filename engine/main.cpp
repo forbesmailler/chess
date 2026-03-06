@@ -17,6 +17,7 @@
 #include "mcts_engine.h"
 #include "opening_book.h"
 #include "self_play.h"
+#include "uci.h"
 #include "utils.h"
 #ifdef _WIN32
 #include <process.h>
@@ -309,6 +310,11 @@ class LichessBot {
     void handle_event(const LichessClient::GameEvent& event) {
         try {
             if (event.type == "challenge") {
+                if (event.challenger_id == account_info.id) {
+                    Utils::log_info("Ignoring own outgoing challenge: " +
+                                    event.challenge_id);
+                    return;
+                }
                 Utils::log_info("Received challenge: " + event.challenge_id);
 
                 if (!accept_challenge_with_retry(event.challenge_id)) {
@@ -698,6 +704,8 @@ int main(int argc, char* argv[]) {
         std::cout << "       " << argv[0]
                   << " --relabel <nnue_weights> <input_file> [output_file]"
                   << std::endl;
+        std::cout << "       " << argv[0]
+                  << " --uci [--nnue-weights=<path>] [--book=<path>]" << std::endl;
         std::cout << std::endl;
         std::cout << "Set LICHESS_TOKEN environment variable before running."
                   << std::endl;
@@ -841,6 +849,82 @@ int main(int argc, char* argv[]) {
         }
 
         return result.improved() ? 0 : 1;
+    }
+
+    // Challenge mode: --challenge <username> [clock_limit] [clock_increment] [rated]
+    if (first_arg == "--challenge") {
+        if (argc < 3) {
+            std::cerr
+                << "Usage: " << argv[0]
+                << " --challenge <username> [clock_limit_sec] [clock_increment_sec]"
+                   " [rated|casual]"
+                << std::endl;
+            return 1;
+        }
+        const char* token_env = std::getenv("LICHESS_TOKEN");
+        if (!token_env || std::string(token_env).empty()) {
+            std::cerr << "Error: LICHESS_TOKEN environment variable not set."
+                      << std::endl;
+            return 1;
+        }
+        std::string username = argv[2];
+        int clock_limit = (argc > 3) ? std::stoi(argv[3]) : 300;
+        int clock_increment = (argc > 4) ? std::stoi(argv[4]) : 0;
+        bool rated = true;
+        if (argc > 5 && std::string(argv[5]) == "casual") rated = false;
+
+        LichessClient client(token_env);
+        std::cout << "Challenging " << username << " (" << clock_limit << "+"
+                  << clock_increment << ", " << (rated ? "rated" : "casual") << ")..."
+                  << std::endl;
+        if (client.create_challenge(username, clock_limit, clock_increment, rated)) {
+            std::cout << "Challenge sent! Start the bot to play the game." << std::endl;
+        } else {
+            std::cerr << "Failed to send challenge." << std::endl;
+            return 1;
+        }
+        return 0;
+    }
+
+    // UCI mode: --uci [--nnue-weights=<path>] [--book=<path>]
+    if (first_arg == "--uci") {
+        std::string nnue_weights_path;
+        std::string book_path;
+        for (int i = 2; i < argc; i++) {
+            std::string arg = argv[i];
+            if (arg.find("--nnue-weights=") == 0)
+                nnue_weights_path = arg.substr(15);
+            else if (arg.find("--book=") == 0)
+                book_path = arg.substr(7);
+        }
+
+        EvalMode eval_mode = EvalMode::HANDCRAFTED;
+        std::shared_ptr<NNUEModel> nnue_model;
+        if (!nnue_weights_path.empty()) {
+            nnue_model = std::make_shared<NNUEModel>();
+            if (nnue_model->load_weights(nnue_weights_path)) {
+                eval_mode = EvalMode::NNUE;
+            } else {
+                std::cerr << "Failed to load NNUE weights: " << nnue_weights_path
+                          << std::endl;
+                nnue_model.reset();
+            }
+        }
+
+        std::shared_ptr<OpeningBook> book;
+        if (!book_path.empty()) {
+            book = std::make_shared<OpeningBook>();
+            if (!book->load(book_path)) {
+                std::cerr << "Failed to load opening book: " << book_path << std::endl;
+                book.reset();
+            }
+        }
+
+        auto engine = std::make_unique<ChessEngine>(config::search::MAX_TIME_MS,
+                                                    eval_mode, nnue_model);
+        UCIHandler uci(engine.get(), book);
+        uci.run();
+        return 0;
     }
 
     const char* token_env = std::getenv("LICHESS_TOKEN");
