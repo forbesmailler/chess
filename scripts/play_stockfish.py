@@ -168,13 +168,17 @@ def play_game(our_engine, stockfish, our_color, move_time_ms):
 def worker(
     worker_id,
     num_games,
+    total_games,
     nnue_weights,
     sf_path,
     sf_elo,
     move_time_ms,
     data_path,
-    counter,
+    game_counter,
+    position_counter,
     lock,
+    start_time_val,
+    log_interval,
 ):
     """Worker process: plays num_games sequentially, writing positions to data_path."""
     engine_cmd = build_engine_cmd(nnue_weights)
@@ -202,24 +206,25 @@ def worker(
         else:
             draws += 1
 
+        n_pos = len(encoded) if encoded else 0
         if encoded:
             with lock:
                 with open(data_path, "ab") as f:
                     for pos_bytes in encoded:
                         f.write(pos_bytes)
-            positions_count += len(encoded)
+        positions_count += n_pos
 
         with lock:
-            counter.value += 1
-            total = counter.value
+            game_counter.value += 1
+            position_counter.value += n_pos
+            completed = game_counter.value
+            total_pos = position_counter.value
 
-        played = i + 1
-        if played % 5 == 0 or played == num_games:
+        if completed % log_interval == 0 or completed == total_games:
+            elapsed = int(time.time() - start_time_val)
             print(
-                f"  [Worker {worker_id}] {played}/{num_games} "
-                f"W/L/D: {wins}/{losses}/{draws} "
-                f"| {positions_count} positions "
-                f"| Total: {total}",
+                f"Stockfish progress: {completed}/{total_games} games, "
+                f"{total_pos} positions, {elapsed}s elapsed",
                 flush=True,
             )
 
@@ -416,12 +421,22 @@ def main():
             base + (1 if i < remainder else 0) for i in range(num_workers)
         ]
 
+        log_interval = _sp.get("progress_log_interval", 10)
+
         manager = multiprocessing.Manager()
-        counter = manager.Value("i", 0)
+        game_counter = manager.Value("i", 0)
+        position_counter = manager.Value("i", 0)
         lock = manager.Lock()
 
         start_time = time.time()
-        print(f"Starting {num_workers} workers ({args.games} games)...")
+        eval_label = (
+            f"NNUE ({Path(nnue_weights).name})" if nnue_weights else "handcrafted"
+        )
+        print(f"=== Stockfish {args.elo} Data Generation ===")
+        print(f"Games: {args.games}")
+        print(f"Output: {args.data}")
+        print(f"Threads: {num_workers}")
+        print(f"Eval: {eval_label}")
 
         with multiprocessing.Pool(num_workers) as pool:
             results = pool.starmap(
@@ -430,13 +445,17 @@ def main():
                     (
                         i,
                         games_per_worker[i],
+                        args.games,
                         nnue_weights,
                         sf_path,
                         args.elo,
                         args.move_time,
                         str(data_path),
-                        counter,
+                        game_counter,
+                        position_counter,
                         lock,
+                        start_time,
+                        log_interval,
                     )
                     for i in range(num_workers)
                 ],
@@ -455,14 +474,14 @@ def main():
         total_draws += cycle_draws
 
         print(
-            f"\nCycle {iteration} complete in {elapsed:.0f}s: "
-            f"W/L/D = {cycle_wins}/{cycle_losses}/{cycle_draws}"
+            f"Stockfish complete: {cycle_games} games, "
+            f"{cycle_positions} positions in {elapsed:.0f}s"
         )
+        print(f"W/L/D: {cycle_wins}/{cycle_losses}/{cycle_draws}")
         print(
             f"Overall: W/L/D = {total_wins}/{total_losses}/{total_draws} "
             f"({total_games} games)"
         )
-        print(f"Positions this cycle: {cycle_positions}")
 
         if not args.no_retrain:
             print("\n--- Retraining ---")
