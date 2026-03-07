@@ -6,6 +6,7 @@ import random
 import sys
 import time
 import urllib.request
+from collections import deque
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -46,6 +47,8 @@ CHALLENGE_TIMEOUT = 30  # seconds to wait for challenge acceptance
 GAME_POLL_INTERVAL = 10  # seconds between game status checks
 MAX_GAME_WAIT = 3600  # max seconds to wait for a single game
 MAX_CONCURRENT = load_engine()["bot"]["max_concurrent_games"]
+DAILY_BOT_LIMIT = 95  # stay under Lichess's 100 bot-vs-bot games per rolling 24h window
+DAILY_WINDOW = 24 * 3600  # 24 hours in seconds
 
 
 def api_request(path, method="GET", data=None):
@@ -154,19 +157,39 @@ def main():
     print()
 
     challenged = set()  # track recently challenged bots to avoid spamming
-    games_played = 0
+    game_timestamps = deque()  # rolling 24h window of game start times
     tracked_games = set()  # game IDs we know about
 
     while True:
+        now = time.time()
+
+        # Expire timestamps outside the 24h window
+        while game_timestamps and now - game_timestamps[0] >= DAILY_WINDOW:
+            game_timestamps.popleft()
+
         ongoing = get_ongoing_games()
         ongoing_ids = {g["gameId"] for g in ongoing}
 
         # Detect finished games
         finished = tracked_games - ongoing_ids
         for gid in finished:
-            games_played += 1
-            print(f"Game {gid} finished. Total games played: {games_played}")
+            print(
+                f"Game {gid} finished. "
+                f"Daily games: {len(game_timestamps)}/{DAILY_BOT_LIMIT}"
+            )
         tracked_games -= finished
+
+        # Daily limit reached — wait until oldest game expires from the window
+        if len(game_timestamps) >= DAILY_BOT_LIMIT:
+            wait_until = game_timestamps[0] + DAILY_WINDOW
+            wait_secs = max(0, wait_until - time.time())
+            wait_mins = wait_secs / 60
+            print(
+                f"Daily limit ({DAILY_BOT_LIMIT}) reached. "
+                f"Waiting {wait_mins:.0f}m until window rolls over..."
+            )
+            time.sleep(min(wait_secs + 1, 300))  # recheck every 5 min at most
+            continue
 
         # At capacity — wait and check again
         if len(ongoing) >= MAX_CONCURRENT:
@@ -228,6 +251,8 @@ def main():
         # Game started
         print(f"  Game started: https://lichess.org/{challenge_id}")
         tracked_games.add(challenge_id)
+        game_timestamps.append(time.time())
+        print(f"  Daily games: {len(game_timestamps)}/{DAILY_BOT_LIMIT}")
         time.sleep(2)
 
 

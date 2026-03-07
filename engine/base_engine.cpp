@@ -6,12 +6,25 @@
 
 int BaseEngine::calculate_search_time(const TimeControl& time_control) {
     static constexpr int MAX_THINK_MS = config::search::MAX_THINK_MS;
+    static constexpr int OVERHEAD = config::search::MOVE_OVERHEAD_MS;
+    static constexpr int RESERVE = config::search::MIN_TIME_RESERVE_MS;
 
     // Correspondence or no clock: use the max
     if (time_control.time_left_ms <= 0 && time_control.increment_ms <= 0)
         return MAX_THINK_MS;
 
-    int base = time_control.time_left_ms - time_control.increment_ms;
+    // Subtract overhead for network latency + HTTP round-trip
+    int usable_time = time_control.time_left_ms - OVERHEAD;
+    if (usable_time < 1) return 1;
+
+    // Keep a reserve so we don't flag
+    int available = usable_time - RESERVE;
+    if (available < 1) {
+        // Emergency: use half of whatever is left, minimum 1ms
+        return std::max(1, usable_time / 2);
+    }
+
+    int base = available - time_control.increment_ms;
     if (base < 0) base = 0;
     int allocated_time =
         time_control.increment_ms + (base / config::search::TIME_ALLOCATION_DIVISOR);

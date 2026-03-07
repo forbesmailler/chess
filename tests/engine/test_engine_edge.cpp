@@ -85,23 +85,25 @@ TEST(BaseEngineEdge, CalculateSearchTimeCappedAt60s) {
 
 TEST(BaseEngineEdge, CalculateSearchTimeWithIncrement) {
     TestableEngine engine;
-    // base = 5000 - 1000 = 4000, allocated = 1000 + 4000/50 = 1080
+    // usable = 5000 - 200 = 4800, available = 4800 - 500 = 4300
+    // base = 4300 - 1000 = 3300, allocated = 1000 + 3300/50 = 1066
     TimeControl tc{5000, 1000, 0};
-    EXPECT_EQ(engine.test_calculate_time(tc), 1080);
+    EXPECT_EQ(engine.test_calculate_time(tc), 1066);
 }
 
 TEST(BaseEngineEdge, CalculateSearchTimeNoIncrement) {
     TestableEngine engine;
-    // base = 50000 - 0 = 50000, allocated = 0 + 50000/50 = 1000
+    // usable = 50000 - 200 = 49800, available = 49800 - 500 = 49300
+    // allocated = 0 + 49300/50 = 986
     TimeControl tc{50000, 0, 0};
-    EXPECT_EQ(engine.test_calculate_time(tc), 1000);
+    EXPECT_EQ(engine.test_calculate_time(tc), 986);
 }
 
 TEST(BaseEngineEdge, CalculateSearchTimeOnlyIncrement) {
     TestableEngine engine;
-    // base = max(1 - 3000, 0) = 0, allocated = 3000 + 0/50 = 3000
+    // usable = 1 - 200 = -199 < 1, emergency: returns 1
     TimeControl tc{1, 3000, 0};
-    EXPECT_EQ(engine.test_calculate_time(tc), 3000);
+    EXPECT_EQ(engine.test_calculate_time(tc), 1);
 }
 
 TEST(BaseEngineEdge, EvalModeDefault) {

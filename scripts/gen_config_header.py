@@ -88,6 +88,12 @@ def generate() -> str:
         f"    static constexpr int TIME_ALLOCATION_DIVISOR = {s['time_allocation_divisor']};"
     )
     lines.append(
+        f"    static constexpr int MOVE_OVERHEAD_MS = {s['move_overhead_ms']};"
+    )
+    lines.append(
+        f"    static constexpr int MIN_TIME_RESERVE_MS = {s['min_time_reserve_ms']};"
+    )
+    lines.append(
         f"    static constexpr float ASPIRATION_DELTA = {s['aspiration_delta']:.1f}f;"
     )
     lines.append(

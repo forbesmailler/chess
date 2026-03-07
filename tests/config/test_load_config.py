@@ -98,7 +98,8 @@ def test_training_returns_cached():
     assert cfg1 is cfg2
 
 
-def test_deploy_returns_cached():
+def test_deploy_returns_consistent():
     cfg1 = deploy()
     cfg2 = deploy()
-    assert cfg1 is cfg2
+    assert cfg1 == cfg2
+    assert cfg1 is not cfg2  # fresh copy each call to avoid mutation bugs

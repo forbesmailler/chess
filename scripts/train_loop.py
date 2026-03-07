@@ -10,11 +10,11 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from config.load_config import load
+from config.load_config import deploy, load
 
 _eng = load("engine")
 _trn = load("training")
-_dep = load("deploy")
+_dep = deploy()
 
 BOT_EXE = str(Path(_dep["paths"]["bot_exe"]))
 _sp = _trn["self_play"]
