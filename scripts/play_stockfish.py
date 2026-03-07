@@ -1,14 +1,16 @@
 """Play games against Stockfish via UCI, collect training data, and periodically retrain.
 
 Uses python-chess to mediate between our engine (UCI) and Stockfish (UCI).
-Only our engine's positions are recorded (with its search eval). Game results
-are written once each game finishes. After every N games, triggers a
-train/compare/archive cycle identical to the normal training loop.
+Runs multiple games in parallel using multiprocessing. Only our engine's
+positions are recorded (with its search eval). After every N games, triggers
+a train/compare/archive cycle identical to the normal training loop.
 """
 
 import argparse
+import multiprocessing
 import struct
 import sys
+import time
 from pathlib import Path
 
 import chess
@@ -49,10 +51,8 @@ def build_engine_cmd(nnue_weights=""):
 
 
 def encode_piece(piece):
-    """Encode a chess.Piece to our 4-bit format."""
     if piece is None:
         return 0
-    # 1=wP,2=wN,3=wB,4=wR,5=wQ,6=wK, 7=bP,8=bN,9=bB,10=bR,11=bQ,12=bK
     type_map = {
         chess.PAWN: 1,
         chess.KNIGHT: 2,
@@ -66,11 +66,6 @@ def encode_piece(piece):
 
 
 def encode_position(board, search_eval, game_result, ply):
-    """Encode a position into 42-byte TrainingPosition format.
-
-    search_eval: from side-to-move's perspective
-    game_result: from side-to-move's perspective (0=loss, 1=draw, 2=win)
-    """
     piece_placement = bytearray(32)
     for sq in range(64):
         piece = board.piece_at(sq)
@@ -109,52 +104,53 @@ def encode_position(board, search_eval, game_result, ply):
     )
 
 
-def play_game(our_engine, stockfish, our_color, move_time_ms, game_num):
+def play_game(our_engine, stockfish, our_color, move_time_ms):
     """Play one game, return (result_str, list of encoded position bytes)."""
     board = chess.Board()
-    positions = []  # (board_copy, eval_from_stm, ply)
+    positions = []
     ply = 0
+    limit = chess.engine.Limit(time=move_time_ms / 1000.0)
 
     while not board.is_game_over(claim_draw=True):
         is_our_turn = board.turn == our_color
 
         if is_our_turn:
-            result = our_engine.play(
-                board, chess.engine.Limit(time=move_time_ms / 1000.0)
-            )
-            move = result.move
-            # Get eval from info if available
+            # Use analysis to capture score, then extract best move
             score = None
-            if result.info and "score" in result.info:
-                sc = result.info["score"].relative
-                if sc.is_mate():
-                    score = 10000.0 if sc.mate() > 0 else -10000.0
-                else:
-                    score = float(sc.score()) / 100.0
+            move = None
+            with our_engine.analysis(board, limit) as analysis:
+                for info in analysis:
+                    if "score" in info:
+                        sc = info["score"].relative
+                        if sc.is_mate():
+                            score = 10000.0 if sc.mate() > 0 else -10000.0
+                        else:
+                            score = float(sc.score()) / 100.0
+                    if "pv" in info and info["pv"]:
+                        move = info["pv"][0]
+
+            if move is None:
+                # Fallback if analysis didn't yield a move
+                result = our_engine.play(board, limit)
+                move = result.move
 
             if score is not None:
                 positions.append((board.copy(), score, ply))
         else:
-            result = stockfish.play(
-                board, chess.engine.Limit(time=move_time_ms / 1000.0)
-            )
+            result = stockfish.play(board, limit)
             move = result.move
 
         board.push(move)
         ply += 1
 
-    # Determine result
     outcome = board.outcome(claim_draw=True)
-    if outcome is None:
+    if outcome is None or outcome.winner is None:
         result_str = "draw"
     elif outcome.winner == our_color:
         result_str = "win"
-    elif outcome.winner is None:
-        result_str = "draw"
     else:
         result_str = "loss"
 
-    # Encode positions with game result
     encoded = []
     for pos_board, eval_score, pos_ply in positions:
         stm_is_our_color = pos_board.turn == our_color
@@ -167,6 +163,70 @@ def play_game(our_engine, stockfish, our_color, move_time_ms, game_num):
         encoded.append(encode_position(pos_board, eval_score, stm_result, pos_ply))
 
     return result_str, encoded
+
+
+def worker(
+    worker_id,
+    num_games,
+    nnue_weights,
+    sf_path,
+    sf_elo,
+    move_time_ms,
+    data_path,
+    counter,
+    lock,
+):
+    """Worker process: plays num_games sequentially, writing positions to data_path."""
+    engine_cmd = build_engine_cmd(nnue_weights)
+    our_engine = chess.engine.SimpleEngine.popen_uci(engine_cmd)
+    stockfish = chess.engine.SimpleEngine.popen_uci(str(sf_path))
+    stockfish.configure({"UCI_LimitStrength": True, "UCI_Elo": sf_elo})
+
+    wins = losses = draws = positions_count = 0
+
+    for i in range(num_games):
+        our_color = chess.WHITE if i % 2 == 0 else chess.BLACK
+
+        try:
+            result_str, encoded = play_game(
+                our_engine, stockfish, our_color, move_time_ms
+            )
+        except Exception as e:
+            print(f"  [Worker {worker_id}] Game error: {e}", flush=True)
+            continue
+
+        if result_str == "win":
+            wins += 1
+        elif result_str == "loss":
+            losses += 1
+        else:
+            draws += 1
+
+        if encoded:
+            with lock:
+                with open(data_path, "ab") as f:
+                    for pos_bytes in encoded:
+                        f.write(pos_bytes)
+            positions_count += len(encoded)
+
+        with lock:
+            counter.value += 1
+            total = counter.value
+
+        played = i + 1
+        if played % 5 == 0 or played == num_games:
+            print(
+                f"  [Worker {worker_id}] {played}/{num_games} "
+                f"W/L/D: {wins}/{losses}/{draws} "
+                f"| {positions_count} positions "
+                f"| Total: {total}",
+                flush=True,
+            )
+
+    our_engine.quit()
+    stockfish.quit()
+
+    return wins, losses, draws, positions_count
 
 
 def run_training_cycle(data_path, args):
@@ -273,6 +333,12 @@ def main():
         help=f"Games per training cycle (default: {_sp['num_games']})",
     )
     p.add_argument(
+        "--threads",
+        type=int,
+        default=_sp["num_threads"],
+        help=f"Number of parallel workers (default: {_sp['num_threads']})",
+    )
+    p.add_argument(
         "--move-time",
         type=int,
         default=_sp["search_time_ms"],
@@ -287,7 +353,6 @@ def main():
     p.add_argument("--batch-size", type=int, default=_train_cfg["batch_size"])
     p.add_argument("--eval-weight", type=float, default=_train_cfg["eval_weight"])
     p.add_argument("--compare-games", type=int, default=_cmp.get("num_games", 100))
-    p.add_argument("--threads", type=int, default=_sp["num_threads"])
     p.add_argument(
         "--no-retrain",
         action="store_true",
@@ -298,17 +363,18 @@ def main():
     # Verify Stockfish exists
     sf_path = Path(args.stockfish)
     if not sf_path.exists() and args.stockfish == "stockfish":
-        # Try common locations
-        for p in [
+        for candidate in [
             Path("stockfish/stockfish.exe"),
             Path("stockfish/stockfish"),
             Path("C:/stockfish/stockfish.exe"),
             Path(
-                "C:/Users/forbe/AppData/Local/Microsoft/WinGet/Packages/Stockfish.Stockfish_Microsoft.Winget.Source_8wekyb3d8bbwe/stockfish/stockfish-windows-x86-64-avx2.exe"
+                "C:/Users/forbe/AppData/Local/Microsoft/WinGet/Packages/"
+                "Stockfish.Stockfish_Microsoft.Winget.Source_8wekyb3d8bbwe/"
+                "stockfish/stockfish-windows-x86-64-avx2.exe"
             ),
         ]:
-            if p.exists():
-                sf_path = p
+            if candidate.exists():
+                sf_path = candidate
                 break
     sf_path = sf_path.resolve()
     if not sf_path.exists() and args.stockfish == "stockfish":
@@ -318,11 +384,12 @@ def main():
 
     data_path = Path(args.data)
     nnue_weights = resolve_nnue_weights()
-    eval_label = f"NNUE ({nnue_weights})" if nnue_weights else "handcrafted"
+    eval_label = f"NNUE ({Path(nnue_weights).name})" if nnue_weights else "handcrafted"
 
     print(f"=== Play vs Stockfish {args.elo} ===")
     print(f"Our eval: {eval_label}")
     print(f"Move time: {args.move_time}ms")
+    print(f"Workers: {args.threads}")
     print(f"Games per cycle: {args.games}")
     print(f"Training data: {args.data}")
     if not args.no_retrain:
@@ -341,64 +408,59 @@ def main():
         print(f"=== Iteration {iteration} (total games: {total_games}) ===")
         print(f"{'=' * 60}")
 
-        # Start engines
-        engine_cmd = build_engine_cmd(nnue_weights)
-        print(f"Starting our engine: {' '.join(engine_cmd)}")
-        our_engine = chess.engine.SimpleEngine.popen_uci(engine_cmd)
+        # Distribute games across workers
+        num_workers = min(args.threads, args.games)
+        base = args.games // num_workers
+        remainder = args.games % num_workers
+        games_per_worker = [
+            base + (1 if i < remainder else 0) for i in range(num_workers)
+        ]
 
-        print(f"Starting Stockfish: {sf_path} (Elo {args.elo})")
-        stockfish = chess.engine.SimpleEngine.popen_uci(str(sf_path))
-        stockfish.configure({"UCI_LimitStrength": True, "UCI_Elo": args.elo})
+        manager = multiprocessing.Manager()
+        counter = manager.Value("i", 0)
+        lock = manager.Lock()
 
-        wins = losses = draws = 0
-        cycle_positions = 0
+        start_time = time.time()
+        print(f"Starting {num_workers} workers ({args.games} games)...")
 
-        for game_num in range(1, args.games + 1):
-            # Alternate colors
-            our_color = chess.WHITE if game_num % 2 == 1 else chess.BLACK
-            color_str = "white" if our_color == chess.WHITE else "black"
+        with multiprocessing.Pool(num_workers) as pool:
+            results = pool.starmap(
+                worker,
+                [
+                    (
+                        i,
+                        games_per_worker[i],
+                        nnue_weights,
+                        sf_path,
+                        args.elo,
+                        args.move_time,
+                        str(data_path),
+                        counter,
+                        lock,
+                    )
+                    for i in range(num_workers)
+                ],
+            )
 
-            try:
-                result_str, encoded = play_game(
-                    our_engine, stockfish, our_color, args.move_time, game_num
-                )
-            except Exception as e:
-                print(f"  Game {game_num} error: {e}")
-                break
+        elapsed = time.time() - start_time
+        cycle_wins = sum(r[0] for r in results)
+        cycle_losses = sum(r[1] for r in results)
+        cycle_draws = sum(r[2] for r in results)
+        cycle_positions = sum(r[3] for r in results)
+        cycle_games = cycle_wins + cycle_losses + cycle_draws
 
-            if result_str == "win":
-                wins += 1
-            elif result_str == "loss":
-                losses += 1
-            else:
-                draws += 1
+        total_games += cycle_games
+        total_wins += cycle_wins
+        total_losses += cycle_losses
+        total_draws += cycle_draws
 
-            # Write positions to training data
-            if encoded:
-                with open(data_path, "ab") as f:
-                    for pos_bytes in encoded:
-                        f.write(pos_bytes)
-                cycle_positions += len(encoded)
-
-            total_games += 1
-            if game_num % 10 == 0 or game_num == args.games:
-                print(
-                    f"  Game {game_num}/{args.games} as {color_str}: {result_str} "
-                    f"| Cycle W/L/D: {wins}/{losses}/{draws} "
-                    f"| Positions: {cycle_positions}"
-                )
-
-        # Close engines
-        our_engine.quit()
-        stockfish.quit()
-
-        total_wins += wins
-        total_losses += losses
-        total_draws += draws
-
-        print(f"\nCycle {iteration} complete: W/L/D = {wins}/{losses}/{draws}")
         print(
-            f"Overall: W/L/D = {total_wins}/{total_losses}/{total_draws} ({total_games} games)"
+            f"\nCycle {iteration} complete in {elapsed:.0f}s: "
+            f"W/L/D = {cycle_wins}/{cycle_losses}/{cycle_draws}"
+        )
+        print(
+            f"Overall: W/L/D = {total_wins}/{total_losses}/{total_draws} "
+            f"({total_games} games)"
         )
         print(f"Positions this cycle: {cycle_positions}")
 
