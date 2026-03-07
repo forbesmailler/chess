@@ -242,9 +242,25 @@ def main():
     # Launch bot subprocess
     dep = load_deploy()
     bot_exe = dep["paths"]["bot_exe"]
+
+    # Resolve NNUE weights from pointer file
+    project_root = Path(__file__).resolve().parent.parent
+    pointer_file = project_root / dep["paths"]["current_best_file"]
+    nnue_weights = ""
+    if pointer_file.exists():
+        rel_path = pointer_file.read_text().strip()
+        nnue_path = project_root / rel_path
+        if nnue_path.exists():
+            nnue_weights = str(nnue_path)
+
     bot_cmd = [bot_exe]
+    if nnue_weights:
+        bot_cmd += ["--eval=nnue", f"--nnue-weights={nnue_weights}"]
+    book_path = project_root / "book.bin"
+    if book_path.exists():
+        bot_cmd.append(f"--book={book_path}")
     if not args.no_training_data:
-        bot_cmd += ["--training-data", args.training_data]
+        bot_cmd.append(f"--training-data={args.training_data}")
     print(f"Starting bot: {' '.join(bot_cmd)}")
     bot_proc = subprocess.Popen(bot_cmd, stdout=sys.stdout, stderr=sys.stderr)
     time.sleep(3)  # let the bot connect to Lichess
