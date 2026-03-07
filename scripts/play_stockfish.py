@@ -39,7 +39,7 @@ def resolve_nnue_weights():
 
 
 def build_engine_cmd(nnue_weights=""):
-    cmd = [BOT_EXE, "--uci"]
+    cmd = [str(PROJECT_ROOT / BOT_EXE), "--uci"]
     if nnue_weights:
         cmd.append(f"--nnue-weights={nnue_weights}")
     book_path = PROJECT_ROOT / "book.bin"
@@ -310,6 +310,7 @@ def main():
             if p.exists():
                 sf_path = p
                 break
+    sf_path = sf_path.resolve()
     if not sf_path.exists() and args.stockfish == "stockfish":
         sys.exit(
             "Stockfish not found. Install it or pass --stockfish=/path/to/stockfish"
