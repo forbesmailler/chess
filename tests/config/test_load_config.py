@@ -63,7 +63,7 @@ def test_engine_eval_material_values_count():
 def test_engine_search_constants():
     cfg = engine()
     assert cfg["search"]["max_depth"] == 50
-    assert cfg["search"]["time_allocation_divisor"] == 40
+    assert cfg["search"]["time_allocation_divisor"] == 50
     assert cfg["search"]["time_check_interval"] == 2048
 
 
