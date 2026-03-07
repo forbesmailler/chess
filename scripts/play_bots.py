@@ -64,14 +64,32 @@ def api_request(path, method="GET", data=None):
         return 0, ""
 
 
-def get_my_username():
+def tc_to_speed(clock_limit, clock_increment):
+    """Map a time control to a Lichess speed category."""
+    total = clock_limit + clock_increment * 40
+    if total < 179:
+        return "bullet"
+    if total < 479:
+        return "blitz"
+    if total < 1499:
+        return "rapid"
+    return "classical"
+
+
+def get_my_account():
+    """Return full account data including ratings."""
     status, body = api_request("/account")
     if status == 200:
-        return json.loads(body)["id"]
+        return json.loads(body)
     sys.exit(f"Failed to get account: {body}")
 
 
-def get_online_bots(nb=50):
+def get_my_rating(account, speed):
+    """Get our rating for a given speed category."""
+    return account.get("perfs", {}).get(speed, {}).get("rating", 1500)
+
+
+def get_online_bots(nb=1000):
     url = f"{BASE}/bot/online?nb={nb}"
     req = urllib.request.Request(url, headers=HEADERS)
     try:
@@ -81,6 +99,13 @@ def get_online_bots(nb=50):
                 if line.strip():
                     bots.append(json.loads(line))
             return bots
+    except urllib.error.HTTPError as e:
+        if e.code == 429:
+            print("  Rate limited (429) fetching bots, backing off 60s...")
+            time.sleep(60)
+        else:
+            print(f"  Failed to fetch bots ({e.code}): {e.read().decode()[:200]}")
+        return []
     except Exception as e:
         print(f"  Failed to fetch bots: {e}")
         return []
@@ -109,6 +134,10 @@ def challenge_bot(username, clock_limit, clock_increment):
     status, body = api_request(f"/challenge/{username}", method="POST", data=data)
     if status == 200:
         return json.loads(body).get("challenge", {}).get("id")
+    if status == 429:
+        print("  Rate limited (429), backing off 60s...")
+        time.sleep(60)
+        return None
     print(f"  Challenge failed ({status}): {body[:200]}")
     return None
 
@@ -118,7 +147,8 @@ def cancel_challenge(challenge_id):
 
 
 def main():
-    my_id = get_my_username()
+    account = get_my_account()
+    my_id = account["id"]
     print(f"Bot account: {my_id}")
     print(f"Time controls: {', '.join(f'{t // 60}+{i}' for t, i in TIME_CONTROLS)}")
     print()
@@ -143,25 +173,38 @@ def main():
             time.sleep(GAME_POLL_INTERVAL)
             continue
 
-        # Get online bots
+        # Pick time control first so we can filter by rating
+        clock_limit, clock_increment = random.choice(TIME_CONTROLS)
+        speed = tc_to_speed(clock_limit, clock_increment)
+        my_rating = get_my_rating(account, speed)
+        tc_str = f"{clock_limit // 60}+{clock_increment}"
+
+        # Get online bots and filter by rating proximity
         bots = get_online_bots()
-        candidates = [b for b in bots if b["id"] != my_id and b["id"] not in challenged]
+        candidates = []
+        for b in bots:
+            if b["id"] == my_id or b["id"] in challenged:
+                continue
+            bot_rating = b.get("perfs", {}).get(speed, {}).get("rating", 1500)
+            if abs(bot_rating - my_rating) <= 500:
+                candidates.append(b)
 
         if not candidates:
             if not ongoing:
-                print("No new bots available, resetting challenge history...")
+                print(
+                    f"No bots within 500 of {my_rating} {speed}, resetting history..."
+                )
                 challenged.clear()
             time.sleep(30 if not ongoing else GAME_POLL_INTERVAL)
             continue
 
-        # Pick a random bot and time control
+        # Pick a random bot from filtered candidates
         bot = random.choice(candidates)
         bot_name = bot["username"]
+        bot_rating = bot.get("perfs", {}).get(speed, {}).get("rating", 1500)
         challenged.add(bot["id"])
-        clock_limit, clock_increment = random.choice(TIME_CONTROLS)
-        tc_str = f"{clock_limit // 60}+{clock_increment}"
 
-        print(f"Challenging {bot_name} ({tc_str})...")
+        print(f"Challenging {bot_name} ({bot_rating} {speed}) at {tc_str}...")
         challenge_id = challenge_bot(bot["id"], clock_limit, clock_increment)
         if not challenge_id:
             time.sleep(2)

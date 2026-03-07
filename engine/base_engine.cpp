@@ -11,9 +11,10 @@ int BaseEngine::calculate_search_time(const TimeControl& time_control) {
     if (time_control.time_left_ms <= 0 && time_control.increment_ms <= 0)
         return MAX_THINK_MS;
 
+    int base = time_control.time_left_ms - time_control.increment_ms;
+    if (base < 0) base = 0;
     int allocated_time =
-        time_control.increment_ms +
-        (time_control.time_left_ms / config::search::TIME_ALLOCATION_DIVISOR);
+        time_control.increment_ms + (base / config::search::TIME_ALLOCATION_DIVISOR);
     return std::clamp(allocated_time, 1, MAX_THINK_MS);
 }
 

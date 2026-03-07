@@ -77,28 +77,29 @@ TEST(BaseEngineEdge, CalculateSearchTimeNegativeCorrespondence) {
 
 TEST(BaseEngineEdge, CalculateSearchTimeCappedAt60s) {
     TestableEngine engine;
-    // allocated = 0 + 10000000/50 = 200000, capped at 60000
+    // base = 10000000 - 0 = 10000000, allocated = 0 + 10000000/50 = 200000, capped at
+    // 60000
     TimeControl tc{10000000, 0, 0};
     EXPECT_EQ(engine.test_calculate_time(tc), 60000);
 }
 
 TEST(BaseEngineEdge, CalculateSearchTimeWithIncrement) {
     TestableEngine engine;
-    // allocated = 1000 + 5000/50 = 1100
+    // base = 5000 - 1000 = 4000, allocated = 1000 + 4000/50 = 1080
     TimeControl tc{5000, 1000, 0};
-    EXPECT_EQ(engine.test_calculate_time(tc), 1100);
+    EXPECT_EQ(engine.test_calculate_time(tc), 1080);
 }
 
 TEST(BaseEngineEdge, CalculateSearchTimeNoIncrement) {
     TestableEngine engine;
-    // allocated = 0 + 50000/50 = 1000
+    // base = 50000 - 0 = 50000, allocated = 0 + 50000/50 = 1000
     TimeControl tc{50000, 0, 0};
     EXPECT_EQ(engine.test_calculate_time(tc), 1000);
 }
 
 TEST(BaseEngineEdge, CalculateSearchTimeOnlyIncrement) {
     TestableEngine engine;
-    // allocated = 3000 + 1/50 = 3000 (integer division 1/50 = 0)
+    // base = max(1 - 3000, 0) = 0, allocated = 3000 + 0/50 = 3000
     TimeControl tc{1, 3000, 0};
     EXPECT_EQ(engine.test_calculate_time(tc), 3000);
 }
