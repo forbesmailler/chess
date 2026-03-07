@@ -303,6 +303,9 @@ def main():
             Path("stockfish/stockfish.exe"),
             Path("stockfish/stockfish"),
             Path("C:/stockfish/stockfish.exe"),
+            Path(
+                "C:/Users/forbe/AppData/Local/Microsoft/WinGet/Packages/Stockfish.Stockfish_Microsoft.Winget.Source_8wekyb3d8bbwe/stockfish/stockfish-windows-x86-64-avx2.exe"
+            ),
         ]:
             if p.exists():
                 sf_path = p
