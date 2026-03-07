@@ -38,7 +38,7 @@ HEADERS = {"Authorization": f"Bearer {TOKEN}", "Accept": "application/json"}
 MAX_CONCURRENT = load_engine()["bot"]["max_concurrent_games"]
 GAME_POLL_INTERVAL = 10
 CHALLENGE_TIMEOUT = 30
-DEFAULT_RATING_RANGE = 200
+DEFAULT_RATING_RANGE = 2000
 # How many candidate players to collect before starting to challenge
 MIN_CANDIDATES = 5
 # Max candidates to keep in the pool

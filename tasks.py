@@ -228,22 +228,27 @@ def challenge(c, username, time=300, increment=0, casual=False):
     c.run(f"{BOT_EXE} --challenge {username} {time} {increment} {rated}")
 
 
-@task
-def play(c):
-    """Continuously challenge online Lichess bots (Ctrl+C to stop)."""
-    c.run("python -u scripts/play_bots.py")
+@task(
+    help={
+        "training_data": "Training data output file (default: training_data.bin)",
+    }
+)
+def play_bots(c, training_data="training_data.bin"):
+    """Prepare, then launch bot and challenge online Lichess bots (Ctrl+C to stop)."""
+    prepare(c)
+    c.run(f"python -u scripts/play_bots.py --training-data {training_data}")
 
 
 @task(
     help={
         "time": "Clock time in seconds (default: 60)",
         "increment": "Clock increment in seconds (default: 0)",
-        "rating_range": "Max rating difference from bot (default: 200)",
+        "rating_range": "Max rating difference from bot (default: 2000)",
         "training_data": "Training data output file (default: training_data.bin)",
     }
 )
 def play_humans(
-    c, time=60, increment=0, rating_range=200, training_data="training_data.bin"
+    c, time=60, increment=0, rating_range=2000, training_data="training_data.bin"
 ):
     """Prepare, then launch bot and challenge active humans within rating range (Ctrl+C to stop)."""
     prepare(c)
