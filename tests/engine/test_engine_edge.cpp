@@ -101,9 +101,16 @@ TEST(BaseEngineEdge, CalculateSearchTimeNoIncrement) {
 
 TEST(BaseEngineEdge, CalculateSearchTimeOnlyIncrement) {
     TestableEngine engine;
-    // usable = 1 - 200 = -199 < 1, emergency: returns 1
+    // time_left=1 (live game), usable = 1 - 200 = -199 < 1, returns 1
     TimeControl tc{1, 3000, 0};
     EXPECT_EQ(engine.test_calculate_time(tc), 1);
+}
+
+TEST(BaseEngineEdge, CalculateSearchTimeFixedPerMove) {
+    TestableEngine engine;
+    // time_left=0, increment=500 (self-play mode): returns increment directly
+    TimeControl tc{0, 500, 0};
+    EXPECT_EQ(engine.test_calculate_time(tc), 500);
 }
 
 TEST(BaseEngineEdge, EvalModeDefault) {

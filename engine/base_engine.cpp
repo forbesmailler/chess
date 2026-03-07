@@ -13,7 +13,11 @@ int BaseEngine::calculate_search_time(const TimeControl& time_control) {
     if (time_control.time_left_ms <= 0 && time_control.increment_ms <= 0)
         return MAX_THINK_MS;
 
-    // Subtract overhead for network latency + HTTP round-trip
+    // Fixed time per move (self-play): time_left=0 means no clock, just use increment
+    if (time_control.time_left_ms <= 0)
+        return std::clamp(time_control.increment_ms, 1, MAX_THINK_MS);
+
+    // Live game: subtract overhead for network latency + HTTP round-trip
     int usable_time = time_control.time_left_ms - OVERHEAD;
     if (usable_time < 1) return 1;
 
