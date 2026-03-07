@@ -241,6 +241,38 @@ def play_bots(c, training_data="training_data.bin"):
 
 @task(
     help={
+        "elo": "Stockfish Elo limit (e.g. 2600)",
+        "stockfish": "Path to Stockfish executable (default: stockfish)",
+        "games": f"Games per training cycle (default: {_sp['num_games']})",
+        "move_time": f"Think time per move in ms (default: {_sp['search_time_ms']})",
+        "data": f"Training data path (default: {_sp['output_file']})",
+        "no_retrain": "Just play and collect data, don't retrain",
+    }
+)
+def play_stockfish(
+    c,
+    elo,
+    stockfish="stockfish",
+    games=_sp["num_games"],
+    move_time=_sp["search_time_ms"],
+    data=_sp["output_file"],
+    no_retrain=False,
+):
+    """Prepare, then play against Stockfish at given Elo, collect data, and retrain."""
+    prepare(c)
+    cmd = (
+        f"python -u scripts/play_stockfish.py {elo}"
+        f" --stockfish {stockfish}"
+        f" --games {games} --move-time {move_time}"
+        f" --data {data}"
+    )
+    if no_retrain:
+        cmd += " --no-retrain"
+    c.run(cmd)
+
+
+@task(
+    help={
         "time": "Clock time in seconds (default: 60)",
         "increment": "Clock increment in seconds (default: 0)",
         "rating_range": "Max rating difference from bot (default: 2000)",
