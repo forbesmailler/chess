@@ -234,6 +234,24 @@ def play(c):
     c.run("python -u scripts/play_bots.py")
 
 
+@task(
+    help={
+        "time": "Clock time in seconds (default: 60)",
+        "increment": "Clock increment in seconds (default: 0)",
+        "rating_range": "Max rating difference from bot (default: 200)",
+        "training_data": "Training data output file (default: training_data.bin)",
+    }
+)
+def play_humans(
+    c, time=60, increment=0, rating_range=200, training_data="training_data.bin"
+):
+    """Prepare, then launch bot and challenge active humans within rating range (Ctrl+C to stop)."""
+    prepare(c)
+    c.run(
+        f"python -u scripts/play_humans.py --time {time} --increment {increment} --rating-range {rating_range} --training-data {training_data}"
+    )
+
+
 _vps = _dep["vps"]
 _pointer_file = _dep["paths"]["current_best_file"]
 

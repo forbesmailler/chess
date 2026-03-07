@@ -67,7 +67,7 @@ bot:
   game_stream_reconnect_delay_s: 2
   draw_response_retry_delay_ms: 1000
   move_retry_delay_ms: 100
-  max_concurrent_games: 1
+  max_concurrent_games: 16
   user_agent: "Lichess-Bot-CPP/1.0"
   lichess_base_url: "https://lichess.org/api"
   connectivity_test_url: "http://www.google.com"

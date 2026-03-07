@@ -94,7 +94,7 @@ static constexpr int NODE_COUNT_INTERVAL = 1000;
 }  // namespace mcts
 
 namespace bot {
-static constexpr int MAX_CONCURRENT_GAMES = 1;
+static constexpr int MAX_CONCURRENT_GAMES = 16;
 static constexpr int MAX_RETRIES = 3;
 static constexpr int RETRY_DELAY_MS = 5000;
 static constexpr int HEARTBEAT_INTERVAL_MS = 30000;

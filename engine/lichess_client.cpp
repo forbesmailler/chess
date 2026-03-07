@@ -165,6 +165,7 @@ void LichessClient::stream_game(const std::string& game_id,
                     event.btime = j.value("btime", 0);
                     event.winc = j.value("winc", 0);
                     event.binc = j.value("binc", 0);
+                    event.winner = j.value("winner", "");
                 } else if (event.type == "gameFull") {
                     if (j.contains("state")) {
                         event.moves = j["state"].value("moves", "");
@@ -175,6 +176,7 @@ void LichessClient::stream_game(const std::string& game_id,
                         event.btime = j["state"].value("btime", 0);
                         event.winc = j["state"].value("winc", 0);
                         event.binc = j["state"].value("binc", 0);
+                        event.winner = j["state"].value("winner", "");
                     }
                     if (j.contains("white")) {
                         event.white_id = j["white"].value("id", "");

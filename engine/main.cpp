@@ -43,6 +43,13 @@ void signal_handler(int signal) {
     shutdown_requested.store(true);
 }
 
+struct BufferedPosition {
+    ChessBoard board;
+    float eval;  // from white's perspective
+    uint16_t ply;
+    bool stm_white;  // side to move when position was recorded
+};
+
 struct GameState {
     ChessBoard board;
     int ply_count = 0;
@@ -51,6 +58,7 @@ struct GameState {
     std::unique_ptr<BaseEngine> engine;
     std::chrono::steady_clock::time_point last_move_time;
     std::atomic<bool> is_active{true};
+    std::vector<BufferedPosition> training_positions;
 };
 
 class LichessBot {
@@ -60,8 +68,12 @@ class LichessBot {
     LichessBot(const std::string& token, EngineType engine_type = EngineType::NEGAMAX,
                EvalMode eval_mode = EvalMode::HANDCRAFTED,
                const std::string& nnue_weights_path = "",
-               const std::string& book_path = "")
-        : client(token), engine_type(engine_type), eval_mode(eval_mode) {
+               const std::string& book_path = "",
+               const std::string& training_data_path = "")
+        : client(token),
+          engine_type(engine_type),
+          eval_mode(eval_mode),
+          training_data_path(training_data_path) {
         signal(SIGINT, signal_handler);
         signal(SIGTERM, signal_handler);
 
@@ -139,6 +151,8 @@ class LichessBot {
     EngineType engine_type;
     EvalMode eval_mode;
     LichessClient::AccountInfo account_info;
+    std::string training_data_path;
+    std::mutex training_data_mutex;
 
     std::unordered_map<std::string, std::shared_ptr<GameState>> active_games;
     std::mutex games_mutex;
@@ -485,6 +499,7 @@ class LichessBot {
             if (event.status != "started") {
                 Utils::log_info("Game " + game_id +
                                 " ended with status: " + event.status);
+                flush_training_data(game_id, game_state, event.winner);
                 game_state->is_active.store(false);
                 return;
             }
@@ -586,6 +601,17 @@ class LichessBot {
             if (make_move_with_retry(game_id, search_result.best_move.uci())) {
                 Utils::log_info("Game " + game_id + ": Move sent successfully: " +
                                 search_result.best_move.uci());
+
+                // Buffer position for training (before making the move)
+                if (!training_data_path.empty()) {
+                    bool stm_white = game_state->board.turn() == ChessBoard::WHITE;
+                    float white_eval =
+                        stm_white ? search_result.score : -search_result.score;
+                    game_state->training_positions.push_back(
+                        {game_state->board, white_eval,
+                         static_cast<uint16_t>(game_state->ply_count), stm_white});
+                }
+
                 game_state->board.make_move(search_result.best_move);
                 game_state->ply_count++;
                 game_state->last_move_time = std::chrono::steady_clock::now();
@@ -656,6 +682,61 @@ class LichessBot {
             Utils::log_error("Game " + game_id +
                              ": Error handling draw offer: " + std::string(e.what()));
         }
+    }
+
+    void flush_training_data(const std::string& game_id,
+                             std::shared_ptr<GameState> game_state,
+                             const std::string& winner) {
+        if (training_data_path.empty() || game_state->training_positions.empty())
+            return;
+
+        // Determine game result: 2=white wins, 1=draw, 0=black wins
+        uint8_t white_result;
+        if (winner == "white")
+            white_result = 2;
+        else if (winner == "black")
+            white_result = 0;
+        else
+            white_result = 1;
+
+        try {
+            std::lock_guard<std::mutex> lock(training_data_mutex);
+            std::ofstream out(training_data_path, std::ios::binary | std::ios::app);
+            if (!out.is_open()) {
+                Utils::log_error(
+                    "Game " + game_id +
+                    ": Failed to open training data file: " + training_data_path);
+                return;
+            }
+
+            int count = 0;
+            for (const auto& bp : game_state->training_positions) {
+                // Result from side-to-move perspective
+                uint8_t stm_result;
+                if (white_result == 1)
+                    stm_result = 1;  // draw
+                else if ((white_result == 2) == bp.stm_white)
+                    stm_result = 2;  // stm won
+                else
+                    stm_result = 0;  // stm lost
+
+                // Eval from side-to-move perspective
+                float stm_eval = bp.stm_white ? bp.eval : -bp.eval;
+
+                auto pos = SelfPlayGenerator::encode_position(bp.board, stm_eval,
+                                                              stm_result, bp.ply);
+                SelfPlayGenerator::write_position(out, pos);
+                count++;
+            }
+
+            Utils::log_info("Game " + game_id + ": Wrote " + std::to_string(count) +
+                            " training positions");
+        } catch (const std::exception& e) {
+            Utils::log_error("Game " + game_id +
+                             ": Error writing training data: " + std::string(e.what()));
+        }
+
+        game_state->training_positions.clear();
     }
 
     void cleanup_game(const std::string& game_id) {
@@ -950,6 +1031,7 @@ int main(int argc, char* argv[]) {
     EvalMode eval_mode = EvalMode::HANDCRAFTED;
     std::string nnue_weights_path;
     std::string book_path;
+    std::string training_data_path;
 
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
@@ -978,6 +1060,8 @@ int main(int argc, char* argv[]) {
             nnue_weights_path = arg.substr(15);
         } else if (arg.find("--book=") == 0) {
             book_path = arg.substr(7);
+        } else if (arg.find("--training-data=") == 0) {
+            training_data_path = arg.substr(16);
         } else {
             std::cerr << "Unknown parameter: " << arg << ", ignoring" << std::endl;
         }
@@ -990,6 +1074,8 @@ int main(int argc, char* argv[]) {
     std::cout << "=== Starting Lichess Bot ===" << std::endl;
     std::cout << "Engine: " << engine_name << std::endl;
     std::cout << "Eval: " << eval_name << std::endl;
+    if (!training_data_path.empty())
+        std::cout << "Training data: " << training_data_path << std::endl;
     std::cout << "Process ID: " << getpid() << std::endl;
     std::cout << std::endl;
     std::cout << "Press Ctrl+C to stop the bot gracefully" << std::endl;
@@ -997,7 +1083,8 @@ int main(int argc, char* argv[]) {
 
     int exit_code = 0;
     try {
-        LichessBot bot(token, engine_type, eval_mode, nnue_weights_path, book_path);
+        LichessBot bot(token, engine_type, eval_mode, nnue_weights_path, book_path,
+                       training_data_path);
         Utils::log_info("Bot initialized successfully, starting main loop...");
 
         bot.start();

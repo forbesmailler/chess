@@ -29,6 +29,7 @@ class LichessClient {
         int binc = 0;
         std::string white_id;
         std::string black_id;
+        std::string winner;  // "white", "black", or "" (draw/ongoing)
     };
 
     bool get_account_info(AccountInfo& info);
