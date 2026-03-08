@@ -143,6 +143,19 @@ def challenge_bot(username, clock_limit, clock_increment):
         print("  Rate limited (429), backing off 60s...")
         time.sleep(60)
         return None
+    if status == 400:
+        try:
+            err = json.loads(body)
+            rl = err.get("ratelimit", {})
+            if rl.get("seconds"):
+                wait = rl["seconds"]
+                wait_mins = wait / 60
+                print(f"  Bot daily limit reached: {err.get('error', '')}")
+                print(f"  Waiting {wait_mins:.0f}m...")
+                time.sleep(min(wait + 1, 300))  # recheck every 5 min at most
+                return "DAILY_LIMIT"
+        except (json.JSONDecodeError, KeyError):
+            pass
     print(f"  Challenge failed ({status}): {body[:200]}")
     return None
 
@@ -282,6 +295,8 @@ def main():
 
             print(f"Challenging {bot_name} ({bot_rating} {speed}) at {tc_str}...")
             challenge_id = challenge_bot(bot["id"], clock_limit, clock_increment)
+            if challenge_id == "DAILY_LIMIT":
+                continue  # already waited inside challenge_bot
             if not challenge_id:
                 time.sleep(2)
                 continue

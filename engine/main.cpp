@@ -361,6 +361,13 @@ class LichessBot {
                                     " already has an active handler, skipping");
                     return;
                 }
+                if (active_game_count.load() >= config::bot::MAX_CONCURRENT_GAMES) {
+                    Utils::log_warning("At capacity (" +
+                                       std::to_string(active_game_count.load()) +
+                                       " games), aborting game " + event.game_id);
+                    client.abort_game(event.game_id);
+                    return;
+                }
                 auto game_state = std::make_shared<GameState>();
 
                 try {
@@ -430,6 +437,31 @@ class LichessBot {
             }
             game_state = it->second;  // Keep shared_ptr alive
         }
+
+        // Watchdog: abort if opponent doesn't move within 60s at game start
+        std::thread watchdog([this, game_id, game_state]() {
+            constexpr int FIRST_MOVE_TIMEOUT_S = 60;
+            while (game_state->is_active.load() && !shutdown_requested.load()) {
+                std::this_thread::sleep_for(std::chrono::seconds(5));
+                if (!game_state->is_active.load() || shutdown_requested.load()) break;
+
+                auto elapsed =
+                    std::chrono::duration_cast<std::chrono::seconds>(
+                        std::chrono::steady_clock::now() - game_state->last_move_time)
+                        .count();
+
+                if (game_state->ply_count == 0 && !game_state->first_event &&
+                    !is_our_turn(game_state) && elapsed > FIRST_MOVE_TIMEOUT_S) {
+                    Utils::log_warning(
+                        "Game " + game_id + ": Opponent didn't make first move in " +
+                        std::to_string(FIRST_MOVE_TIMEOUT_S) + "s, aborting");
+                    client.abort_game(game_id);
+                    game_state->is_active.store(false);
+                    break;
+                }
+            }
+        });
+        watchdog.detach();
 
         constexpr int MAX_STREAM_RETRIES = config::bot::MAX_GAME_STREAM_RETRIES;
         for (int attempt = 1; attempt <= MAX_STREAM_RETRIES; ++attempt) {
