@@ -314,6 +314,11 @@ def run_training_cycle(data_path, args):
 
     write_report(archive_path, status, candidate_path.stem, old_name, wld)
 
+    # Clean up stale report at candidate's original location
+    stale_report = candidate_path.with_suffix(".md")
+    if stale_report.exists() and stale_report.parent != archive_path.parent:
+        stale_report.unlink()
+
     current_best = read_current_best(pointer_file)
     best_label = current_best if current_best else "handcrafted"
     print(f"\n--- Training cycle: {status} ---")
