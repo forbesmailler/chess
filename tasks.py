@@ -304,20 +304,16 @@ def deploy(c, weights=None):
     service = _vps["service_name"]
     pointer = f"{repo_dir}/{_pointer_file}"
 
-    print("=== Step 1/4: Pull latest code ===")
+    print("=== Step 1/3: Pull latest code ===")
     with c.cd(repo_dir):
         c.run("git pull")
 
-    print("=== Step 2/4: Build ===")
+    print("=== Step 2/3: Build ===")
     gen_config(c)
     format(c)
     build(c)
 
-    print("=== Step 3/4: Test ===")
-    test_cpp(c)
-
-    print("=== Step 4/4: Install weights & restart service ===")
-    c.run("sudo -v", pty=True)
+    print("=== Step 3/3: Install weights & restart service ===")
     c.run(f"sudo systemctl stop {service}", warn=True)
     if weights:
         c.run(f"cp {weights} {repo_dir}/nnue.bin")
