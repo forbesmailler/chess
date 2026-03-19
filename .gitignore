@@ -13,6 +13,7 @@ build/
 !**/CMakeLists.txt
 *.pyc
 *.env
+/nnue.bin
 training_data*.bin
 large_book.bin
 *.bak

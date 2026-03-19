@@ -5,8 +5,7 @@ paths:
   current_best_file: "models/current_best.txt"
 
 vps:
-  repo_dir: "/opt/chess-bot-src"
-  install_dir: "/opt/chess-bot"
+  repo_dir: "/home/forbes/repos/chess"
   service_name: "chess-bot"
   service_file: "deploy/chess-bot.service"
   systemd_path: "/etc/systemd/system/chess-bot.service"

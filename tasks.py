@@ -299,42 +299,34 @@ _pointer_file = _dep["paths"]["current_best_file"]
     }
 )
 def deploy(c, weights=None):
-    """Deploy the bot on a Linux VPS: pull, build, test, install, restart service."""
+    """Deploy the bot: pull, build, test, update weights, restart service."""
     repo_dir = _vps["repo_dir"]
-    install_dir = _vps["install_dir"]
     service = _vps["service_name"]
     pointer = f"{repo_dir}/{_pointer_file}"
 
-    print("=== Step 1/5: Pull latest code ===")
+    print("=== Step 1/4: Pull latest code ===")
     with c.cd(repo_dir):
         c.run("git pull")
 
-    print("=== Step 2/5: Build ===")
+    print("=== Step 2/4: Build ===")
     gen_config(c)
     format(c)
     build(c)
 
-    print("=== Step 3/5: Test ===")
+    print("=== Step 3/4: Test ===")
     test_cpp(c)
 
-    print("=== Step 4/5: Install ===")
+    print("=== Step 4/4: Install weights & restart service ===")
     c.run("sudo -v", pty=True)
     c.run(f"sudo systemctl stop {service}", warn=True)
-    c.run(f"sudo mkdir -p {install_dir}")
-    c.run(f"sudo cp {repo_dir}/engine/build/lichess_bot {install_dir}/")
     if weights:
-        c.run(f"sudo cp {weights} {install_dir}/nnue.bin")
+        c.run(f"cp {weights} {repo_dir}/nnue.bin")
     else:
         c.run(
-            f"test -f {pointer}"
-            f' && sudo cp "{repo_dir}/$(cat {pointer})" {install_dir}/nnue.bin',
+            f'test -f {pointer} && cp "{repo_dir}/$(cat {pointer})" {repo_dir}/nnue.bin',
             warn=True,
         )
-    book_src = f"{repo_dir}/book.bin"
-    c.run(f"test -f {book_src} && sudo cp {book_src} {install_dir}/", warn=True)
     c.run(f"sudo cp {repo_dir}/{_vps['service_file']} {_vps['systemd_path']}")
-
-    print("=== Step 5/5: Restart service ===")
     c.run("sudo systemctl daemon-reload")
     c.run(f"sudo systemctl enable {service}")
     c.run(f"sudo systemctl restart {service}")

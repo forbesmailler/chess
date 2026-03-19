@@ -5,12 +5,12 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-EnvironmentFile=/opt/chess-bot/.env
-ExecStart=/opt/chess-bot/lichess_bot --engine=negamax --eval=nnue --nnue-weights=/opt/chess-bot/nnue.bin --book=/opt/chess-bot/book.bin
+EnvironmentFile=/home/forbes/repos/chess/.env
+ExecStart=/home/forbes/repos/chess/engine/build/lichess_bot --engine=negamax --eval=nnue --nnue-weights=/home/forbes/repos/chess/nnue.bin --book=/home/forbes/repos/chess/book.bin
 TimeoutStopSec=5
 Restart=always
 RestartSec=5
-WorkingDirectory=/opt/chess-bot
+WorkingDirectory=/home/forbes/repos/chess
 StandardOutput=journal
 StandardError=journal
 

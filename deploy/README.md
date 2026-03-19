@@ -14,25 +14,23 @@ Deploy the chess bot to a Linux VPS as a systemd service.
 ```bash
 sudo apt install build-essential cmake libcurl4-openssl-dev nlohmann-json3-dev
 
-cd /opt
-sudo git clone <your-repo-url> chess-bot-src
-cd chess-bot-src/engine
+cd ~/repos
+git clone <your-repo-url> chess
+cd chess/engine
 mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
 cmake --build .
 
-sudo mkdir -p /opt/chess-bot
-sudo cp lichess_bot /opt/chess-bot/
-# Copy NNUE weights if using NNUE eval
-sudo cp /path/to/nnue.bin /opt/chess-bot/
+# Copy NNUE weights to repo root
+cp /path/to/nnue.bin ~/repos/chess/nnue.bin
 ```
 
 ## Install the systemd service
 
 ```bash
 # Create the environment file with your token
-echo 'LICHESS_TOKEN=lip_xxxxx' | sudo tee /opt/chess-bot/.env
-sudo chmod 600 /opt/chess-bot/.env
+echo 'LICHESS_TOKEN=lip_xxxxx' > ~/repos/chess/.env
+chmod 600 ~/repos/chess/.env
 
 # Install and start the service
 sudo cp deploy/chess-bot.service /etc/systemd/system/chess-bot.service
@@ -50,17 +48,16 @@ sudo journalctl -u chess-bot -f
 Manually:
 
 ```bash
-cd /opt/chess-bot-src
+cd ~/repos/chess
 git pull
 cd engine/build
 cmake --build .
-sudo cp lichess_bot /opt/chess-bot/
 sudo systemctl restart chess-bot
 ```
 
 Or via invoke (runs build, tests, install, and restart):
 
 ```bash
-cd /opt/chess-bot-src
+cd ~/repos/chess
 invoke deploy
 ```
