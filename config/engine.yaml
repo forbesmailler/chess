@@ -6,7 +6,7 @@ search:
   time_check_interval: 2048
   max_depth: 50
   quiescence_max_depth: 8
-  max_think_ms: 60000
+  max_think_ms: 15000
   time_allocation_divisor: 50
   move_overhead_ms: 200
   min_time_reserve_ms: 500
