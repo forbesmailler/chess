@@ -72,21 +72,21 @@ def encode_position(board, search_eval, game_result, ply):
         nibble = encode_piece(piece)
         byte_idx = sq // 2
         if sq % 2 == 0:
-            piece_placement[byte_idx] |= nibble
-        else:
             piece_placement[byte_idx] |= nibble << 4
+        else:
+            piece_placement[byte_idx] |= nibble
 
     side_to_move = 0 if board.turn == chess.WHITE else 1
 
     castling = 0
     if board.has_kingside_castling_rights(chess.WHITE):
-        castling |= 1
-    if board.has_queenside_castling_rights(chess.WHITE):
-        castling |= 2
-    if board.has_kingside_castling_rights(chess.BLACK):
-        castling |= 4
-    if board.has_queenside_castling_rights(chess.BLACK):
         castling |= 8
+    if board.has_queenside_castling_rights(chess.WHITE):
+        castling |= 4
+    if board.has_kingside_castling_rights(chess.BLACK):
+        castling |= 2
+    if board.has_queenside_castling_rights(chess.BLACK):
+        castling |= 1
 
     ep_file = 255
     if board.ep_square is not None:
