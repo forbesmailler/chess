@@ -1,5 +1,7 @@
 """Tests for config/load_config.py."""
 
+from unittest.mock import patch
+
 import pytest
 
 from config.load_config import deploy, engine, eval_, load, training
@@ -103,3 +105,11 @@ def test_deploy_returns_consistent():
     cfg2 = deploy()
     assert cfg1 == cfg2
     assert cfg1 is not cfg2  # fresh copy each call to avoid mutation bugs
+
+
+def test_deploy_windows_exe_path():
+    with patch("config.load_config.platform.system", return_value="Windows"):
+        cfg = deploy()
+    exe = cfg["paths"]["bot_exe"]
+    assert exe.endswith(".exe")
+    assert "Release" in exe
