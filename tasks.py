@@ -141,9 +141,7 @@ def sweep(
     import tempfile
 
     prepare(c)
-    tmp = tempfile.NamedTemporaryFile(suffix=".bin", delete=False)
-    tmp.close()
-    tmp_path = tmp.name
+    tmp_path = tempfile.NamedTemporaryFile(suffix=".bin", delete=False).name
     try:
         weights = [float(w.strip()) for w in eval_weights.split(",")]
         for i, w in enumerate(weights, 1):

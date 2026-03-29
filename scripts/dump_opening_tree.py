@@ -9,6 +9,8 @@ import chess.polyglot
 BOOK_PATH = Path(__file__).resolve().parent.parent / "book.bin"
 OUTPUT_PATH = Path(__file__).resolve().parent.parent / "opening_tree.md"
 
+_PROMO_MAP = {2: chess.KNIGHT, 3: chess.BISHOP, 4: chess.ROOK, 5: chess.QUEEN}
+
 
 def read_book(path):
     """Parse binary book into dict: zobrist_hash -> [(from_sq, to_sq, promo, weight)]."""
@@ -42,13 +44,7 @@ def find_move(board, from_sq, to_sq, promo):
         if promo == 0 and move.promotion is None:
             return move
         if promo != 0 and move.promotion is not None:
-            promo_map = {
-                2: chess.KNIGHT,
-                3: chess.BISHOP,
-                4: chess.ROOK,
-                5: chess.QUEEN,
-            }
-            if move.promotion == promo_map.get(promo):
+            if move.promotion == _PROMO_MAP.get(promo):
                 return move
     return None
 

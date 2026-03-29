@@ -18,14 +18,9 @@ float handcrafted_evaluate(const ChessBoard& board) {
     int black_bishops = 0;
 
     int pawn_files[2][8] = {};
-    int pawn_rank_min[2][8];
-    int pawn_rank_max[2][8];
-    for (int f = 0; f < 8; ++f) {
-        pawn_rank_min[0][f] = 8;
-        pawn_rank_min[1][f] = 8;
-        pawn_rank_max[0][f] = -1;
-        pawn_rank_max[1][f] = -1;
-    }
+    int pawn_rank_min[2][8] = {{8, 8, 8, 8, 8, 8, 8, 8}, {8, 8, 8, 8, 8, 8, 8, 8}};
+    int pawn_rank_max[2][8] = {{-1, -1, -1, -1, -1, -1, -1, -1},
+                               {-1, -1, -1, -1, -1, -1, -1, -1}};
 
     int king_sq[2] = {-1, -1};
     int pawn_sqs[2][8];

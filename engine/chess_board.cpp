@@ -1,44 +1,29 @@
 #include "chess_board.h"
 
-ChessBoard::ChessBoard() : board() { move_history.reserve(128); }
-
-ChessBoard::ChessBoard(const std::string& fen) {
-    move_history.reserve(128);
-    load_fen(fen);
-}
+ChessBoard::ChessBoard() { move_history.reserve(128); }
+ChessBoard::ChessBoard(const std::string& fen) : ChessBoard() { load_fen(fen); }
 
 void ChessBoard::load_fen(const std::string& fen) { board = chess::Board(fen); }
 
 std::string ChessBoard::to_fen() const { return board.getFen(); }
 
+static std::vector<ChessBoard::Move> to_move_vec(const chess::Movelist& moves) {
+    std::vector<ChessBoard::Move> result;
+    result.reserve(moves.size());
+    for (const auto& m : moves) result.push_back({m, {}});
+    return result;
+}
+
 std::vector<ChessBoard::Move> ChessBoard::get_legal_moves() const {
     chess::Movelist moves;
     chess::movegen::legalmoves(moves, board);
-
-    std::vector<Move> result;
-    result.reserve(moves.size());
-    for (const auto& move : moves) {
-        Move m;
-        m.internal_move = move;
-        result.push_back(m);
-    }
-
-    return result;
+    return to_move_vec(moves);
 }
 
 std::vector<ChessBoard::Move> ChessBoard::get_capture_moves() const {
     chess::Movelist moves;
     chess::movegen::legalmoves<chess::movegen::MoveGenType::CAPTURE>(moves, board);
-
-    std::vector<Move> result;
-    result.reserve(moves.size());
-    for (const auto& move : moves) {
-        Move m;
-        m.internal_move = move;
-        result.push_back(m);
-    }
-
-    return result;
+    return to_move_vec(moves);
 }
 
 bool ChessBoard::make_move(const Move& move) {
@@ -115,7 +100,7 @@ int ChessBoard::square_from_string(const std::string& sq) {
 
 std::string ChessBoard::square_to_string(int square) {
     if (square < 0 || square > 63) return "";
-    return std::string(1, 'a' + (square % 8)) + std::string(1, '1' + (square / 8));
+    return {char('a' + square % 8), char('1' + square / 8)};
 }
 
 ChessBoard::PieceType ChessBoard::piece_type_at(int square) const {

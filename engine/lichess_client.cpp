@@ -264,12 +264,8 @@ LichessClient::HttpResponse LichessClient::make_request(const std::string& url,
 
     if (method == "POST") {
         curl_easy_setopt(curl, CURLOPT_POST, 1L);
-        if (!data.empty()) {
-            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data.c_str());
-        } else {
-            curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "");
-            curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, 0L);
-        }
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data.empty() ? "" : data.c_str());
+        if (data.empty()) curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, 0L);
     }
 
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);

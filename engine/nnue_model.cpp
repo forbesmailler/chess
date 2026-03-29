@@ -14,6 +14,10 @@
 #include <fstream>
 #include <iostream>
 
+static constexpr chess::PieceType PIECE_TYPES[] = {
+    chess::PieceType::PAWN, chess::PieceType::KNIGHT, chess::PieceType::BISHOP,
+    chess::PieceType::ROOK, chess::PieceType::QUEEN,  chess::PieceType::KING};
+
 void NNUEModel::AlignedDeleter::operator()(void* p) const {
 #ifdef _MSC_VER
     _aligned_free(p);
@@ -152,10 +156,6 @@ int NNUEModel::extract_features(const ChessBoard& board, int* active) {
     const auto& b = board.board;
     bool white_to_move = b.sideToMove() == chess::Color::WHITE;
 
-    static constexpr chess::PieceType PIECE_TYPES[] = {
-        chess::PieceType::PAWN, chess::PieceType::KNIGHT, chess::PieceType::BISHOP,
-        chess::PieceType::ROOK, chess::PieceType::QUEEN,  chess::PieceType::KING};
-
     auto own_color = white_to_move ? chess::Color::WHITE : chess::Color::BLACK;
     auto opp_color = white_to_move ? chess::Color::BLACK : chess::Color::WHITE;
 
@@ -229,10 +229,6 @@ float NNUEModel::predict(const ChessBoard& board) const {
 #endif
     };
 
-    static constexpr chess::PieceType PIECE_TYPES[] = {
-        chess::PieceType::PAWN, chess::PieceType::KNIGHT, chess::PieceType::BISHOP,
-        chess::PieceType::ROOK, chess::PieceType::QUEEN,  chess::PieceType::KING};
-
     auto own_color = white_to_move ? chess::Color::WHITE : chess::Color::BLACK;
     auto opp_color = white_to_move ? chess::Color::BLACK : chess::Color::WHITE;
 
@@ -282,10 +278,6 @@ void NNUEModel::compute_accumulator(const ChessBoard& board, int16_t* acc,
     const int16_t* w1 = w1_q.get();
 
     std::memcpy(acc, b1_q.get(), h1_padded_ * sizeof(int16_t));
-
-    static constexpr chess::PieceType PIECE_TYPES[] = {
-        chess::PieceType::PAWN, chess::PieceType::KNIGHT, chess::PieceType::BISHOP,
-        chess::PieceType::ROOK, chess::PieceType::QUEEN,  chess::PieceType::KING};
 
     auto own_color = as_white ? chess::Color::WHITE : chess::Color::BLACK;
     auto opp_color = as_white ? chess::Color::BLACK : chess::Color::WHITE;

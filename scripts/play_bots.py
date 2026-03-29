@@ -302,15 +302,12 @@ def main():
                 continue
 
             # Wait for acceptance
-            accepted = False
             for _ in range(CHALLENGE_TIMEOUT // 3):
                 time.sleep(3)
                 ongoing = get_ongoing_games()
                 if any(g["gameId"] == challenge_id for g in ongoing):
-                    accepted = True
                     break
-
-            if not accepted:
+            else:
                 print(f"  {bot_name} did not accept, cancelling.")
                 cancel_challenge(challenge_id)
                 time.sleep(2)

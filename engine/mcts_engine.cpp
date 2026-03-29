@@ -103,11 +103,8 @@ MCTSEngine::MCTSNode* MCTSEngine::select(MCTSNode* root) {
             }
         }
 
-        if (best_child) {
-            current = best_child;
-        } else {
-            break;
-        }
+        if (!best_child) break;
+        current = best_child;
     }
 
     return current;

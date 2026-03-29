@@ -534,11 +534,7 @@ void ModelComparator::play_games(int num_games, int thread_id,
             } else {
                 pos.game_result = 1;
             }
-        }
-
-        // Collect positions with engine tags for deferred writing
-        for (size_t i = 0; i < positions.size(); ++i) {
-            out_positions.push_back({positions[i], from_new_engine[i]});
+            out_positions.push_back({pos, from_new_engine[i]});
         }
 
         if (new_won)

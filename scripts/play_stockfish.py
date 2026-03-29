@@ -206,8 +206,8 @@ def worker(
         else:
             draws += 1
 
-        n_pos = len(encoded) if encoded else 0
-        if encoded:
+        n_pos = len(encoded)
+        if n_pos:
             with lock:
                 with open(data_path, "ab") as f:
                     for pos_bytes in encoded:

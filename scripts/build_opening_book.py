@@ -22,7 +22,7 @@ import struct
 import sys
 import tempfile
 import zlib
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -605,8 +605,6 @@ def write_book(
     min_weight_pct: float = 0.01,
 ) -> None:
     """Write the binary book file, pruning unreachable positions."""
-    from collections import deque
-
     # Filter by min_count before grouping
     if min_count > 1:
         before = len(move_counts)

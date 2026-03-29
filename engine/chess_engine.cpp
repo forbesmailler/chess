@@ -129,9 +129,8 @@ SearchResult ChessEngine::get_best_move(const ChessBoard& board,
         return {ChessBoard::Move{}, score, 0, std::chrono::milliseconds(0), 0};
     }
     if (legal_moves.size() == 1) {
-        ChessBoard::Move m;
-        m.internal_move = legal_moves[0];
-        return {m, 0.0f, 1, std::chrono::milliseconds(50), 1};
+        return {ChessBoard::Move{legal_moves[0]}, 0.0f, 1,
+                std::chrono::milliseconds(50), 1};
     }
 
     return iterative_deepening_search(board, calculate_search_time(time_control));

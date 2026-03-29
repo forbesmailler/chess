@@ -948,17 +948,16 @@ int main(int argc, char* argv[]) {
         if (dot_pos != std::string::npos) report_path = report_path.substr(0, dot_pos);
         report_path += ".md";
 
-        std::string stem = new_weights;
-        auto slash = stem.find_last_of("/\\");
-        if (slash != std::string::npos) stem = stem.substr(slash + 1);
-        auto dot = stem.rfind('.');
-        if (dot != std::string::npos) stem = stem.substr(0, dot);
-
-        std::string old_label = old_weights.empty() ? "handcrafted" : old_weights;
-        auto old_slash = old_label.find_last_of("/\\");
-        if (old_slash != std::string::npos) old_label = old_label.substr(old_slash + 1);
-        auto old_dot = old_label.rfind('.');
-        if (old_dot != std::string::npos) old_label = old_label.substr(0, old_dot);
+        auto extract_stem = [](std::string s) {
+            auto slash = s.find_last_of("/\\");
+            if (slash != std::string::npos) s = s.substr(slash + 1);
+            auto dot = s.rfind('.');
+            if (dot != std::string::npos) s = s.substr(0, dot);
+            return s;
+        };
+        std::string stem = extract_stem(new_weights);
+        std::string old_label =
+            old_weights.empty() ? "handcrafted" : extract_stem(old_weights);
 
         std::ofstream report(report_path);
         if (report.is_open()) {

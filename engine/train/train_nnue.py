@@ -407,8 +407,7 @@ def _write_log(args, num_positions, epoch_log, best_val_loss):
         "|------:|-----------:|---------:|:----:|",
     ]
     for epoch, tl, vl, improved in epoch_log:
-        marker = "*" if improved else ""
-        lines.append(f"| {epoch} | {tl:.6f} | {vl:.6f} | {marker} |")
+        lines.append(f"| {epoch} | {tl:.6f} | {vl:.6f} | {'*' if improved else ''} |")
     lines.append("")
     log_path.write_text("\n".join(lines))
     print(f"Training log written to {log_path}")
