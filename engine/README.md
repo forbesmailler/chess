@@ -35,5 +35,6 @@ Test files in `../tests/engine/`:
 - `test_engine_edge.cpp` — edge cases for search
 - `test_handcrafted_eval.cpp` — evaluation terms
 - `test_nnue_model.cpp` — NNUE forward pass
+- `test_opening_book.cpp` — opening book functionality
 - `test_self_play.cpp` — self-play data generation
 - `test_utils.cpp` — utility functions

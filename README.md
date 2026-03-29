@@ -98,6 +98,8 @@ engine/                         # C++ engine and Lichess bot
 ├── self_play.h/cpp             # Self-play data generator
 ├── chess_board.h/cpp           # Board wrapper utilities
 ├── utils.h/cpp                 # Shared helper functions
+├── opening_book.h/cpp          # Opening book
+├── uci.h/cpp                   # UCI protocol interface
 ├── lichess_client.h/cpp        # Lichess API client (libcurl)
 ├── main.cpp                    # Entry point
 ├── generated_config.h          # Auto-generated from YAML
