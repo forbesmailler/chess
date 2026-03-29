@@ -71,6 +71,18 @@ bot:
   user_agent: "Lichess-Bot-CPP/1.0"
   lichess_base_url: "https://lichess.org/api"
   connectivity_test_url: "http://www.google.com"
+  challenge_timeout_s: 30
+  game_poll_interval_s: 10
+  max_game_wait_s: 3600
+  daily_bot_limit: 95
+  daily_window_s: 86400
+  default_rating_range: 2000
+  min_player_candidates: 5
+  max_player_candidates: 200
+  candidate_ttl_s: 600
+  tv_feed_timeout_s: 600
+  first_move_timeout_s: 60
+  watchdog_check_interval_s: 5
 
 curl:
   request_timeout: 30

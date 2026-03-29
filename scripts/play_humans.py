@@ -32,19 +32,22 @@ TOKEN = os.environ.get("LICHESS_TOKEN")
 if not TOKEN:
     sys.exit("LICHESS_TOKEN not set")
 
-BASE = "https://lichess.org/api"
+_eng = load_engine()
+_bot_cfg = _eng["bot"]
+_curl_cfg = _eng["curl"]
+
+BASE = _bot_cfg["lichess_base_url"]
 HEADERS = {"Authorization": f"Bearer {TOKEN}", "Accept": "application/json"}
 
-MAX_CONCURRENT = load_engine()["bot"]["max_concurrent_games"]
-GAME_POLL_INTERVAL = 10
-CHALLENGE_TIMEOUT = 30
-DEFAULT_RATING_RANGE = 2000
-# How many candidate players to collect before starting to challenge
-MIN_CANDIDATES = 5
-# Max candidates to keep in the pool
-MAX_CANDIDATES = 200
-# How long a candidate stays valid (seconds)
-CANDIDATE_TTL = 600
+MAX_CONCURRENT = _bot_cfg["max_concurrent_games"]
+GAME_POLL_INTERVAL = _bot_cfg["game_poll_interval_s"]
+CHALLENGE_TIMEOUT = _bot_cfg["challenge_timeout_s"]
+DEFAULT_RATING_RANGE = _bot_cfg["default_rating_range"]
+MIN_CANDIDATES = _bot_cfg["min_player_candidates"]
+MAX_CANDIDATES = _bot_cfg["max_player_candidates"]
+CANDIDATE_TTL = _bot_cfg["candidate_ttl_s"]
+_REQUEST_TIMEOUT = _curl_cfg["request_timeout"]
+_TV_FEED_TIMEOUT = _bot_cfg["tv_feed_timeout_s"]
 
 
 def api_request(path, method="GET", data=None):
@@ -54,7 +57,7 @@ def api_request(path, method="GET", data=None):
         req.data = data.encode()
         req.add_header("Content-Type", "application/x-www-form-urlencoded")
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=_REQUEST_TIMEOUT) as resp:
             return resp.status, resp.read().decode()
     except urllib.error.HTTPError as e:
         return e.code, e.read().decode()
@@ -163,7 +166,7 @@ class PlayerPool:
                 req = urllib.request.Request(url)
                 req.add_header("Accept", "application/x-ndjson")
                 req.add_header("Authorization", f"Bearer {TOKEN}")
-                with urllib.request.urlopen(req, timeout=600) as resp:
+                with urllib.request.urlopen(req, timeout=_TV_FEED_TIMEOUT) as resp:
                     buf = b""
                     while not self._stop.is_set():
                         chunk = resp.read(4096)

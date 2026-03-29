@@ -27,7 +27,11 @@ TOKEN = os.environ.get("LICHESS_TOKEN")
 if not TOKEN:
     sys.exit("LICHESS_TOKEN not set")
 
-BASE = "https://lichess.org/api"
+_eng = load_engine()
+_bot_cfg = _eng["bot"]
+_curl_cfg = _eng["curl"]
+
+BASE = _bot_cfg["lichess_base_url"]
 HEADERS = {"Authorization": f"Bearer {TOKEN}", "Accept": "application/json"}
 
 # Time controls to rotate through: (clock_limit_seconds, increment_seconds)
@@ -45,12 +49,13 @@ TIME_CONTROLS = [
     (1800, 20),  # 30+20 classical
 ]
 
-CHALLENGE_TIMEOUT = 30  # seconds to wait for challenge acceptance
-GAME_POLL_INTERVAL = 10  # seconds between game status checks
-MAX_GAME_WAIT = 3600  # max seconds to wait for a single game
-MAX_CONCURRENT = load_engine()["bot"]["max_concurrent_games"]
-DAILY_BOT_LIMIT = 95  # stay under Lichess's 100 bot-vs-bot games per rolling 24h window
-DAILY_WINDOW = 24 * 3600  # 24 hours in seconds
+CHALLENGE_TIMEOUT = _bot_cfg["challenge_timeout_s"]
+GAME_POLL_INTERVAL = _bot_cfg["game_poll_interval_s"]
+MAX_GAME_WAIT = _bot_cfg["max_game_wait_s"]
+MAX_CONCURRENT = _bot_cfg["max_concurrent_games"]
+DAILY_BOT_LIMIT = _bot_cfg["daily_bot_limit"]
+DAILY_WINDOW = _bot_cfg["daily_window_s"]
+_REQUEST_TIMEOUT = _curl_cfg["request_timeout"]
 
 
 def api_request(path, method="GET", data=None):
@@ -60,7 +65,7 @@ def api_request(path, method="GET", data=None):
         req.data = data.encode()
         req.add_header("Content-Type", "application/x-www-form-urlencoded")
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=_REQUEST_TIMEOUT) as resp:
             return resp.status, resp.read().decode()
     except urllib.error.HTTPError as e:
         return e.code, e.read().decode()
@@ -98,7 +103,7 @@ def get_online_bots(nb=1000):
     url = f"{BASE}/bot/online?nb={nb}"
     req = urllib.request.Request(url, headers=HEADERS)
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=_REQUEST_TIMEOUT) as resp:
             bots = []
             for line in resp.read().decode().strip().split("\n"):
                 if line.strip():

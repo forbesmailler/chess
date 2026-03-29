@@ -108,6 +108,8 @@ static constexpr int MOVE_RETRY_DELAY_MS = 100;
 static constexpr std::string_view USER_AGENT = "Lichess-Bot-CPP/1.0";
 static constexpr std::string_view LICHESS_BASE_URL = "https://lichess.org/api";
 static constexpr std::string_view CONNECTIVITY_TEST_URL = "http://www.google.com";
+static constexpr int FIRST_MOVE_TIMEOUT_S = 60;
+static constexpr int WATCHDOG_CHECK_INTERVAL_S = 5;
 }  // namespace bot
 
 namespace curl {

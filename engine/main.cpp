@@ -438,11 +438,12 @@ class LichessBot {
             game_state = it->second;  // Keep shared_ptr alive
         }
 
-        // Watchdog: abort if opponent doesn't move within 60s at game start
+        // Watchdog: abort if opponent doesn't move within the configured timeout at
+        // game start
         std::thread watchdog([this, game_id, game_state]() {
-            constexpr int FIRST_MOVE_TIMEOUT_S = 60;
             while (game_state->is_active.load() && !shutdown_requested.load()) {
-                std::this_thread::sleep_for(std::chrono::seconds(5));
+                std::this_thread::sleep_for(
+                    std::chrono::seconds(config::bot::WATCHDOG_CHECK_INTERVAL_S));
                 if (!game_state->is_active.load() || shutdown_requested.load()) break;
 
                 auto elapsed =
@@ -451,10 +452,12 @@ class LichessBot {
                         .count();
 
                 if (game_state->ply_count == 0 && !game_state->first_event &&
-                    !is_our_turn(game_state) && elapsed > FIRST_MOVE_TIMEOUT_S) {
+                    !is_our_turn(game_state) &&
+                    elapsed > config::bot::FIRST_MOVE_TIMEOUT_S) {
                     Utils::log_warning(
                         "Game " + game_id + ": Opponent didn't make first move in " +
-                        std::to_string(FIRST_MOVE_TIMEOUT_S) + "s, aborting");
+                        std::to_string(config::bot::FIRST_MOVE_TIMEOUT_S) +
+                        "s, aborting");
                     client.abort_game(game_id);
                     game_state->is_active.store(false);
                     break;

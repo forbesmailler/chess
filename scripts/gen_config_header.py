@@ -258,6 +258,12 @@ def generate() -> str:
     lines.append(
         f'    static constexpr std::string_view CONNECTIVITY_TEST_URL = "{b["connectivity_test_url"]}";'
     )
+    lines.append(
+        f"    static constexpr int FIRST_MOVE_TIMEOUT_S = {b['first_move_timeout_s']};"
+    )
+    lines.append(
+        f"    static constexpr int WATCHDOG_CHECK_INTERVAL_S = {b['watchdog_check_interval_s']};"
+    )
     lines.append("}  // namespace bot")
     lines.append("")
 
